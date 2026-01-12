@@ -189,12 +189,12 @@ service http:InterceptableService / on new http:Listener(9090) {
         return projectDetails;
     }
 
-    # Fetch project overview.
-    #
-    # + projectId - Unique identifier of the project
-    # + return - Project overview or error response
-    resource function get projects/[string projectId]/overview(http:RequestContext ctx)
-        returns entity:ProjectOverviewResponse|http:BadRequest|http:InternalServerError {
+    # Search cases.
+    # 
+    # + payload - Case search request body
+    # + return - Cases list or error response
+    resource function post cases/search(http:RequestContext ctx, entity:CaseRequestBody payload)
+        returns entity:CasesResponse|http:InternalServerError {
 
         authorization:UserDataPayload|error userInfo = ctx.getWithType(authorization:HEADER_USER_INFO);
         if userInfo is error {
@@ -205,213 +205,16 @@ service http:InterceptableService / on new http:Listener(9090) {
             };
         }
 
-        if projectId.trim().length() == 0 {
-            string customError = "Project ID cannot be empty or whitespace";
-            log:printError(customError);
-            return <http:BadRequest>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        string cacheKey = string `${userInfo.email}:overview:${projectId}`;
-        if userCache.hasKey(cacheKey) {
-            entity:ProjectOverviewResponse|error cached = userCache.get(cacheKey).ensureType();
-            if cached is entity:ProjectOverviewResponse {
-                return cached;
-            }
-        }
-
-        entity:ProjectOverviewResponse|error projectOverview = entity:fetchProjectOverview(projectId, userInfo.idToken);
-        if projectOverview is error {
-            string customError = "Error retrieving project overview";
-            log:printError(customError, projectOverview);
+        entity:CasesResponse|error casesResponse = entity:searchCases(userInfo.idToken, payload);
+        if casesResponse is error {
+            string customError = "Error retrieving cases list";
+            log:printError(customError, casesResponse);
             return <http:InternalServerError>{
                 body: {
                     message: customError
                 }
             };
         }
-
-        error? cacheError = userCache.put(cacheKey, projectOverview);
-        if cacheError is error {
-            log:printWarn("Error writing project overview to cache", cacheError);
-        }
-        return projectOverview;
-    }
-
-    # Fetch case filters for a specific project.
-    #
-    # + projectId - Unique identifier of the project
-    # + return - Case filters or error response
-    resource function get projects/[string projectId]/cases/filters(http:RequestContext ctx)
-        returns entity:CaseFiltersResponse|http:BadRequest|http:InternalServerError {
-
-        authorization:UserDataPayload|error userInfo = ctx.getWithType(authorization:HEADER_USER_INFO);
-        if userInfo is error {
-            return <http:InternalServerError>{
-                body: {
-                    message: ERR_MSG_USER_INFO_HEADER_NOT_FOUND
-                }
-            };
-        }
-
-        if projectId.trim().length() == 0 {
-            string customError = "Project ID cannot be empty or whitespace";
-            log:printError(customError);
-            return <http:BadRequest>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        string cacheKey = string `${userInfo.email}:casefilters:${projectId}`;
-        if userCache.hasKey(cacheKey) {
-            entity:CaseFiltersResponse|error cached = userCache.get(cacheKey).ensureType();
-            if cached is entity:CaseFiltersResponse {
-                return cached;
-            }
-        }
-
-        entity:CaseFiltersResponse|error caseFilters = entity:fetchCasesFilters(projectId, userInfo.idToken);
-        if caseFilters is error {
-            string customError = "Error retrieving case filters";
-            log:printError(customError, caseFilters);
-            return <http:InternalServerError>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        error? cacheError = userCache.put(cacheKey, caseFilters);
-        if cacheError is error {
-            log:printWarn("Error writing case filters to cache", cacheError);
-        }
-        return caseFilters;
-    }
-
-    # Fetch cases for a project with optional filters.
-    #
-    # + projectId - Project ID filter
-    # + payload - Filter and pagination parameters
-    # + return - Paginated cases or error response
-    resource function post projects/[string projectId]/cases/search(http:RequestContext ctx,
-            entity:CaseFiltersRequest payload)
-        returns entity:CasesResponse|http:BadRequest|http:InternalServerError {
-
-        authorization:UserDataPayload|error userInfo = ctx.getWithType(authorization:HEADER_USER_INFO);
-        if userInfo is error {
-            return <http:InternalServerError>{
-                body: {
-                    message: ERR_MSG_USER_INFO_HEADER_NOT_FOUND
-                }
-            };
-        }
-
-        if projectId.trim().length() == 0 {
-            string customError = "Project ID cannot be empty or whitespace";
-            log:printError(customError);
-            return <http:BadRequest>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        // Validate Pagination
-        if payload.offset < 0 || payload.'limit <= 0 {
-            string customError = "Invalid pagination parameters";
-            log:printError(customError);
-            return <http:BadRequest>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        string cacheKey = string `${userInfo.email}:cases:${projectId}:${payload.offset}:${payload.'limit}:${
-            payload.contact ?: ""}:${payload.status ?: ""}:${payload.severity ?: ""}:${payload.product ?: ""}:${
-            payload.category ?: ""}`;
-
-        if userCache.hasKey(cacheKey) {
-            entity:CasesResponse|error cached = userCache.get(cacheKey).ensureType();
-            if cached is entity:CasesResponse {
-                return cached;
-            }
-        }
-
-        entity:CasesResponse|error cases = entity:fetchCases(userInfo.idToken, projectId, payload);
-        if cases is error {
-            string customError = "Error retrieving cases";
-            log:printError(customError, cases);
-            return <http:InternalServerError>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        error? cacheError = userCache.put(cacheKey, cases);
-        if cacheError is error {
-            log:printWarn("Error writing cases to cache", cacheError);
-        }
-        return cases;
-    }
-
-    # Fetch details of a specific case.
-    #
-    # + projectId - Unique identifier of the project
-    # + caseId - Unique identifier of the case
-    # + return - Case details or error response
-    resource function get projects/[string projectId]/cases/[string caseId](http:RequestContext ctx)
-        returns entity:CaseDetailsResponse|http:BadRequest|http:InternalServerError {
-
-        authorization:UserDataPayload|error userInfo = ctx.getWithType(authorization:HEADER_USER_INFO);
-        if userInfo is error {
-            return <http:InternalServerError>{
-                body: {
-                    message: ERR_MSG_USER_INFO_HEADER_NOT_FOUND
-                }
-            };
-        }
-
-        if projectId.trim().length() == 0 || caseId.trim().length() == 0 {
-            string customError = "Project ID and Case ID cannot be empty or whitespace";
-            log:printError(customError);
-            return <http:BadRequest>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        string cacheKey = string `${userInfo.email}:case:${projectId}:${caseId}`;
-        if userCache.hasKey(cacheKey) {
-            entity:CaseDetailsResponse|error cached = userCache.get(cacheKey).ensureType();
-            if cached is entity:CaseDetailsResponse {
-                return cached;
-            }
-        }
-
-        entity:CaseDetailsResponse|error caseDetails = entity:fetchCaseDetails(projectId, caseId, userInfo.idToken);
-        if caseDetails is error {
-            string customError = "Error retrieving case details";
-            log:printError(customError, caseDetails);
-            return <http:InternalServerError>{
-                body: {
-                    message: customError
-                }
-            };
-        }
-
-        error? cacheError = userCache.put(cacheKey, caseDetails);
-        if cacheError is error {
-            log:printWarn("Error writing case details to cache", cacheError);
-        }
-
-        return caseDetails;
+        return casesResponse;
     }
 }

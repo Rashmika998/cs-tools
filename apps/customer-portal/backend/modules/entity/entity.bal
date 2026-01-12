@@ -23,24 +23,6 @@ public isolated function fetchUserBasicInfo(string email, string idToken) return
     return csEntityClient->/users/me.get(generateHeaders(idToken));
 }
 
-# Fetch case filters for a specific project.
-#
-# + projectId - Unique ID of the project
-# + idToken - ID token for authorization
-# + return - Case filters object or error
-public isolated function fetchCasesFilters(string projectId, string idToken) returns CaseFiltersResponse|error {
-    return csEntityClient->/projects/[projectId]/cases/filters.get(generateHeaders(idToken));
-}
-
-# Fetch project overview from entity service.
-#
-# + projectId - Project ID to fetch overview for
-# + idToken - ID token for authorization
-# + return - Project overview or error
-public isolated function fetchProjectOverview(string projectId, string idToken) returns ProjectOverviewResponse|error {
-    return csEntityClient->/projects/[projectId]/overview.get(generateHeaders(idToken));
-}
-
 # Fetch project details by project ID.
 #
 # + projectId - Unique ID of the project
@@ -48,18 +30,6 @@ public isolated function fetchProjectOverview(string projectId, string idToken) 
 # + return - Project details object or error
 public isolated function fetchProjectDetails(string projectId, string idToken) returns ProjectDetailsResponse|error {
     return csEntityClient->/projects/[projectId].get(generateHeaders(idToken));
-}
-
-# Fetch case details for a specific case in a project.
-#
-# + projectId - Unique ID of the project
-# + caseId - Unique ID of the case
-# + idToken - ID token for authorization
-# + return - Case details object or error
-public isolated function fetchCaseDetails(string projectId, string caseId, string idToken)
-    returns CaseDetailsResponse|error {
-
-    return csEntityClient->/projects/[projectId]/cases/[caseId].get(generateHeaders(idToken));
 }
 
 # Search projects of the logged-in user.
@@ -71,24 +41,11 @@ public isolated function searchProjects(string idToken, ProjectRequest payload) 
     return csEntityClient->/projects.post(payload, generateHeaders(idToken));
 }
 
-# Fetch cases for a specific project with pagination and filters.
+# Search cases.
 #
 # + idToken - ID token for authorization
-# + projectId - Unique ID of the project
-# + filters - Optional filters and pagination parameters (offset, limit, contact, status, severity, product, category)
-# + return - Cases object or error
-public isolated function fetchCases(string idToken, string projectId, CaseFiltersRequest? filters = ())
-    returns CasesResponse|error {
-
-    CaseFiltersRequest requestBody = {
-        offset: filters?.offset ?: DEFAULT_OFFSET,
-        'limit: filters?.'limit ?: DEFAULT_LIMIT,
-        contact: (),
-        status: (),
-        severity: (),
-        product: (),
-        category: ()
-    };
-
-    return csEntityClient->/projects/[projectId]/cases/search.post(requestBody, generateHeaders(idToken));
+# + payload - Request body for searching cases
+# + return - Cases response or error
+public isolated function searchCases(string idToken, CaseRequestBody payload) returns CasesResponse|error {
+    return csEntityClient->/cases/search.post(payload, generateHeaders(idToken));
 }
