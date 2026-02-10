@@ -395,7 +395,7 @@ public type AttachmentsResponse record {|
     *Pagination;
 |};
 
-# Deployed product data.
+# Deployed product information.
 public type DeployedProduct record {|
     # ID
     string id;
@@ -418,7 +418,7 @@ public type DeployedProductsResponse record {|
     DeployedProduct[] deployedProducts;
 |};
 
-# Deployment data.
+# Deployment information.
 public type Deployment record {|
     # ID
     string id;
