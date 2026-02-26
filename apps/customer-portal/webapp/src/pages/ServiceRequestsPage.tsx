@@ -27,16 +27,12 @@ import {
   Box,
   Button,
   Stack,
-  Select,
-  MenuItem,
   Typography,
-  FormControl,
-  InputLabel,
   Pagination,
 } from "@wso2/oxygen-ui";
 import { ArrowLeft, Plus } from "@wso2/oxygen-ui-icons-react";
-import useGetCasesFilters from "@api/useGetCasesFilters";
 import useGetProjectCases from "@api/useGetProjectCases";
+import { CaseType } from "@constants/supportConstants";
 import ServiceRequestsList from "@components/support/service-requests/ServiceRequestsList";
 import ServiceRequestsSearchBar from "@components/support/service-requests/ServiceRequestsSearchBar";
 
@@ -60,31 +56,21 @@ export default function ServiceRequestsPage(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<ServiceRequestStatusFilter>("all");
-  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [page, setPage] = useState(1);
   const pageSize = 10;
-
-  const { data: filterMetadata } = useGetCasesFilters(projectId || "");
-
-  const serviceRequestTypeId = useMemo(() => {
-    const caseTypes = filterMetadata?.caseTypes ?? [];
-    const srType = caseTypes.find(
-      (t) => t.label === SERVICE_REQUEST_TYPE_LABEL,
-    );
-    return srType?.id;
-  }, [filterMetadata]);
 
   const caseSearchRequest = useMemo(
     () => ({
       filters: {
-        caseTypeIds: serviceRequestTypeId ? [serviceRequestTypeId] : undefined,
+        caseTypes: [CaseType.SERVICE_REQUEST],
+        searchQuery: searchTerm.trim() || undefined,
       },
       sortBy: {
         field: "createdOn" as const,
         order: "desc" as const,
       },
     }),
-    [serviceRequestTypeId],
+    [searchTerm],
   );
 
   const {
@@ -159,11 +145,11 @@ export default function ServiceRequestsPage(): JSX.Element {
     filtered.sort((a, b) => {
       const dateA = new Date(a.createdOn).getTime() || 0;
       const dateB = new Date(b.createdOn).getTime() || 0;
-      return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+      return dateB - dateA;
     });
-
+      
     return filtered;
-  }, [allServiceRequests, searchTerm, statusFilter, sortOrder]);
+  }, [allServiceRequests, searchTerm, statusFilter]);
 
   const totalItems = filteredServiceRequests.length;
 
@@ -180,11 +166,6 @@ export default function ServiceRequestsPage(): JSX.Element {
 
   const handleStatusFilterChange = (value: ServiceRequestStatusFilter) => {
     setStatusFilter(value);
-    setPage(1);
-  };
-
-  const handleSortChange = (value: "desc" | "asc") => {
-    setSortOrder(value);
     setPage(1);
   };
 
@@ -254,27 +235,7 @@ export default function ServiceRequestsPage(): JSX.Element {
           Showing {paginatedServiceRequests.length} of {totalItems} service
           requests
         </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="sort-label">Sort</InputLabel>
-            <Select<"desc" | "asc">
-              labelId="sort-label"
-              id="sort"
-              value={sortOrder}
-              label="Sort"
-              onChange={(e) =>
-                handleSortChange(e.target.value as "desc" | "asc")
-              }
-            >
-              <MenuItem value="desc">
-                <Typography variant="body2">Newest First</Typography>
-              </MenuItem>
-              <MenuItem value="asc">
-                <Typography variant="body2">Oldest First</Typography>
-              </MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
+        
       </Box>
 
       <ServiceRequestsList
