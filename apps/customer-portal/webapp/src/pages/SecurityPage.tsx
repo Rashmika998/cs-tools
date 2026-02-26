@@ -33,10 +33,6 @@ const SecurityPage = (): JSX.Element => {
     },
     [navigate, projectId],
   );
-  const [ setVulnerabilityTotalRecords] = useState<
-    number | undefined
-  >(undefined);
-  const [ setVulnerabilitiesError] = useState(false);
 
   const tabs = [
     {
@@ -53,10 +49,7 @@ const SecurityPage = (): JSX.Element => {
 
   return (
     <Box>
-      {/* <SecurityStats
-        totalRecords={vulnerabilityTotalRecords}
-        isError={vulnerabilitiesError}
-      /> */}
+      {/* <SecurityStats /> */}
 
       <Box>
         <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
@@ -64,8 +57,6 @@ const SecurityPage = (): JSX.Element => {
         <Box>
           {activeTab === "components" && (
             <ProductVulnerabilitiesTable
-              onTotalRecordsChange={setVulnerabilityTotalRecords}
-              onError={setVulnerabilitiesError}
               onVulnerabilityClick={handleVulnerabilityClick}
             />
           )}

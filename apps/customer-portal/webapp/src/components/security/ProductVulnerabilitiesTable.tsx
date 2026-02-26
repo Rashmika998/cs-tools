@@ -48,7 +48,8 @@ const ProductVulnerabilitiesTable = ({
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  const { data: metaData } = useGetVulnerabilitiesMetaData();
+  const { data: metaData, isError: isMetaDataError } =
+    useGetVulnerabilitiesMetaData();
   const severityOptions = useMemo(
     () =>
       metaData?.severities?.map((s) => ({ value: s.id, label: s.label })) ?? [],
@@ -205,6 +206,7 @@ const ProductVulnerabilitiesTable = ({
         fields={dynamicFilterFields}
         title="Filter Vulnerabilities"
         isLoading={!metaData}
+        isError={isMetaDataError}
       />
     </ListingTable.Container>
   );
