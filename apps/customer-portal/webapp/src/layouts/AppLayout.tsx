@@ -53,16 +53,21 @@ export default function AppLayout({ children }: AppLayoutProps): JSX.Element {
   const isCaseDetailsPage = /\/[^/]+\/support\/cases\/[^/]+$/.test(
     location.pathname,
   );
+  const isSecurityReportAnalysisDetailsPage =
+    /\/[^/]+\/security-center\/security-report-analysis\/[^/]+$/.test(
+      location.pathname,
+    );
   const isVulnerabilityDetailsPage =
-    /\/[^/]+\/security-center\/[^/]+$/.test(location.pathname);
+    /\/[^/]+\/security-center\/[^/]+$/.test(location.pathname) &&
+    !location.pathname.includes("security-report-analysis");
   const isPendingUpdatesPage = /\/[^/]+\/updates\/pending$/.test(
     location.pathname,
   );
-  const isUpdateLevelDetailsPage = /\/[^/]+\/updates\/pending\/level\/[^/]+$/.test(
-    location.pathname,
-  );
+  const isUpdateLevelDetailsPage =
+    /\/[^/]+\/updates\/pending\/level\/[^/]+$/.test(location.pathname);
   const isDetailsStylePage =
     isCaseDetailsPage ||
+    isSecurityReportAnalysisDetailsPage ||
     isVulnerabilityDetailsPage ||
     isPendingUpdatesPage ||
     isUpdateLevelDetailsPage;
@@ -126,9 +131,7 @@ export default function AppLayout({ children }: AppLayoutProps): JSX.Element {
                 overflow: "auto",
                 display: isDetailsStylePage ? "flex" : "block",
                 flexDirection: isDetailsStylePage ? "column" : undefined,
-                ...(isDetailsStylePage
-                  ? { px: 0, pb: 0, pt: 0 }
-                  : { p: 3 }),
+                ...(isDetailsStylePage ? { px: 0, pb: 0, pt: 0 } : { p: 3 }),
               }}
             >
               {children || (

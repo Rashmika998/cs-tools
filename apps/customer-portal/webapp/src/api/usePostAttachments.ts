@@ -14,7 +14,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  type UseMutationResult,
+} from "@tanstack/react-query";
 import { useAsgardeo } from "@asgardeo/react";
 import { useLogger } from "@hooks/useLogger";
 import { useAuthApiClient } from "@context/AuthApiContext";

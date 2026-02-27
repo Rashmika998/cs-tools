@@ -14,9 +14,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, IconButton } from "@wso2/oxygen-ui";
-import { Send } from "@wso2/oxygen-ui-icons-react";
-import { type JSX } from "react";
+import { Box, IconButton, Chip, Tooltip } from "@wso2/oxygen-ui";
+import { Send, Bold } from "@wso2/oxygen-ui-icons-react";
+import { type JSX, useState } from "react";
 import Editor from "@components/common/rich-text-editor/Editor";
 import { htmlToPlainText } from "@utils/richTextEditor";
 
@@ -26,6 +26,7 @@ interface ChatInputProps {
   onSend: () => void;
   isSending?: boolean;
   resetTrigger?: number;
+  filledSlots?: { label: string; value: string }[];
 }
 
 const CHAT_PLACEHOLDER = "Type your message...";
@@ -41,36 +42,64 @@ export default function ChatInput({
   setInputValue,
   onSend,
   isSending = false,
+  filledSlots = [],
   resetTrigger = 0,
 }: ChatInputProps): JSX.Element {
   const plainText = htmlToPlainText(inputValue).trim();
   const isSendDisabled = !plainText || isSending;
+  const [showToolbar, setShowToolbar] = useState(false);
 
   return (
     <Box sx={{ p: 2, bgcolor: "background.paper", flexShrink: 0 }}>
       <Box sx={{ display: "flex", gap: 1, alignItems: "flex-end" }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
+          {filledSlots.length > 0 && (
+            <Box sx={{ mb: 1, display: "flex", gap: 1, flexWrap: "wrap" }}>
+              {filledSlots.map((slot) => (
+                <Chip
+                  key={`${slot.label}:${slot.value}`}
+                  label={`${slot.label}: ${slot.value}`}
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                />
+              ))}
+            </Box>
+          )}
           <Editor
             id="novera-chat-input-editor"
             value={inputValue}
             onChange={setInputValue}
             placeholder={CHAT_PLACEHOLDER}
             minHeight={40}
-            showToolbar
+            showToolbar={showToolbar}
             toolbarVariant="describeIssue"
             onSubmitKeyDown={() => !isSendDisabled && onSend()}
             disabled={isSending}
             resetTrigger={resetTrigger}
           />
         </Box>
-        <IconButton
-          disabled={isSendDisabled}
-          onClick={onSend}
-          color="warning"
-          sx={{ flexShrink: 0 }}
-        >
-          <Send size={18} />
-        </IconButton>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Tooltip title={showToolbar ? "Hide formatting" : "Show formatting"}>
+            <IconButton
+              onClick={() => setShowToolbar(!showToolbar)}
+              color="default"
+              sx={{ flexShrink: 0 }}
+              aria-label={showToolbar ? "Hide formatting" : "Show formatting"}
+            >
+              <Bold size={18} />
+            </IconButton>
+          </Tooltip>
+          <IconButton
+            disabled={isSendDisabled}
+            onClick={onSend}
+            color="warning"
+            sx={{ flexShrink: 0 }}
+            aria-label="Send message"
+          >
+            <Send size={18} />
+          </IconButton>
+        </Box>
       </Box>
     </Box>
   );

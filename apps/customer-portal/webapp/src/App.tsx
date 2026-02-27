@@ -120,6 +120,10 @@ export default function App(): JSX.Element {
                       <Route path="security-center">
                         <Route index element={<SecurityPage />} />
                         <Route
+                          path="security-report-analysis/:caseId"
+                          element={<CaseDetailsPage />}
+                        />
+                        <Route
                           path=":vulnerabilityId"
                           element={<VulnerabilityDetailsPage />}
                         />
@@ -148,10 +152,7 @@ export default function App(): JSX.Element {
                         />
                       </Route>
                       {/* Settings */}
-                      <Route
-                        path="settings"
-                        element={<SettingsPage />}
-                      />
+                      <Route path="settings" element={<SettingsPage />} />
                     </Route>
                   </Route>
                 </Route>

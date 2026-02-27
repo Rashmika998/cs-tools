@@ -343,6 +343,9 @@ export interface CaseDetails {
   closedBy: CaseDetailsClosedBy | null;
   closeNotes: string | null;
   hasAutoClosed: boolean | null;
+  engineerEmail: string | null;
+  findingsResolved: number | null;
+  findingsTotal: number | null;
 }
 
 // Inline attachment for comment images (API shape).
@@ -743,13 +746,50 @@ export interface CaseClassificationResponse {
   };
 }
 
+/** Slot option definition for select-type user input collection. */
+export interface SelectSlotOption {
+  slot: string;
+  label: string;
+  options: string[];
+  type: "select";
+}
+
+/** Slot option definition for free-text user input collection. */
+export interface TextSlotOption {
+  slot: string;
+  label: string;
+  type: "text";
+  freeText?: true;
+}
+
+/** Slot option union for user input collection. */
+export type SlotOption = SelectSlotOption | TextSlotOption;
+
+/** Slot state containing filled/missing slots and available options. */
+export interface SlotState {
+  intentId?: string;
+  filledSlots?: Record<string, string>;
+  missingSlots?: string[];
+  isComplete?: boolean;
+  slotOptions?: SlotOption[];
+}
+
+/** Intent information from conversation response. */
+export interface ConversationIntent {
+  intentId?: string;
+  intentLabel?: string;
+  confidence?: number;
+  severity?: string;
+  caseType?: string;
+}
+
 /** Response from POST /projects/:projectId/conversations (Novera chat). */
 export interface ConversationResponse {
   message: string;
   sessionId: string;
   conversationId: string;
-  intent: unknown;
-  slotState: unknown;
+  intent?: ConversationIntent;
+  slotState?: SlotState;
   actions: unknown;
   recommendations?: {
     query: string;

@@ -16,6 +16,7 @@
 
 import { Box, Paper, Typography, alpha, useTheme } from "@wso2/oxygen-ui";
 import { useMemo, useState, type JSX } from "react";
+import { useLocation } from "react-router";
 import type { CaseDetails } from "@models/responses";
 import useGetCaseAttachments from "@api/useGetCaseAttachments";
 import { useGetCallRequests } from "@api/useGetCallRequests";
@@ -25,11 +26,13 @@ import {
   getStatusIconElement,
   getInitials,
   mapSeverityToDisplay,
+  isSecurityReportAnalysisType,
 } from "@utils/support";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import CaseDetailsBackButton from "@case-details/CaseDetailsBackButton";
 import CaseDetailsHeader from "@case-details/CaseDetailsHeader";
 import CaseDetailsActionRow from "@case-details/CaseDetailsActionRow";
+import SecurityReportAnalysisHeader from "@case-details/SecurityReportAnalysisHeader";
 import CaseDetailsTabs from "@case-details/CaseDetailsTabs";
 import CaseDetailsTabPanels from "@case-details/CaseDetailsTabPanels";
 import CaseDetailsSkeleton from "@case-details/CaseDetailsSkeleton";
@@ -60,8 +63,12 @@ export default function CaseDetailsContent({
   projectId = "",
 }: CaseDetailsContentProps): JSX.Element {
   const theme = useTheme();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState(0);
   const [focusMode, setFocusMode] = useState(false);
+
+  const isSecurityReportAnalysisUrl =
+    /(^|\/)security-report-analysis(\/|$)/.test(location.pathname);
 
   const statusLabel = data?.status?.label;
   const severityLabel = data?.severity?.label;
@@ -101,6 +108,8 @@ export default function CaseDetailsContent({
   const assignedEngineer = data?.assignedEngineer;
   const engineerInitials = getInitials(assignedEngineer);
 
+  const isSecurityReportAnalysis = isSecurityReportAnalysisType(data?.type);
+
   if (isLoading) {
     return (
       <Box>
@@ -109,7 +118,7 @@ export default function CaseDetailsContent({
             onClick={onBack}
             sx={{ mb: 2, ml: -0.5, alignSelf: "flex-start" }}
           />
-          <CaseDetailsSkeleton />
+          <CaseDetailsSkeleton hideActionRow={isSecurityReportAnalysisUrl} />
         </Paper>
       </Box>
     );
@@ -171,16 +180,20 @@ export default function CaseDetailsContent({
                 isLoading={isLoading}
               />
 
-              <CaseDetailsActionRow
-                assignedEngineer={assignedEngineer}
-                engineerInitials={engineerInitials}
-                statusLabel={statusLabel}
-                closedOn={data?.closedOn}
-                onOpenRelatedCase={onOpenRelatedCase}
-                projectId={resolvedProjectId}
-                caseId={caseId}
-                isLoading={isLoading}
-              />
+              {isSecurityReportAnalysis ? (
+                <SecurityReportAnalysisHeader data={data} />
+              ) : (
+                <CaseDetailsActionRow
+                  assignedEngineer={assignedEngineer}
+                  engineerInitials={engineerInitials}
+                  statusLabel={statusLabel}
+                  closedOn={data?.closedOn}
+                  onOpenRelatedCase={onOpenRelatedCase}
+                  projectId={resolvedProjectId}
+                  caseId={caseId}
+                  isLoading={isLoading}
+                />
+              )}
             </>
           )
         )}

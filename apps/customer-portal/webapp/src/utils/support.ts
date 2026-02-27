@@ -29,8 +29,11 @@ import {
   ChatStatus,
   CaseStatus,
   CallRequestStatus,
+  CaseType,
   CaseSeverityLevel,
+  type CaseTypeInput,
 } from "@constants/supportConstants";
+import { CaseReportType } from "@constants/securityConstants";
 import { SEVERITY_LABEL_TO_DISPLAY } from "@constants/dashboardConstants";
 import type { CaseComment, MetadataItem } from "@models/responses";
 import { alpha, colors, type Theme } from "@wso2/oxygen-ui";
@@ -76,6 +79,90 @@ export function getIncidentAndQueryIds(caseTypes?: MetadataItem[]): {
     else if (/^query$/i.test(n) && queryId === undefined) queryId = ct.id;
   }
   return { incidentId, queryId };
+}
+
+/**
+ * Detects whether a case type represents Security Report Analysis.
+ * Prefers stable id matching and falls back to normalized label matching.
+ */
+export function isSecurityReportAnalysisType(type: CaseTypeInput): boolean {
+  if (!type) return false;
+
+  const target = CaseType.SECURITY_REPORT_ANALYSIS.toLowerCase().replace(
+    /_/g,
+    "",
+  );
+
+  // Helper to normalize any string (id, label, or raw string)
+  const normalize = (val: string) =>
+    val
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "")
+      .trim();
+
+  switch (typeof type) {
+    case "string":
+      return normalize(type) === target;
+
+    case "object":
+      switch (true) {
+        case type.id === CaseType.SECURITY_REPORT_ANALYSIS:
+          return true;
+        case !!type.label:
+          return normalize(type.label!) === target;
+        default:
+          return false;
+      }
+
+    default:
+      return false;
+  }
+}
+
+/**
+ * Comprehensive check to determine if a created case is a security report.
+ * Consolidates multiple possible indicators into a single check.
+ *
+ * @param {object} caseData - The case data object returned from the API
+ * @param {boolean} isInitialSecurityReport - Whether the case was initially created as a security report
+ * @returns {boolean} True if the case is a security report
+ */
+export function isCreatedCaseSecurityReport(
+  caseData: {
+    isSecurityReport?: boolean;
+    reportType?: string;
+    type?: CaseTypeInput | { id?: string | null; label?: string | null } | null;
+  },
+  isInitialSecurityReport: boolean,
+): boolean {
+  // Check multiple indicators using a switch-based approach
+  switch (true) {
+    case isInitialSecurityReport:
+      return true;
+    case caseData.isSecurityReport === true:
+      return true;
+    case caseData.reportType === CaseReportType.SECURITY:
+      return true;
+    case typeof caseData.type === "string":
+      return caseData.type === CaseType.SECURITY_REPORT_ANALYSIS;
+    case caseData.type !== null && caseData.type !== undefined:
+      // Type is object - use the existing type checker
+      if (typeof caseData.type === "object") {
+        const typeObj = caseData.type as {
+          id?: string | null;
+          label?: string | null;
+        };
+        if (typeObj.id != null || typeObj.label != null) {
+          return isSecurityReportAnalysisType({
+            id: typeObj.id ?? "",
+            label: typeObj.label ?? "",
+          });
+        }
+      }
+      return false;
+    default:
+      return false;
+  }
 }
 
 /**

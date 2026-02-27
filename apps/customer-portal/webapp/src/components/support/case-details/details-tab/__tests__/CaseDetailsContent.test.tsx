@@ -45,6 +45,9 @@ const mockCaseDetails = {
   closedBy: null,
   closeNotes: null,
   hasAutoClosed: null,
+  engineerEmail: null,
+  findingsResolved: null,
+  findingsTotal: null,
 };
 
 vi.mock("@api/useGetCasesFilters", () => ({
@@ -84,13 +87,15 @@ vi.mock("@case-details/CaseDetailsTabPanels", () => ({
   default: () => <div data-testid="tab-panels">Tab panels</div>,
 }));
 
-function renderContent(props: {
-  data?: typeof mockCaseDetails;
-  isLoading?: boolean;
-  isError?: boolean;
-  caseId?: string;
-  onBack?: () => void;
-} = {}) {
+function renderContent(
+  props: {
+    data?: typeof mockCaseDetails;
+    isLoading?: boolean;
+    isError?: boolean;
+    caseId?: string;
+    onBack?: () => void;
+  } = {},
+) {
   return render(
     <ThemeProvider theme={createTheme()}>
       <CaseDetailsContent

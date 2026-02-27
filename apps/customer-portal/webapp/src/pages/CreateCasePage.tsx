@@ -14,7 +14,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, Button, Grid } from "@wso2/oxygen-ui";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  Typography,
+  Grid,
+} from "@wso2/oxygen-ui";
 import { CircleCheck } from "@wso2/oxygen-ui-icons-react";
 import {
   useState,
@@ -31,7 +39,6 @@ import useGetProjectDetails from "@api/useGetProjectDetails";
 import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
 import { useGetDeploymentsProducts } from "@api/useGetDeploymentsProducts";
 import { usePostCase } from "@api/usePostCase";
-import { usePostAttachments } from "@api/usePostAttachments";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
 import { useSuccessBanner } from "@context/success-banner/SuccessBannerContext";
@@ -53,11 +60,13 @@ import {
   resolveProductId,
   shouldAddClassificationProductToOptions,
 } from "@utils/caseCreation";
+import { isCreatedCaseSecurityReport } from "@utils/support";
 import {
   CaseSeverity,
   CaseSeverityLevel,
   CaseType,
 } from "@constants/supportConstants";
+import { SecurityTab } from "@constants/securityConstants";
 import { escapeHtml, htmlToPlainText } from "@utils/richTextEditor";
 import UploadAttachmentModal from "@components/support/case-details/attachments-tab/UploadAttachmentModal";
 
@@ -97,7 +106,6 @@ export interface RelatedCaseState {
   number: string;
   title: string;
   description: string;
-  /** Parent case deployment (development type); shown disabled in form. */
   deploymentId?: string;
   deploymentLabel?: string;
 }
@@ -111,7 +119,12 @@ export default function CreateCasePage(): JSX.Element {
     skipChat?: boolean;
   } | null;
   const relatedCase = locationStateRaw?.relatedCase;
-  const skipChat = !!locationStateRaw?.skipChat;
+
+  // Check if creating a security report analysis case
+  const searchParams = new URLSearchParams(location.search);
+  const caseType = searchParams.get("type");
+  const isSecurityReport = caseType === CaseType.SECURITY_REPORT_ANALYSIS;
+  const skipChat = !!locationStateRaw?.skipChat || isSecurityReport;
   const { showLoader, hideLoader } = useLoader();
   const { data: projectDetails, isLoading: isProjectLoading } =
     useGetProjectDetails(projectId || "");
@@ -132,7 +145,7 @@ export default function CreateCasePage(): JSX.Element {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const attachmentNamesRef = useRef<Map<string, string>>(new Map());
   const attachmentIdCounterRef = useRef(0);
-  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
+  const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
   const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
   const { data: projectDeployments, isLoading: isDeploymentsLoading } =
     useGetProjectDeployments(projectId || "");
@@ -169,7 +182,6 @@ export default function CreateCasePage(): JSX.Element {
   const { showError } = useErrorBanner();
   const { showSuccess } = useSuccessBanner();
   const { mutate: postCase, isPending: isCreatePending } = usePostCase();
-  const postAttachments = usePostAttachments();
 
   useEffect(() => {
     if (deploymentProductsError) {
@@ -492,7 +504,20 @@ export default function CreateCasePage(): JSX.Element {
     });
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const fileToBase64Content = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = typeof reader.result === "string" ? reader.result : "";
+        const commaIndex = base64.indexOf(",");
+        resolve(commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64);
+      };
+      reader.onerror = () =>
+        reject(new Error(`Failed to read file: ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!projectId) return;
 
@@ -504,6 +529,11 @@ export default function CreateCasePage(): JSX.Element {
     }
     if (!descriptionPlain) {
       showError("Please enter a description.");
+      return;
+    }
+
+    if (isSecurityReport && attachments.length === 0) {
+      showError("Please attach at least one security report file.");
       return;
     }
 
@@ -523,20 +553,49 @@ export default function CreateCasePage(): JSX.Element {
       return;
     }
 
-    const issueTypeKey = resolveIssueTypeKey(issueType, filters?.issueTypes);
-    if (!issueTypeKey) {
-      showError("Please select an issue type.");
-      return;
+    // Skip issue type and severity validation for security reports
+    let issueTypeKey: number | undefined;
+    let severityKey: number | undefined;
+
+    if (!isSecurityReport) {
+      issueTypeKey = resolveIssueTypeKey(issueType, filters?.issueTypes);
+      if (!issueTypeKey) {
+        showError("Please select an issue type.");
+        return;
+      }
+      const parsedSeverity = parseInt(severity, 10);
+      if (Number.isNaN(parsedSeverity)) {
+        showError("Please select a severity.");
+        return;
+      }
+      severityKey = parsedSeverity;
     }
-    const parsedSeverity = parseInt(severity, 10);
-    if (Number.isNaN(parsedSeverity)) {
-      showError("Please select a severity.");
-      return;
+
+    const encodedAttachments: string[] = [];
+    if (attachments.length > 0) {
+      setIsPreparingAttachments(true);
+      try {
+        for (const item of attachments) {
+          const encodedAttachment = await fileToBase64Content(item.file);
+          encodedAttachments.push(encodedAttachment);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Failed to process attachments. Please try again.";
+        showError(message);
+        return;
+      } finally {
+        setIsPreparingAttachments(false);
+      }
     }
-    const severityKey = parsedSeverity;
 
     const payload: CreateCaseRequest = {
-      caseType: CaseType.DEFAULT_CASE,
+      attachments: encodedAttachments,
+      caseType: isSecurityReport
+        ? CaseType.SECURITY_REPORT_ANALYSIS
+        : CaseType.CASE,
       deploymentId: String(deploymentMatch.id),
       description: descriptionPlain,
       issueTypeKey,
@@ -552,70 +611,23 @@ export default function CreateCasePage(): JSX.Element {
     postCase(payload, {
       onSuccess: async (data) => {
         const caseId = data.id;
+        const createdCase = data as {
+          isSecurityReport?: boolean;
+          reportType?: string;
+          type?: string | { id?: string | null; label?: string | null } | null;
+        };
+        const isCreatedSecurityReport = isCreatedCaseSecurityReport(
+          createdCase,
+          isSecurityReport,
+        );
 
-        if (attachments.length > 0) {
-          setIsUploadingAttachments(true);
-          try {
-            const uploadPromises = attachments.map((item) => {
-              const displayName =
-                attachmentNamesRef.current.get(item.id) || item.file.name;
-              return new Promise<void>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = async () => {
-                  try {
-                    const base64 =
-                      typeof reader.result === "string" ? reader.result : "";
-                    const commaIndex = base64.indexOf(",");
-                    const content =
-                      commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64;
-
-                    await postAttachments.mutateAsync({
-                      caseId,
-                      body: {
-                        referenceType: "case",
-                        name: displayName,
-                        type: item.file.type || "application/octet-stream",
-                        content,
-                      },
-                    });
-                    resolve();
-                  } catch (err) {
-                    reject(err);
-                  }
-                };
-                reader.onerror = () =>
-                  reject(new Error(`Failed to read file: ${item.file.name}`));
-                reader.readAsDataURL(item.file);
-              });
-            });
-
-            const results = await Promise.allSettled(uploadPromises);
-            const fulfilled = results.filter(
-              (r) => r.status === "fulfilled",
-            ).length;
-            const rejected = results.filter(
-              (r) => r.status === "rejected",
-            ).length;
-
-            if (rejected === 0) {
-              showSuccess("Case created and attachments uploaded successfully");
-            } else if (fulfilled === 0) {
-              showError(
-                "Case created, but all attachment uploads failed. Please try again.",
-              );
-            } else {
-              showError(
-                `Case created, but ${rejected} of ${results.length} attachment(s) failed to upload.`,
-              );
-            }
-          } finally {
-            setIsUploadingAttachments(false);
-          }
-          sessionStorage.removeItem(STORAGE_KEY);
-          navigate(`/${projectId}/support/cases/${caseId}`);
+        showSuccess("Case created successfully");
+        sessionStorage.removeItem(STORAGE_KEY);
+        if (isCreatedSecurityReport) {
+          navigate(
+            `/${projectId}/security-center/security-report-analysis/${caseId}?tab=${SecurityTab.VULNERABILITIES}`,
+          );
         } else {
-          showSuccess("Case created successfully");
-          sessionStorage.removeItem(STORAGE_KEY);
           navigate(`/${projectId}/support/cases/${caseId}`);
         }
       },
@@ -708,6 +720,7 @@ export default function CreateCasePage(): JSX.Element {
             isRelatedCaseMode={noAiMode}
             isTitleDisabled={!!relatedCase}
             relatedCaseNumber={relatedCase?.number ?? ""}
+            isSecurityReport={isSecurityReport}
           />
 
           {/* form actions container */}
@@ -722,20 +735,22 @@ export default function CreateCasePage(): JSX.Element {
                 isProjectLoading ||
                 isFiltersLoading ||
                 isCreatePending ||
-                isUploadingAttachments ||
+                isPreparingAttachments ||
                 !projectId ||
                 !selectedDeploymentId ||
                 deploymentProductsLoading ||
                 deploymentProductsError
               }
             >
-              {isCreatePending || isUploadingAttachments
-                ? isUploadingAttachments
-                  ? "Uploading Attachments..."
-                  : "Creating..."
-                : relatedCase
-                  ? "Create Related Case"
-                  : "Create Support Case"}
+              {isPreparingAttachments
+                ? "Preparing Attachments..."
+                : isCreatePending
+                  ? "Creating..."
+                  : isSecurityReport
+                    ? "Submit Security Report"
+                    : relatedCase
+                      ? "Create Related Case"
+                      : "Create Support Case"}
             </Button>
           </Box>
         </Box>
@@ -763,13 +778,21 @@ export default function CreateCasePage(): JSX.Element {
       {/* header section */}
       <CaseCreationHeader
         onBack={handleBack}
-        hideAiChip={noAiMode}
+        hideAiChip={noAiMode || isSecurityReport}
         backLabel="Back"
-        title={relatedCase ? "Create Related Case" : undefined}
+        title={
+          isSecurityReport
+            ? "Submit Security Vulnerability Report for Analysis"
+            : relatedCase
+              ? "Create Related Case"
+              : undefined
+        }
         subtitle={
-          skipChatMode || relatedCase
-            ? "Fill in the case details below and submit"
-            : "Please review and edit the auto-populated information before submitting"
+          isSecurityReport
+            ? "Upload your security vulnerability report and provide details for analysis"
+            : skipChatMode || relatedCase
+              ? "Fill in the case details below and submit"
+              : "Please review and edit the auto-populated information before submitting"
         }
       />
 
@@ -781,6 +804,30 @@ export default function CreateCasePage(): JSX.Element {
         onClose={() => setIsAttachmentModalOpen(false)}
         onSelect={handleSelectAttachment}
       />
+
+      <Dialog
+        open={isSecurityReport && (isPreparingAttachments || isCreatePending)}
+        onClose={() => undefined}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogContent
+          sx={{
+            py: 4,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+          }}
+        >
+          <CircularProgress size={28} />
+          <Typography variant="body2" color="text.secondary" textAlign="center">
+            {isPreparingAttachments
+              ? "Preparing report attachments..."
+              : "Submitting security report..."}
+          </Typography>
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 }

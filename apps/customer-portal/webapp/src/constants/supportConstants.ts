@@ -130,6 +130,7 @@ export const CaseType = {
   SERVICE_REQUEST: "service_request",
   SECURITY_REPORT_ANALYSIS: "security_report_analysis",
   ANNOUNCEMENT: "announcement",
+  CASE: "case",
 } as const;
 
 export type CaseType = (typeof CaseType)[keyof typeof CaseType];
@@ -557,3 +558,12 @@ export type CommentType = (typeof CommentType)[keyof typeof CommentType];
 
 // Line count threshold for showing expand button in support activity section.
 export const COLLAPSE_LINE_THRESHOLD = 4;
+
+// Case type object interface.
+export interface CaseTypeObject {
+  id: string;
+  label: string;
+}
+
+// Case type input.
+export type CaseTypeInput = CaseTypeObject | string | null | undefined;
