@@ -18,8 +18,10 @@ import {
   Box,
   Button,
   CircularProgress,
+  Divider,
   Paper,
   Typography,
+  TextField,
 } from "@wso2/oxygen-ui";
 import { Bot, FileText, User } from "@wso2/oxygen-ui-icons-react";
 import ReactMarkdown from "react-markdown";
@@ -44,6 +46,8 @@ interface ChatMessageBubbleProps {
   message: Message;
   onCreateCase?: () => void;
   isCreateCaseLoading?: boolean;
+  onSlotSelection?: (messageId: string, slot: string, value: string) => void;
+  onChooseSlots?: (messageId: string) => void;
 }
 
 /** Typography mapping for markdown elements (bot messages). */
@@ -138,6 +142,8 @@ export default function ChatMessageBubble({
   message,
   onCreateCase,
   isCreateCaseLoading = false,
+  onSlotSelection,
+  onChooseSlots,
 }: ChatMessageBubbleProps): JSX.Element {
   const isUser = message.sender === "user";
 
@@ -228,8 +234,171 @@ export default function ChatMessageBubble({
             </Box>
           )}
           {!isUser &&
+            message.slotState?.slotOptions &&
+            message.slotState.slotOptions.length > 0 &&
+            message.slotState.slotOptions.some(
+              (slotOption) =>
+                slotOption.options && slotOption.options.length > 0,
+            ) && (
+              <Box sx={{ mt: 2 }}>
+                {message.slotState.slotOptions
+                  .filter(
+                    (slotOption) =>
+                      slotOption.options && slotOption.options.length > 0,
+                  )
+                  .map((slotOption) => {
+                    const currentValue =
+                      message.slotState?.filledSlots?.[slotOption.slot] || "";
+
+                    return (
+                      <Box key={slotOption.slot} sx={{ mb: 1.5 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{ fontWeight: 600, mb: 0.5 }}
+                        >
+                          {slotOption.label}:
+                        </Typography>
+                        <Box
+                          component="ul"
+                          sx={{ m: 0, pl: 2.5, listStyleType: "disc" }}
+                        >
+                          {slotOption.type === "select" &&
+                          slotOption.options ? (
+                            slotOption.options.map((option) => (
+                              <Typography
+                                key={option}
+                                component="li"
+                                variant="body2"
+                                onClick={() => {
+                                  if (onSlotSelection) {
+                                    onSlotSelection(
+                                      message.id,
+                                      slotOption.slot,
+                                      option,
+                                    );
+                                  }
+                                }}
+                                sx={{
+                                  cursor: "pointer",
+                                  color:
+                                    currentValue === option
+                                      ? "primary.main"
+                                      : "text.primary",
+                                  fontWeight:
+                                    currentValue === option ? 600 : 400,
+                                  "&:hover": {
+                                    color: "primary.main",
+                                  },
+                                  mb: 0.5,
+                                }}
+                              >
+                                {option}
+                                {currentValue === option && " ✓"}
+                              </Typography>
+                            ))
+                          ) : (
+                            <TextField
+                              value={currentValue}
+                              onChange={(e) => {
+                                if (onSlotSelection) {
+                                  onSlotSelection(
+                                    message.id,
+                                    slotOption.slot,
+                                    e.target.value,
+                                  );
+                                }
+                              }}
+                              size="small"
+                              fullWidth
+                              placeholder={`Enter ${slotOption.label.toLowerCase()}`}
+                            />
+                          )}
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                {(() => {
+                  // Only check slots that are actually displayed (not empty)
+                  const displayedSlotOptions =
+                    message.slotState.slotOptions.filter(
+                      (slotOption) =>
+                        slotOption.options && slotOption.options.length > 0,
+                    );
+
+                  const allSlotsFilled = displayedSlotOptions.every(
+                    (option) => {
+                      const value =
+                        message.slotState?.filledSlots?.[option.slot];
+                      return value && value.trim() !== "";
+                    },
+                  );
+
+                  const showCreateCase =
+                    message.showCreateCaseAction || message.isError;
+
+                  return (
+                    <Box
+                      sx={{
+                        mt: 2,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 2,
+                      }}
+                    >
+                      <Button
+                        variant="contained"
+                        size="small"
+                        color="primary"
+                        disabled={!allSlotsFilled}
+                        onClick={() => {
+                          if (onChooseSlots) {
+                            onChooseSlots(message.id);
+                          }
+                        }}
+                      >
+                        Choose
+                      </Button>
+                      {showCreateCase && onCreateCase && (
+                        <>
+                          <Divider
+                            orientation="vertical"
+                            flexItem
+                            sx={{ height: "24px", alignSelf: "center" }}
+                          />
+                          {isCreateCaseLoading ? (
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              color="warning"
+                              disabled
+                              startIcon={
+                                <CircularProgress color="inherit" size={14} />
+                              }
+                            >
+                              Processing
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              color="warning"
+                              onClick={onCreateCase}
+                              startIcon={<FileText size={14} />}
+                            >
+                              Create Case
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </Box>
+                  );
+                })()}
+              </Box>
+            )}
+          {!isUser &&
             (message.showCreateCaseAction || message.isError) &&
             onCreateCase &&
+            !message.slotState?.slotOptions?.length &&
             (isCreateCaseLoading ? (
               <Box
                 sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}
