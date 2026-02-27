@@ -151,6 +151,8 @@ public type CaseCreatePayload record {|
     IdString catalogItemId?;
     # Variables for service request (required for SERVICE_REQUEST)
     Variable[] variables?;
+    # List of attachments
+    string[] attachments?;
 |};
 
 # Response from creating a case.

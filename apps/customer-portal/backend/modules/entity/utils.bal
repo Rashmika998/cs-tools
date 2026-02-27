@@ -188,16 +188,22 @@ public isolated function validateCaseCreatePayload(CaseCreatePayload payload) re
         }
     } else if caseType == SERVICE_REQUEST {
         if payload.catalogId is () {
-            return "Catalog ID is required for service request case.";
+            return "Catalog is required for service request case.";
         }
         if payload.catalogItemId is () {
-            return "Catalog Item ID is required for service request case.";
+            return "Catalog Item is required for service request case.";
         }
         Variable[]? variables = payload.variables;
         if variables is () || variables.length() == 0 {
             return "At least one variable is required for service request case.";
         }
-    } else if caseType == ANNOUNCEMENT || caseType == SECURITY_REPORT_ANALYSIS {
+    } else if caseType == SECURITY_REPORT_ANALYSIS {
+        string[]? attachments = payload.attachments;
+        if attachments is () || attachments.length() == 0 {
+            return "At least one attachment is required for security report analysis case.";
+        }
+    } else {
         return string `Case type ${caseType} is not supported.`;
     }
+    return;
 }
