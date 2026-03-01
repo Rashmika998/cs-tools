@@ -134,8 +134,8 @@ export const getRecentActivityItems = (
     {
       label: "Total Time Logged",
       value:
-        activity?.totalTimeLogged !== undefined
-          ? `${convertMinutesToHours(activity.totalTimeLogged)} hrs`
+        activity?.totalHours !== undefined
+          ? `${convertMinutesToHours(activity.totalHours)} hrs`
           : "N/A",
       type: "text",
     },

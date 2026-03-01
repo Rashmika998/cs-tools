@@ -666,6 +666,25 @@ const SecurityReportAnalysis = (): JSX.Element => {
                           Created {formatDateTime(caseItem.createdOn) || "--"}
                         </Typography>
                       </Box>
+                      {caseItem.createdBy && (
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <User size={14} />
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ lineHeight: 1 }}
+                          >
+                            Created by {caseItem.createdBy}
+                          </Typography>
+                        </Box>
+                      )}
                       {(() => {
                         const assignedLabel = getAssignedEngineerLabel(
                           caseItem.assignedEngineer,

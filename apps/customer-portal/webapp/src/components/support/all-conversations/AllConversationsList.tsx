@@ -207,7 +207,7 @@ export default function AllConversationsList({
                     color="text.secondary"
                     sx={{ lineHeight: 1 }}
                   >
-                    by {conv.createdBy}
+                    Created by {conv.createdBy}
                   </Typography>
                 )}
               </Stack>

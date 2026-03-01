@@ -237,9 +237,9 @@ export interface CaseListItem {
   internalId: string;
   number: string;
   createdOn: string;
+  createdBy?: string;
   title: string;
   description: string;
-  /** API may return string or { id, label? } or { id, name? } object. */
   assignedEngineer:
     | string
     | { id: string; label?: string; name?: string }
@@ -397,7 +397,7 @@ export interface ProjectStatsResponse {
     slaStatus: string;
   };
   recentActivity: {
-    totalTimeLogged: number;
+    totalHours: number;
     billableHours: number;
     lastDeploymentOn: string;
     systemHealth?: string;
