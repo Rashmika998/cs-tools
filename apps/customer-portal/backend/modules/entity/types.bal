@@ -126,7 +126,7 @@ public type ProjectResponse record {|
 # Payload for creating a case.
 public type CaseCreatePayload record {|
     # Case type
-    CaseType 'type?;
+    CaseType 'type;
     # Project ID
     IdString projectId;
     # Deployment ID
