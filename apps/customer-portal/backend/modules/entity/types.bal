@@ -126,16 +126,16 @@ public type ProjectResponse record {|
 # Payload for creating a case.
 public type CaseCreatePayload record {|
     # Case type
-    CaseType caseType?;
+    CaseType 'type;
     # Project ID
     IdString projectId;
     # Deployment ID
     IdString deploymentId;
     # Deployed product ID
     IdString deployedProductId?;
-    # Case title (required for DEFAULT_CASE)
+    # Case title (required for DEFAULT_CASE and SECURITY_REPORT_ANALYSIS)
     string title?;
-    # Case description (required for DEFAULT_CASE)
+    # Case description (required for DEFAULT_CASE and SECURITY_REPORT_ANALYSIS)
     string description?;
     # Issue type ID (required for DEFAULT_CASE)
     int issueTypeKey?;
@@ -152,7 +152,15 @@ public type CaseCreatePayload record {|
     # Variables for service request (required for SERVICE_REQUEST)
     Variable[] variables?;
     # List of attachments
-    string[] attachments?;
+    CaseCreateAttachment[] attachments?;
+|};
+
+# Attachment for creating a case.
+public type CaseCreateAttachment record {|
+    # File name
+    string name;
+    # Base64 encoded file content
+    string file;
 |};
 
 # Response from creating a case.
