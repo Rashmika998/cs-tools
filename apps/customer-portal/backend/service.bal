@@ -633,8 +633,8 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
                 slaStatus: projectActivityStats is entity:ProjectStatsResponse ? projectActivityStats.slaStatus : ()
             },
             recentActivity: {
-                totalTimeLogged:
-                    projectActivityStats is entity:ProjectStatsResponse ? projectActivityStats.totalTimeLogged : (),
+                totalHours:
+                    projectActivityStats is entity:ProjectStatsResponse ? projectActivityStats.totalHours : (),
                 billableHours:
                     projectActivityStats is entity:ProjectStatsResponse ? projectActivityStats.billableHours : (),
                 lastDeploymentOn:
@@ -1095,7 +1095,8 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
                     filters: {
                         projectIds: [id],
                         stateKeys: payload.filters?.stateKeys,
-                        searchQuery: payload.filters?.searchQuery
+                        searchQuery: payload.filters?.searchQuery,
+                        createdByMe: payload.filters?.createdByMe
                     },
                     sortBy: payload.sortBy,
                     pagination: payload.pagination

@@ -244,6 +244,8 @@ public type Case record {|
     string number;
     # Created date and time
     string createdOn;
+    # Created by (User email)
+    string createdBy;
     # Case title
     string? title;
     # Case description
@@ -254,6 +256,10 @@ public type Case record {|
     ChoiceListItem? state;
     # Severity information
     ChoiceListItem? severity;
+    # Catalog information (if the case is a service request)
+    ReferenceTableItem? catalog;
+    # Catalog item information (if the case is a service request)
+    ReferenceTableItem? catalogItem;
     json...;
 |};
 
@@ -428,8 +434,8 @@ public type ProjectMetadataResponse record {|
 
 # Project statistics response.
 public type ProjectStatsResponse record {|
-    # Total time logged
-    decimal totalTimeLogged?;
+    # Total hours logged
+    decimal totalHours?;
     # Billable hours
     decimal billableHours?;
     # SLA status
@@ -1166,6 +1172,8 @@ public type ConversationSearchPayload record {|
         int[] stateKeys?;
         # Search query for conversations
         string searchQuery?;
+        # Conversations created by logged in user
+        boolean createdByMe?;
     } filters?;
     # Sort configuration
     record {

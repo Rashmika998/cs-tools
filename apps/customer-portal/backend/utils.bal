@@ -56,12 +56,15 @@ public isolated function searchCases(string idToken, string projectId, types:Cas
         let entity:ReferenceTableItem? conversation = case.conversation
         let entity:ChoiceListItem? severity = case.severity
         let entity:ChoiceListItem? state = case.state
+        let entity:ReferenceTableItem? catalog = case.catalog
+        let entity:ReferenceTableItem? catalogItem = case.catalogItem
         select {
             id: case.id,
             internalId: case.internalId,
             number: case.number,
             title: case.title,
             createdOn: case.createdOn,
+            createdBy: case.createdBy,
             description: case.description,
             project: project != () ? {id: project.id, label: project.name} : (),
             'type: 'type != () ? {id: 'type.id, label: 'type.name} : (),
@@ -72,7 +75,9 @@ public isolated function searchCases(string idToken, string projectId, types:Cas
             parentCase: parentCase != () ? {id: parentCase.id, label: parentCase.name} : (),
             conversation: conversation != () ? {id: conversation.id, label: conversation.name} : (),
             severity: severity != () ? {id: severity.id.toString(), label: severity.label} : (),
-            status: state != () ? {id: state.id.toString(), label: state.label} : ()
+            status: state != () ? {id: state.id.toString(), label: state.label} : (),
+            catalog: catalog != () ? {id: catalog.id, label: catalog.name} : (),
+            catalogItem: catalogItem != () ? {id: catalogItem.id, label: catalogItem.name} : ()
         };
 
     return {
@@ -494,6 +499,8 @@ public isolated function mapCaseResponse(entity:CaseResponse response) returns t
     entity:ReferenceTableItem? conversation = response.conversation;
     entity:ChoiceListItem? severity = response.severity;
     entity:ChoiceListItem? state = response.state;
+    entity:ReferenceTableItem? catalog = response.catalog;
+    entity:ReferenceTableItem? catalogItem = response.catalogItem;
 
     return {
         id: response.id,
@@ -502,6 +509,7 @@ public isolated function mapCaseResponse(entity:CaseResponse response) returns t
         title: response.title,
         description: response.description,
         createdOn: response.createdOn,
+        createdBy: response.createdBy,
         slaResponseTime: response.slaResponseTime,
         project: project != () ? {id: project.id, label: project.name} : (),
         'type: caseType != () ? {id: caseType.id, label: caseType.name} : (),
@@ -511,6 +519,8 @@ public isolated function mapCaseResponse(entity:CaseResponse response) returns t
         conversation: conversation != () ? {id: conversation.id, label: conversation.name} : (),
         severity: severity != () ? {id: severity.id.toString(), label: severity.label} : (),
         status: state != () ? {id: state.id.toString(), label: state.label} : (),
+        catalog: catalog != () ? {id: catalog.id, label: catalog.name} : (),
+        catalogItem: catalogItem != () ? {id: catalogItem.id, label: catalogItem.name} : (),
         updatedOn: response.updatedOn,
         deployedProduct: response.deployedProduct != () ? {
                 id: response.deployedProduct?.id ?: "",

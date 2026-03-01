@@ -67,6 +67,8 @@ public type Case record {|
     string number;
     # Created date and time
     string createdOn;
+    # Created by (User email)
+    string createdBy;
     # Case title
     string? title;
     # Case description
@@ -77,6 +79,10 @@ public type Case record {|
     ReferenceItem? severity;
     # State of the case
     ReferenceItem? status;
+    # Catalog information (if the case is a service request)
+    ReferenceItem? catalog;
+    # Catalog item information (if the case is a service request)
+    ReferenceItem? catalogItem;
 |};
 
 # Case information.
@@ -286,8 +292,8 @@ public type ProjectStats record {|
 
 # Recent activity details.
 public type RecentActivity record {|
-    # Total time logged
-    decimal totalTimeLogged?;
+    # Total hours
+    decimal totalHours?;
     # Billable hours
     decimal billableHours?;
     # Last deployment date
@@ -976,6 +982,8 @@ public type ConversationSearchPayload record {|
         int[] stateKeys?;
         # Search query for conversations
         string searchQuery?;
+        # Conversations created by logged in user
+        boolean createdByMe?;
     } filters?;
     # Sort configuration
     record {
