@@ -45,6 +45,8 @@ public type CaseSearchFilters record {|
     int severityId?;
     # Deployment ID
     string deploymentId?;
+    # Case created by the logged in user
+    boolean createdByMe?;
 |};
 
 # Payload for case search.
@@ -1052,10 +1054,12 @@ public type ChangeRequest record {|
     ReferenceItem? deployment;
     # Deployed product information
     ReferenceItem? deployedProduct;
+    # Product information
+    ReferenceItem? product;
     # Planned start date and time
-    string? startDate;
+    entity:Date? startDate;
     # Planned end date and time
-    string? endDate;
+    entity:Date? endDate;
     # Duration
     string? duration;
     # Indicates if the change request has a service outage
@@ -1121,4 +1125,29 @@ public type ChangeRequestSearchPayload record {|
 public type CatalogSearchPayload record {|
     # Pagination details
     entity:Pagination pagination?;
+|};
+
+# Change request details information.
+public type ChangeRequestResponse record {|
+    *ChangeRequest;
+    # Change request description
+    string? description;
+    # User who created the change request
+    string createdBy;
+    # Justification for the change request
+    string? justification;
+    # Impact description
+    string? impactDescription;
+    # Service outage details
+    string? serviceOutage;
+    # Communication plan
+    string? communicationPlan;
+    # Rollback plan
+    string? rollbackPlan;
+    # Test plan
+    string? testPlan;
+    # Indicates if the customer has approved
+    boolean hasCustomerApproved;
+    # Indicates if the customer has reviewed
+    boolean hasCustomerReviewed;
 |};

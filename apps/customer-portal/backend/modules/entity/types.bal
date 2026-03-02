@@ -266,7 +266,7 @@ public type Case record {|
 # Choice list item information.
 public type ChoiceListItem record {|
     # Choice list item value
-    int id;
+    int|string id;
     # Choice list item label
     string label;
     # Count
@@ -688,6 +688,8 @@ public type DeployedProductUpdatePayload record {|
     int? cores?;
     # TPS allocated for the product
     decimal? tps?;
+    # Active status (can only be set to false to deactivate deployed product)
+    boolean active?;
 |};
 
 # Response from updating a deployed product.
@@ -1411,10 +1413,12 @@ public type ChangeRequest record {|
     ReferenceTableItem? deployment;
     # Deployed product information
     ReferenceTableItem? deployedProduct;
+    # Product information
+    ReferenceTableItem? product;
     # Planned start date and time
-    string? startDate;
+    Date? plannedStartOn;
     # Planned end date and time
-    string? endDate;
+    Date? plannedEndOn;
     # Duration
     string? duration;
     # Indicates if the change request has a service outage
@@ -1486,4 +1490,30 @@ public type CatalogItemVariable record {|
 public type CatalogItemVariablesResponse record {|
     # List of catalog item variables
     CatalogItemVariable[] variables;
+|};
+
+# Change request details information.
+public type ChangeRequestResponse record {|
+    *ChangeRequest;
+    # Change request description
+    string? description;
+    # User who created the change request
+    string createdBy;
+    # Justification for the change request
+    string? justification;
+    # Impact description
+    string? impactDescription;
+    # Service outage details
+    string? serviceOutage;
+    # Communication plan
+    string? communicationPlan;
+    # Rollback plan
+    string? rollbackPlan;
+    # Test plan
+    string? testPlan;
+    # Indicates if the customer has approved
+    boolean hasCustomerApproved;
+    # Indicates if the customer has reviewed
+    boolean hasCustomerReviewed;
+    json...;
 |};

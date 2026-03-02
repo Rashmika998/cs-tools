@@ -39,7 +39,8 @@ public isolated function searchCases(string idToken, string projectId, types:Cas
             severityKey: payload.filters?.severityId,
             caseTypes: payload.filters?.caseTypes,
             stateKeys: payload.filters?.statusIds,
-            deploymentId: payload.filters?.deploymentId
+            deploymentId: payload.filters?.deploymentId,
+            createdByMe: payload.filters?.createdByMe
         },
         pagination: payload.pagination,
         sortBy: payload.sortBy
@@ -585,7 +586,8 @@ public isolated function mapConversationResponse(entity:ConversationResponse res
 public isolated function getOngoingCasesCount(entity:ProjectCaseStatsResponse|error response) returns int? {
     if response is entity:ProjectCaseStatsResponse {
         types:ReferenceItem[] stateCount = from entity:ChoiceListItem item in response.stateCount
-            where item.id != entity:caseStateIds.closed && item.id != entity:caseStateIds.solutionProposed
+            where item.id.toString() != entity:caseStateIds.closed.toString()
+                && item.id.toString() != entity:caseStateIds.solutionProposed.toString()
             select {id: item.id.toString(), label: item.label, count: item.count};
         if stateCount.length() > 0 {
             int ongoingCasesCount = 0;
@@ -653,6 +655,7 @@ public isolated function mapChangeRequestSearchResponse(entity:ChangeRequestSear
         let entity:ReferenceTableItem? case = changeRequest.case
         let entity:ReferenceTableItem? deployment = changeRequest.deployment
         let entity:ReferenceTableItem? deployedProduct = changeRequest.deployedProduct
+        let entity:ReferenceTableItem? product = changeRequest.product
         let entity:ChoiceListItem? state = changeRequest.state
         let entity:ChoiceListItem? impact = changeRequest.impact
         let entity:ChoiceListItem? 'type = changeRequest.'type
@@ -660,8 +663,8 @@ public isolated function mapChangeRequestSearchResponse(entity:ChangeRequestSear
             id: changeRequest.id,
             number: changeRequest.number,
             title: changeRequest.title,
-            startDate: changeRequest.startDate,
-            endDate: changeRequest.endDate,
+            startDate: changeRequest.plannedStartOn,
+            endDate: changeRequest.plannedEndOn,
             duration: changeRequest.duration,
             hasServiceOutage: changeRequest.hasServiceOutage,
             createdOn: changeRequest.createdOn,
@@ -671,6 +674,8 @@ public isolated function mapChangeRequestSearchResponse(entity:ChangeRequestSear
             deployment: deployment != () ? {id: deployment.id, label: deployment.name, number: deployment?.number} : (),
             deployedProduct: deployedProduct != () ?
                 {id: deployedProduct.id, label: deployedProduct.name, number: deployedProduct?.number} : (),
+            product: product != () ?
+                {id: product.id, label: product.name, number: product?.number} : (),
             state: state != () ? {id: state.id.toString(), label: state.label} : (),
             impact: impact != () ? {id: impact.id.toString(), label: impact.label} : (),
             'type: 'type != () ? {id: 'type.id.toString(), label: 'type.label} : ()
@@ -701,4 +706,52 @@ public isolated function mapCatalogSearchResponse(entity:CatalogSearchResponse r
         };
 
     return {catalogs, totalRecords: response.totalRecords, 'limit: response.'limit, offset: response.offset};
+}
+
+# Map change request response to the desired structure.
+#
+# + response - Change request response from the entity service
+# + return - Mapped change request response
+public isolated function mapChangeRequestResponse(entity:ChangeRequestResponse response)
+    returns types:ChangeRequestResponse {
+
+    entity:ReferenceTableItem? project = response.project;
+    entity:ReferenceTableItem? case = response.case;
+    entity:ReferenceTableItem? deployment = response.deployment;
+    entity:ReferenceTableItem? deployedProduct = response.deployedProduct;
+    entity:ReferenceTableItem? product = response.product;
+    entity:ChoiceListItem? state = response.state;
+    entity:ChoiceListItem? impact = response.impact;
+    entity:ChoiceListItem? 'type = response.'type;
+    return {
+        id: response.id,
+        number: response.number,
+        title: response.title,
+        startDate: response.plannedStartOn,
+        endDate: response.plannedEndOn,
+        duration: response.duration,
+        hasServiceOutage: response.hasServiceOutage,
+        createdOn: response.createdOn,
+        updatedOn: response.updatedOn,
+        project: project != () ? {id: project.id, label: project.name, number: project?.number} : (),
+        case: case != () ? {id: case.id, label: case.name, number: case?.number} : (),
+        deployment: deployment != () ? {id: deployment.id, label: deployment.name, number: deployment?.number} : (),
+        deployedProduct: deployedProduct != () ?
+            {id: deployedProduct.id, label: deployedProduct.name, number: deployedProduct?.number} : (),
+        product: product != () ?
+            {id: product.id, label: product.name, number: product?.number} : (),
+        state: state != () ? {id: state.id.toString(), label: state.label} : (),
+        impact: impact != () ? {id: impact.id.toString(), label: impact.label} : (),
+        'type: 'type != () ? {id: 'type.id.toString(), label: 'type.label} : (),
+        description: response.description,
+        createdBy: response.createdBy,
+        justification: response.justification,
+        impactDescription: response.impactDescription,
+        serviceOutage: response.serviceOutage,
+        communicationPlan: response.communicationPlan,
+        rollbackPlan: response.rollbackPlan,
+        testPlan: response.testPlan,
+        hasCustomerApproved: response.hasCustomerApproved,
+        hasCustomerReviewed: response.hasCustomerReviewed
+    };
 }
