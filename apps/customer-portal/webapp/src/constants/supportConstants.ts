@@ -451,7 +451,7 @@ export const ALL_CONVERSATIONS_FILTER_DEFINITIONS: AllConversationsFilterDefinit
 
 /**
  * Configuration for the all cases filters.
- * Uses caseStates, caseTypes, severities, issueTypes, deploymentTypes from useGetCasesFilters.
+ * Uses caseStates, caseTypes, severities, issueTypes, deploymentTypes from useGetProjectFilters.
  */
 export const ALL_CASES_FILTER_DEFINITIONS: AllCasesFilterDefinition[] = [
   {

@@ -50,7 +50,7 @@ const mockCaseDetails = {
   findingsTotal: null,
 };
 
-vi.mock("@api/useGetCasesFilters", () => ({
+vi.mock("@api/useGetProjectFilters", () => ({
   default: () => ({
     data: { caseStates: [{ id: "3", label: "Closed" }] },
   }),

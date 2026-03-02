@@ -514,6 +514,7 @@ export interface CaseMetadataResponse {
   changeRequestImpacts?: MetadataItem[];
   caseTypes?: MetadataItem[];
   conversationStates?: MetadataItem[];
+  timeCardStates?: MetadataItem[];
   severityBasedAllocationTime?: Record<string, number>;
 }
 

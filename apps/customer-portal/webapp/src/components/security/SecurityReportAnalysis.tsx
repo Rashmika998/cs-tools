@@ -55,7 +55,7 @@ import {
 import { useNavigate, useParams } from "react-router";
 import { CaseType } from "@constants/supportConstants";
 import useGetProjectCases from "@api/useGetProjectCases";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetUserDetails from "@api/useGetUserDetails";
 import type { AllCasesFilterValues, CaseListItem } from "@models/responses";
 import SecurityReportAnalysisSkeleton from "@components/security/SecurityReportAnalysisSkeleton";
@@ -90,7 +90,7 @@ const SecurityReportAnalysis = (): JSX.Element => {
   const { data: currentUser } = useGetUserDetails();
 
   // Fetch filter metadata
-  const { data: filterMetadata } = useGetCasesFilters(projectId || "");
+  const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
   // Build case search request for security report analysis cases
   const caseSearchRequest = useMemo(

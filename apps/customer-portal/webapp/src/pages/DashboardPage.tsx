@@ -21,7 +21,7 @@ import { useAsgardeo } from "@asgardeo/react";
 import { useLogger } from "@hooks/useLogger";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
 import {
   DASHBOARD_STATS,
@@ -49,7 +49,7 @@ export default function DashboardPage(): JSX.Element {
     data: filters,
     isLoading: isFiltersLoading,
     isError: isErrorFilters,
-  } = useGetCasesFilters(projectId || "");
+  } = useGetProjectFilters(projectId || "");
 
   const { incidentId, queryId } = useMemo(
     () => getIncidentAndQueryIds(filters?.caseTypes),

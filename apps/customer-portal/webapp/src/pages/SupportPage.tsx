@@ -26,7 +26,7 @@ import ServiceRequestCard from "@components/support/request-cards/ServiceRequest
 import ChangeRequestCard from "@components/support/request-cards/ChangeRequestCard";
 import ChatHistoryList from "@components/support/support-overview-cards/ChatHistoryList";
 import { useGetProjectSupportStats } from "@api/useGetProjectSupportStats";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectCases from "@api/useGetProjectCases";
 import { useSearchConversations } from "@api/useSearchConversations";
 import { useLogger } from "@hooks/useLogger";
@@ -48,7 +48,7 @@ export default function SupportPage(): JSX.Element {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
 
-  const { data: filterMetadata } = useGetCasesFilters(projectId || "");
+  const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
   const { incidentId, queryId } = getIncidentAndQueryIds(
     filterMetadata?.caseTypes,

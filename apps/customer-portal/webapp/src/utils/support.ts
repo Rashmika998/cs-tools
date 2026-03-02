@@ -44,7 +44,7 @@ import { createElement, type ComponentType, type ReactNode } from "react";
  * Extracts Incident and Query case type IDs from caseTypes metadata.
  * Used for default caseTypeIds filter in Support overview and All Cases.
  *
- * @param caseTypes - Case types from useGetCasesFilters response.
+ * @param caseTypes - Case types from useGetProjectFilters response.
  * @returns {string[]} IDs for Incident and Query types.
  */
 export function getIncidentAndQueryCaseTypeIds(
@@ -61,7 +61,7 @@ export function getIncidentAndQueryCaseTypeIds(
  * Extracts Incident and Query case type IDs separately for stats API.
  * API expects caseTypes=queryId&caseTypes=incidentId.
  *
- * @param caseTypes - Case types from useGetCasesFilters response.
+ * @param caseTypes - Case types from useGetProjectFilters response.
  * @returns {{ incidentId?: string; queryId?: string }} Incident and Query IDs.
  */
 export function getIncidentAndQueryIds(caseTypes?: MetadataItem[]): {
@@ -1130,7 +1130,7 @@ export function getAvailableCaseActions(
  * Returns the Announcement case type ID from the case types metadata.
  * Used to fetch announcements (cases with type Announcement) from the cases API.
  *
- * @param caseTypes - Array of case types from useGetCasesFilters.
+ * @param caseTypes - Array of case types from useGetProjectFilters.
  * @returns {string | undefined} The Announcement type ID or undefined.
  */
 export function getAnnouncementCaseTypeId(

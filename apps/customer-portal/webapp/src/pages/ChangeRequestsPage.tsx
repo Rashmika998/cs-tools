@@ -41,7 +41,7 @@ import type {
   ChangeRequestItem,
 } from "@models/responses";
 import type { ChangeRequestSearchRequest } from "@models/requests";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetChangeRequests, {
   useGetChangeRequestsInfinite,
 } from "@api/useGetChangeRequests";
@@ -70,7 +70,7 @@ export default function ChangeRequestsPage(): JSX.Element {
   const pageSize = 10;
 
   // Fetch filter metadata (deployments etc.)
-  const { data: filterMetadata } = useGetCasesFilters(projectId || "");
+  const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
   // Build API request (following cases listing pattern)
   const changeRequestSearchRequest = useMemo<

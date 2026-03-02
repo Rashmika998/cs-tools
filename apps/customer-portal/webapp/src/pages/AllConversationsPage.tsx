@@ -35,7 +35,7 @@ import {
 } from "@wso2/oxygen-ui";
 import { ArrowLeft } from "@wso2/oxygen-ui-icons-react";
 import { useLoader } from "@context/linear-loader/LoaderContext";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import { useSearchConversations } from "@api/useSearchConversations";
 import { useGetConversationStats } from "@api/useGetConversationStats";
 import type {
@@ -65,7 +65,7 @@ export default function AllConversationsPage(): JSX.Element {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  const { data: filterMetadata } = useGetCasesFilters(projectId || "");
+  const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
   const searchRequest = useMemo(
     () => ({

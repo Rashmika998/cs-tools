@@ -27,7 +27,7 @@ import {
 } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectDetails from "@api/useGetProjectDetails";
 import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
 import { useGetDeploymentsProducts } from "@api/useGetDeploymentsProducts";
@@ -123,7 +123,7 @@ export default function CreateCasePage(): JSX.Element {
   const { showLoader, hideLoader } = useLoader();
   const { data: projectDetails, isLoading: isProjectLoading } =
     useGetProjectDetails(projectId || "");
-  const { data: filters, isLoading: isFiltersLoading } = useGetCasesFilters(
+  const { data: filters, isLoading: isFiltersLoading } = useGetProjectFilters(
     projectId || "",
   );
   const [title, setTitle] = useState(() => relatedCase?.title ?? "");

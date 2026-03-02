@@ -20,7 +20,7 @@ import { useNavigate } from "react-router";
 import { useAsgardeo } from "@asgardeo/react";
 import { getNoveraChatEnabled } from "@utils/settingsStorage";
 import { useGetProjectCasesPage } from "@api/useGetProjectCasesPage";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import FilterPopover, {
   type FilterField,
 } from "@components/common/filter-panel/FilterPopover";
@@ -46,7 +46,7 @@ const CasesTable = ({ projectId }: CasesTableProps): JSX.Element => {
     data: filtersMetadata,
     isFetching: isFetchingFilters,
     isError: isErrorFilters,
-  } = useGetCasesFilters(projectId);
+  } = useGetProjectFilters(projectId);
 
   const dynamicFilterFields: FilterField[] = [
     {

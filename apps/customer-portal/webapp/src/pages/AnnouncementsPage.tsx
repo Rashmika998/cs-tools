@@ -28,7 +28,7 @@ import {
   Pagination,
 } from "@wso2/oxygen-ui";
 import { ArrowLeft } from "@wso2/oxygen-ui-icons-react";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import { useGetProjectCasesPage } from "@api/useGetProjectCasesPage";
 import { CaseType } from "@constants/supportConstants";
 import type { AnnouncementFilterValues } from "@constants/supportConstants";
@@ -52,7 +52,7 @@ export default function AnnouncementsPage(): JSX.Element {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  const { data: filterMetadata } = useGetCasesFilters(projectId || "");
+  const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
   const caseSearchRequest = useMemo(
     () => ({

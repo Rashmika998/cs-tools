@@ -17,7 +17,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 
 const mockFiltersResponse = {
   statuses: [{ id: "1", label: "Open" }],
@@ -55,7 +55,7 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 );
 
-describe("useGetCasesFilters", () => {
+describe("useGetProjectFilters", () => {
   beforeEach(() => {
     queryClient.clear();
     vi.clearAllMocks();
@@ -69,7 +69,7 @@ describe("useGetCasesFilters", () => {
   });
 
   it("should return filters from API", async () => {
-    const { result } = renderHook(() => useGetCasesFilters("123"), { wrapper });
+    const { result } = renderHook(() => useGetProjectFilters("123"), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -82,7 +82,7 @@ describe("useGetCasesFilters", () => {
       statusText: "Internal Server Error",
     });
 
-    const { result } = renderHook(() => useGetCasesFilters("123"), { wrapper });
+    const { result } = renderHook(() => useGetProjectFilters("123"), { wrapper });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error?.message).toContain("Internal Server Error");

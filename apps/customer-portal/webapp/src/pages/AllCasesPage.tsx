@@ -36,7 +36,7 @@ import {
 } from "@wso2/oxygen-ui";
 import { ArrowLeft } from "@wso2/oxygen-ui-icons-react";
 import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectCases from "@api/useGetProjectCases";
 import { getIncidentAndQueryIds } from "@utils/support";
 import { CaseType } from "@constants/supportConstants";
@@ -64,7 +64,7 @@ export default function AllCasesPage(): JSX.Element {
   const pageSize = 10;
 
   // Fetch filter metadata first to get Incident and Query IDs for stats API
-  const { data: filterMetadata } = useGetCasesFilters(projectId || "");
+  const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
   const { incidentId, queryId } = useMemo(
     () => getIncidentAndQueryIds(filterMetadata?.caseTypes),
