@@ -39,9 +39,9 @@ import {
 export const getTimeCardStateColorPath = (
   state: { id: string; label: string } | null | undefined,
 ): string => {
-  if (!state?.label) return "text.secondary";
+  if (!state?.id) return "text.secondary";
 
-  switch (state.label) {
+  switch (state.id) {
     case TIME_CARD_STATE.APPROVED:
       return "success.main";
     case TIME_CARD_STATE.SUBMITTED:
@@ -169,7 +169,7 @@ export const formatProjectDateTime = (dateString: string): string => {
       hour12: true,
     });
     return `${dateStr} at ${timeStr}`;
-  } catch (error) {
+  } catch {
     console.error("[projectDetails] Failed to format date string:", error);
     return "";
   }

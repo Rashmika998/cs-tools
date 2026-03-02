@@ -91,6 +91,8 @@ describe("ProjectTimeTracking", () => {
       data: undefined,
       isLoading: true,
       isError: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
     } as any);
 
     render(<ProjectTimeTracking projectId={projectId} />);
@@ -109,6 +111,8 @@ describe("ProjectTimeTracking", () => {
       data: undefined,
       isLoading: false,
       isError: true,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
     } as any);
 
     render(<ProjectTimeTracking projectId={projectId} />);
@@ -118,31 +122,35 @@ describe("ProjectTimeTracking", () => {
 
   it("should render time cards when data is loaded", () => {
     const mockData = {
-      timeCards: [
+      pages: [
         {
-          id: "1",
-          case: { label: "Log 1", number: "CS001", id: "c1" },
-          totalTime: 60,
-          state: { id: "approved", label: "Approved" },
-          hasBillable: false,
-          approvedBy: null,
-          project: { id: "p1", label: "Project 1" },
-          createdOn: "2025-12-10",
-        },
-        {
-          id: "2",
-          case: { label: "Log 2", number: "CS002", id: "c2" },
-          totalTime: 30,
-          state: { id: "submitted", label: "Submitted" },
-          hasBillable: true,
-          approvedBy: null,
-          project: { id: "p1", label: "Project 1" },
-          createdOn: "2025-12-11",
+          timeCards: [
+            {
+              id: "1",
+              case: { label: "Log 1", number: "CS001", id: "c1" },
+              totalTime: 60,
+              state: { id: "approved", label: "Approved" },
+              hasBillable: false,
+              approvedBy: null,
+              project: { id: "p1", label: "Project 1" },
+              createdOn: "2025-12-10",
+            },
+            {
+              id: "2",
+              case: { label: "Log 2", number: "CS002", id: "c2" },
+              totalTime: 30,
+              state: { id: "submitted", label: "Submitted" },
+              hasBillable: true,
+              approvedBy: null,
+              project: { id: "p1", label: "Project 1" },
+              createdOn: "2025-12-11",
+            },
+          ],
+          totalRecords: 2,
+          offset: 0,
+          limit: 10,
         },
       ],
-      totalRecords: 2,
-      offset: 0,
-      limit: 10,
     };
 
     vi.mocked(useGetTimeCardsStats).mockReturnValue({
@@ -155,6 +163,8 @@ describe("ProjectTimeTracking", () => {
       data: mockData,
       isLoading: false,
       isError: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
     } as any);
 
     render(<ProjectTimeTracking projectId={projectId} />);
@@ -175,6 +185,8 @@ describe("ProjectTimeTracking", () => {
       data: undefined,
       isLoading: true,
       isError: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
     } as any);
 
     render(<ProjectTimeTracking projectId={projectId} />);
@@ -190,9 +202,11 @@ describe("ProjectTimeTracking", () => {
     } as any);
 
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
-      data: { timeCards: [], totalRecords: 0, offset: 0, limit: 10 },
+      data: { pages: [{ timeCards: [], totalRecords: 0, offset: 0, limit: 10 }] },
       isLoading: false,
       isError: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
     } as any);
 
     render(<ProjectTimeTracking projectId={projectId} />);
@@ -208,9 +222,11 @@ describe("ProjectTimeTracking", () => {
     } as any);
 
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
-      data: { timeCards: [], totalRecords: 0, offset: 0, limit: 10 },
+      data: { pages: [{ timeCards: [], totalRecords: 0, offset: 0, limit: 10 }] },
       isLoading: false,
       isError: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
     } as any);
 
     render(<ProjectTimeTracking projectId={projectId} />);

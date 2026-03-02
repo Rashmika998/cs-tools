@@ -15,7 +15,7 @@
 // under the License.
 
 import { Box, Grid } from "@wso2/oxygen-ui";
-import { useState, useMemo, useEffect, type JSX } from "react";
+import { useState, useMemo, useEffect, useRef, type JSX } from "react";
 import useSearchProjectTimeCards from "@api/useSearchProjectTimeCards";
 import useGetTimeCardsStats from "@api/useGetTimeCardsStats";
 import useGetProjectFilters from "@api/useGetProjectFilters";
@@ -62,6 +62,8 @@ export default function ProjectTimeTracking({
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(defaultEnd);
   const [state, setState] = useState("");
+  const autoFetchCountRef = useRef(0);
+  const maxAutoFetches = 3;
 
   const { data: filters } = useGetProjectFilters(projectId);
 
@@ -88,19 +90,24 @@ export default function ProjectTimeTracking({
     states: state ? [state] : undefined,
   });
 
-  // Auto-fetch all pages
+  // Auto-fetch pages with limit to prevent request bursts
   useEffect(() => {
     if (!data || !hasNextPage) return;
+    if (autoFetchCountRef.current >= maxAutoFetches) return;
+    autoFetchCountRef.current += 1;
     void fetchNextPage();
   }, [data, hasNextPage, fetchNextPage]);
+
+  // Reset auto-fetch counter when filters change
+  useEffect(() => {
+    autoFetchCountRef.current = 0;
+  }, [startDate, endDate, state]);
 
   // Flatten all pages into a single array
   const timeCards = useMemo(
     () => data?.pages.flatMap((page) => page.timeCards) ?? [],
     [data]
   );
-  
-  const totalRecords = data?.pages?.[0]?.totalRecords ?? 0;
 
   return (
     <Box>

@@ -60,6 +60,7 @@ describe("TimeTrackingCard", () => {
     render(<TimeTrackingCard card={incompleteCard} />);
 
     expect(screen.getByText(/Approved by: --/)).toBeInTheDocument();
+    expect(screen.getByText(/State:\s*--/)).toBeInTheDocument();
   });
 
   it("should not render Billable chip when hasBillable is false", () => {

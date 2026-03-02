@@ -21,6 +21,7 @@ import {
   TextField,
   InputAdornment,
   FormControl,
+  InputLabel,
   Select,
   MenuItem,
 } from "@wso2/oxygen-ui";
@@ -41,7 +42,7 @@ export interface TimeCardsDateFilterProps {
 /**
  * TimeCardsDateFilter provides date range and state filters for time cards.
  *
- * @param {TimeCardsDateFilterProps} props - Date values, handlers, and counts.
+ * @param {TimeCardsDateFilterProps} props - Date values (startDate, endDate), change handlers (onStartDateChange, onEndDateChange, onStateChange), current state value, and available timeCardStates.
  * @returns {JSX.Element} The rendered filter card.
  */
 export default function TimeCardsDateFilter({
@@ -134,6 +135,7 @@ export default function TimeCardsDateFilter({
         {/* State Filter */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1, minWidth: "300px" }}>
           <Typography
+            id="state-filter-label"
             variant="body2"
             component="label"
             sx={{ fontWeight: 500, color: "text.secondary", whiteSpace: "nowrap" }}
@@ -142,9 +144,12 @@ export default function TimeCardsDateFilter({
           </Typography>
           <FormControl size="small" sx={{ minWidth: 200 }}>
             <Select
+              labelId="state-filter-label"
+              id="state-filter-select"
               value={state}
               onChange={(e) => onStateChange(e.target.value as string)}
               displayEmpty
+              aria-labelledby="state-filter-label"
             >
               <MenuItem value="">All States</MenuItem>
               {timeCardStates.map((stateOption) => (

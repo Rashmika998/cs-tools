@@ -60,7 +60,7 @@ export default function useSearchProjectTimeCards({
       endDate,
       states,
     ],
-    queryFn: async ({ pageParam = 0 }): Promise<TimeCardSearchResponse> => {
+    queryFn: async ({ pageParam = 0, signal }): Promise<TimeCardSearchResponse> => {
       logger.debug(
         `Searching time cards for project ID: ${projectId}, start: ${startDate}, end: ${endDate}, offset: ${pageParam}`,
       );
@@ -86,6 +86,7 @@ export default function useSearchProjectTimeCards({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+          signal,
         });
 
         logger.debug(
