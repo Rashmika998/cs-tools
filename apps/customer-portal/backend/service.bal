@@ -1762,7 +1762,8 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
                     projectId: payload.projectId,
                     versionId: payload.versionId,
                     cores: payload?.cores,
-                    tps: payload?.tps
+                    tps: payload?.tps,
+                    description: payload?.description
                 });
         if response is error {
             if getStatusCode(response) == http:STATUS_FORBIDDEN {

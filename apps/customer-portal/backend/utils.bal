@@ -656,6 +656,8 @@ public isolated function mapChangeRequestSearchResponse(entity:ChangeRequestSear
         let entity:ReferenceTableItem? deployment = changeRequest.deployment
         let entity:ReferenceTableItem? deployedProduct = changeRequest.deployedProduct
         let entity:ReferenceTableItem? product = changeRequest.product
+        let entity:ReferenceTableItem? assignedEngineer = changeRequest.assignedEngineer
+        let entity:ReferenceTableItem? assignedTeam = changeRequest.assignedTeam
         let entity:ChoiceListItem? state = changeRequest.state
         let entity:ChoiceListItem? impact = changeRequest.impact
         let entity:ChoiceListItem? 'type = changeRequest.'type
@@ -678,7 +680,9 @@ public isolated function mapChangeRequestSearchResponse(entity:ChangeRequestSear
                 {id: product.id, label: product.name, number: product?.number} : (),
             state: state != () ? {id: state.id.toString(), label: state.label} : (),
             impact: impact != () ? {id: impact.id.toString(), label: impact.label} : (),
-            'type: 'type != () ? {id: 'type.id.toString(), label: 'type.label} : ()
+            'type: 'type != () ? {id: 'type.id.toString(), label: 'type.label} : (),
+            assignedEngineer: assignedEngineer != () ? {id: assignedEngineer.id, label: assignedEngineer.name} : (),
+            assignedTeam: assignedTeam != () ? {id: assignedTeam.id, label: assignedTeam.name} : ()
         };
 
     return {
@@ -720,6 +724,9 @@ public isolated function mapChangeRequestResponse(entity:ChangeRequestResponse r
     entity:ReferenceTableItem? deployment = response.deployment;
     entity:ReferenceTableItem? deployedProduct = response.deployedProduct;
     entity:ReferenceTableItem? product = response.product;
+    entity:ReferenceTableItem? approvedBy = response.approvedBy;
+    entity:ReferenceTableItem? assignedEngineer = response.assignedEngineer;
+    entity:ReferenceTableItem? assignedTeam = response.assignedTeam;
     entity:ChoiceListItem? state = response.state;
     entity:ChoiceListItem? impact = response.impact;
     entity:ChoiceListItem? 'type = response.'type;
@@ -743,6 +750,9 @@ public isolated function mapChangeRequestResponse(entity:ChangeRequestResponse r
         state: state != () ? {id: state.id.toString(), label: state.label} : (),
         impact: impact != () ? {id: impact.id.toString(), label: impact.label} : (),
         'type: 'type != () ? {id: 'type.id.toString(), label: 'type.label} : (),
+        approvedBy: approvedBy != () ? {id: approvedBy.id, label: approvedBy.name} : (),
+        assignedEngineer: assignedEngineer != () ? {id: assignedEngineer.id, label: assignedEngineer.name} : (),
+        assignedTeam: assignedTeam != () ? {id: assignedTeam.id, label: assignedTeam.name} : (),
         description: response.description,
         createdBy: response.createdBy,
         justification: response.justification,
@@ -752,7 +762,8 @@ public isolated function mapChangeRequestResponse(entity:ChangeRequestResponse r
         rollbackPlan: response.rollbackPlan,
         testPlan: response.testPlan,
         hasCustomerApproved: response.hasCustomerApproved,
-        hasCustomerReviewed: response.hasCustomerReviewed
+        hasCustomerReviewed: response.hasCustomerReviewed,
+        approvedOn: response.approvedOn
     };
 }
 

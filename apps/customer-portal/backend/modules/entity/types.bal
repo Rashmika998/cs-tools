@@ -660,6 +660,8 @@ public type DeployedProductCreatePayload record {|
     int? cores?;
     # TPS allocated for the product
     decimal? tps?;
+    # Description of the deployed product
+    string? description?;
 |};
 
 # Response from creating a deployed product.
@@ -688,6 +690,8 @@ public type DeployedProductUpdatePayload record {|
     int? cores?;
     # TPS allocated for the product
     decimal? tps?;
+    # Description of the deployed product
+    string? description?;
     # Active status (can only be set to false to deactivate deployed product)
     boolean active?;
 |};
@@ -1415,6 +1419,10 @@ public type ChangeRequest record {|
     ReferenceTableItem? deployedProduct;
     # Product information
     ReferenceTableItem? product;
+    # Assigned engineer
+    ReferenceTableItem? assignedEngineer;
+    # Assigned team
+    ReferenceTableItem? assignedTeam;
     # Planned start date and time
     Date? plannedStartOn;
     # Planned end date and time
@@ -1515,6 +1523,10 @@ public type ChangeRequestResponse record {|
     boolean hasCustomerApproved;
     # Indicates if the customer has reviewed
     boolean hasCustomerReviewed;
+    # Internal approval details
+    ReferenceTableItem? approvedBy;
+    # Internal approval date and time
+    string? approvedOn;
     json...;
 |};
 
