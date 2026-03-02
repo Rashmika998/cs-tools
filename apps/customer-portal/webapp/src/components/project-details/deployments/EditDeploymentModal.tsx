@@ -37,7 +37,7 @@ import {
   type ChangeEvent,
   type JSX,
 } from "react";
-import useGetCasesFilters from "@api/useGetCasesFilters";
+import useGetProjectFilters from "@api/useGetProjectFilters";
 import { usePatchDeployment } from "@api/usePatchDeployment";
 
 export interface EditDeploymentModalProps {
@@ -57,7 +57,7 @@ const INITIAL_FORM = {
 
 /**
  * Modal for editing a deployment (name, type, description). Always sends active: true.
- * Deployment type options come from useGetCasesFilters.
+ * Deployment type options come from useGetProjectFilters.
  *
  * @param {EditDeploymentModalProps} props - open, deployment, projectId, onClose, optional onSuccess/onError.
  * @returns {JSX.Element} The edit deployment modal.
@@ -71,7 +71,7 @@ export default function EditDeploymentModal({
   onError,
 }: EditDeploymentModalProps): JSX.Element {
   const { data: filtersData, isLoading: isFiltersLoading } =
-    useGetCasesFilters(projectId);
+    useGetProjectFilters(projectId);
   const patchDeployment = usePatchDeployment();
 
   const deploymentTypes = filtersData?.deploymentTypes ?? [];
