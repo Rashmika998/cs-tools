@@ -61,6 +61,16 @@ export interface ConversationSearchRequest {
   };
 }
 
+// Request body for searching change requests (POST /projects/:projectId/change-requests/search).
+export interface ChangeRequestSearchRequest {
+  filters?: {
+    impactKey?: number;
+    searchQuery?: string;
+    stateKeys?: number[];
+  };
+  pagination: PaginationRequest;
+}
+
 /** Shared env context for conversations and case classification APIs. */
 export interface SharedEnvContext {
   envProducts: Record<string, string[]>;

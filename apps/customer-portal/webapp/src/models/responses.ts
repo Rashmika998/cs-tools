@@ -276,6 +276,75 @@ export interface CaseListItem {
   } | null;
 }
 
+// Change Request Item
+export interface ChangeRequestItem {
+  id: string;
+  number: string;
+  title: string;
+  project: {
+    id: string;
+    label: string;
+    number: string | null;
+  } | null;
+  case: {
+    id: string;
+    label: string;
+    number: string;
+  } | null;
+  deployment: {
+    type: string;
+    id: string;
+    label: string;
+  } | null;
+  deployedProduct: {
+    version: string;
+    id: string;
+    label: string;
+  } | null;
+  startDate: string;
+  endDate: string;
+  duration: number;
+  hasServiceOutage: boolean;
+  impact: {
+    id: string;
+    label: string;
+  } | null;
+  state: {
+    id: string;
+    label: string;
+  } | null;
+  type: {
+    id: string;
+    label: string;
+  } | null;
+  createdOn: string;
+  updatedOn: string;
+}
+
+// Change Request Search Response
+export interface ChangeRequestSearchResponse {
+  changeRequests: ChangeRequestItem[];
+  totalRecords: number;
+  offset: number;
+  limit: number;
+}
+
+// Change Request Stats
+export interface ChangeRequestStats {
+  totalRequests: number;
+  scheduled: number;
+  inProgress: number;
+  completed: number;
+}
+
+// Mock Change Request Stats
+export const MOCK_CHANGE_REQUEST_STATS: ChangeRequestStats = {
+  totalRequests: 6,
+  scheduled: 4,
+  inProgress: 1,
+  completed: 1,
+};
+
 // Case Search Response
 export interface CaseSearchResponse {
   cases: CaseListItem[];
@@ -544,6 +613,12 @@ export interface AllCasesFilterValues {
   deploymentId?: string;
   /** Single case type ID when user selects one; when empty, default Incident+Query IDs are used. */
   caseTypeId?: string;
+}
+
+// Interface for change requests filters state
+export interface ChangeRequestFilterValues {
+  stateId?: string;
+  impactId?: string;
 }
 
 // Product deployed in an environment.

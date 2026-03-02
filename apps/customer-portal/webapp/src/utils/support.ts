@@ -308,12 +308,15 @@ export function formatDateTime(
   formatStr: "short" | "long" = "long",
 ): string {
   if (!dateStr) {
-    return "--";
+    return "Not Available";
   }
 
-  const date = new Date(dateStr);
+  // Handle API date format "YYYY-MM-DD HH:mm:ss" by converting space to 'T' for ISO format
+  const normalizedDateStr = dateStr.trim().replace(" ", "T");
+  const date = new Date(normalizedDateStr);
+
   if (isNaN(date.getTime())) {
-    return "--";
+    return "Not Available";
   }
 
   if (formatStr === "short") {
@@ -342,7 +345,7 @@ export function formatDateTime(
  * @returns {string} Formatted date without time (e.g., "Feb 25, 2026").
  */
 export function formatDateOnly(dateStr: string | null | undefined): string {
-  if (!dateStr) return "--";
+  if (!dateStr) return "Not Available";
 
   const trimmed = dateStr.trim();
 
@@ -375,6 +378,26 @@ export function formatDateOnly(dateStr: string | null | undefined): string {
   }
 
   return "--";
+}
+
+/**
+ * Converts duration from minutes to formatted string (e.g., "4h 30m").
+ * Used for change request duration display.
+ *
+ * @param {number | null | undefined} minutes - Duration in minutes.
+ * @returns {string} Formatted duration string (e.g., "4h 30m") or "Not Available".
+ */
+export function formatDuration(minutes: number | null | undefined): string {
+  if (minutes == null || minutes < 0) return "Not Available";
+
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+
+  if (hours === 0 && mins === 0) return "0m";
+  if (hours === 0) return `${mins}m`;
+  if (mins === 0) return `${hours}h`;
+
+  return `${hours}h ${mins}m`;
 }
 
 export type ChatActionState =

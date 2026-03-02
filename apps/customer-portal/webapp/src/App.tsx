@@ -25,6 +25,8 @@ import UpdatesPage from "@pages/UpdatesPage";
 import PendingUpdatesPage from "@pages/PendingUpdatesPage";
 import UpdateLevelDetailsPage from "@pages/UpdateLevelDetailsPage";
 import AllCasesPage from "@pages/AllCasesPage";
+import ChangeRequestsPage from "@pages/ChangeRequestsPage";
+import ChangeRequestDetailsPage from "@pages/ChangeRequestDetailsPage";
 import AnnouncementsPage from "@pages/AnnouncementsPage";
 import AnnouncementDetailsPage from "@pages/AnnouncementDetailsPage";
 import AllConversationsPage from "@pages/AllConversationsPage";
@@ -81,6 +83,13 @@ export default function App(): JSX.Element {
                         <Route path="cases">
                           <Route index element={<AllCasesPage />} />
                           <Route path=":caseId" element={<CaseDetailsPage />} />
+                        </Route>
+                        <Route path="change-requests">
+                          <Route index element={<ChangeRequestsPage />} />
+                          <Route
+                            path=":changeRequestId"
+                            element={<ChangeRequestDetailsPage />}
+                          />
                         </Route>
                         <Route path="conversations">
                           <Route index element={<AllConversationsPage />} />

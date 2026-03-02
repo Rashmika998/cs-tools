@@ -19,6 +19,7 @@ import {
   Bell,
   BookOpen,
   Bot,
+  Calendar,
   CircleAlert,
   CircleCheck,
   CirclePause,
@@ -35,7 +36,15 @@ import {
   TrendingUp,
   Zap,
   RotateCcw,
+  CheckCircle,
+  XCircle,
+  PlayCircle,
+  Eye,
+  ShieldCheck,
+  UserCheck,
+  CalendarCheck,
 } from "@wso2/oxygen-ui-icons-react";
+import { colors } from "@wso2/oxygen-ui";
 import { type ComponentType } from "react";
 import type {
   ProjectSupportStats,
@@ -560,3 +569,227 @@ export interface CaseTypeObject {
 
 // Case type input.
 export type CaseTypeInput = CaseTypeObject | string | null | undefined;
+
+/**
+ * Change Request Status types.
+ */
+export const ChangeRequestStatus = {
+  SCHEDULED: "Scheduled",
+  IN_PROGRESS: "In Progress",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+  PENDING_APPROVAL: "Pending Approval",
+} as const;
+
+export type ChangeRequestStatus =
+  (typeof ChangeRequestStatus)[keyof typeof ChangeRequestStatus];
+
+/**
+ * Change Request Impact types.
+ */
+export const ChangeRequestImpact = {
+  HIGH: "High",
+  MEDIUM: "Medium",
+  LOW: "Low",
+} as const;
+
+export type ChangeRequestImpact =
+  (typeof ChangeRequestImpact)[keyof typeof ChangeRequestImpact];
+
+/**
+ * Change Request State labels.
+ */
+export const ChangeRequestStates = {
+  NEW: "New",
+  ASSESS: "Assess",
+  AUTHORIZE: "Authorize",
+  CUSTOMER_APPROVAL: "Customer Approval",
+  SCHEDULED: "Scheduled",
+  IMPLEMENT: "Implement",
+  REVIEW: "Review",
+  CUSTOMER_REVIEW: "Customer Review",
+  ROLLBACK: "Rollback",
+  CLOSED: "Closed",
+  CANCELED: "Canceled",
+} as const;
+
+/**
+ * Get color for change request state.
+ */
+export function getChangeRequestStateColor(
+  stateLabel: string | undefined,
+): string {
+  if (!stateLabel) return colors.grey[400];
+
+  switch (stateLabel) {
+    case ChangeRequestStates.NEW:
+      return colors.blue[500];
+    case ChangeRequestStates.ASSESS:
+      return colors.purple[500];
+    case ChangeRequestStates.AUTHORIZE:
+      return colors.pink[500];
+    case ChangeRequestStates.CUSTOMER_APPROVAL:
+      return colors.amber[500];
+    case ChangeRequestStates.SCHEDULED:
+      return colors.cyan[500];
+    case ChangeRequestStates.IMPLEMENT:
+      return colors.orange[500];
+    case ChangeRequestStates.REVIEW:
+      return colors.indigo[500];
+    case ChangeRequestStates.CUSTOMER_REVIEW:
+      return colors.yellow[600];
+    case ChangeRequestStates.ROLLBACK:
+      return colors.red[500];
+    case ChangeRequestStates.CLOSED:
+      return colors.green[500];
+    case ChangeRequestStates.CANCELED:
+      return colors.red[700];
+    default:
+      return colors.grey[400];
+  }
+}
+
+/**
+ * Get icon component for change request state.
+ */
+export function getChangeRequestStateIcon(
+  stateLabel: string | undefined,
+): ComponentType<{ size?: number }> {
+  if (!stateLabel) return CircleQuestionMark;
+
+  switch (stateLabel) {
+    case ChangeRequestStates.NEW:
+      return FileText;
+    case ChangeRequestStates.ASSESS:
+      return Activity;
+    case ChangeRequestStates.AUTHORIZE:
+      return ShieldCheck;
+    case ChangeRequestStates.CUSTOMER_APPROVAL:
+      return UserCheck;
+    case ChangeRequestStates.SCHEDULED:
+      return CalendarCheck;
+    case ChangeRequestStates.IMPLEMENT:
+      return PlayCircle;
+    case ChangeRequestStates.REVIEW:
+      return Eye;
+    case ChangeRequestStates.CUSTOMER_REVIEW:
+      return UserCheck;
+    case ChangeRequestStates.ROLLBACK:
+      return RotateCcw;
+    case ChangeRequestStates.CLOSED:
+      return CheckCircle;
+    case ChangeRequestStates.CANCELED:
+      return XCircle;
+    default:
+      return CircleQuestionMark;
+  }
+}
+
+/**
+ * Change Request Impact labels.
+ */
+export const ChangeRequestImpacts = {
+  HIGH: "1 - High",
+  MEDIUM: "2 - Medium",
+  LOW: "3 - Low",
+} as const;
+
+/**
+ * Get color for change request impact level.
+ */
+export function getChangeRequestImpactColor(
+  impactLabel: string | undefined,
+): string {
+  if (!impactLabel) return colors.grey[400];
+
+  const normalizedLabel = impactLabel.toLowerCase();
+
+  if (normalizedLabel.includes("high")) {
+    return colors.red[500];
+  } else if (normalizedLabel.includes("medium")) {
+    return colors.orange[500];
+  } else if (normalizedLabel.includes("low")) {
+    return colors.green[500];
+  }
+
+  return colors.grey[400];
+}
+
+/**
+ * Format impact label by removing the numeric prefix.
+ * "1 - High" -> "High"
+ */
+export function formatImpactLabel(impactLabel: string | undefined): string {
+  if (!impactLabel) return "Not Available";
+
+  // Remove "1 - ", "2 - ", "3 - " prefix
+  return impactLabel.replace(/^\d+\s*-\s*/, "");
+}
+
+/**
+ * Valid keys for change requests statistics.
+ */
+export type ChangeRequestStatKey =
+  | "totalRequests"
+  | "scheduled"
+  | "inProgress"
+  | "completed";
+
+/**
+ * Configuration for the change requests statistics cards.
+ */
+export const CHANGE_REQUEST_STAT_CONFIGS: SupportStatConfig<ChangeRequestStatKey>[] =
+  [
+    {
+      icon: FileText,
+      iconColor: "info",
+      key: "totalRequests",
+      label: "Total Requests",
+    },
+    {
+      icon: Calendar,
+      iconColor: "primary",
+      key: "scheduled",
+      label: "Scheduled",
+    },
+    {
+      icon: Clock,
+      iconColor: "warning",
+      key: "inProgress",
+      label: "In Progress",
+    },
+    {
+      icon: CircleCheck,
+      iconColor: "success",
+      key: "completed",
+      label: "Completed",
+    },
+  ];
+
+/**
+ * Filter values for change requests page.
+ */
+export interface ChangeRequestFilterValues {
+  stateId?: string;
+  impactId?: string;
+}
+
+/**
+ * Change request filter definitions.
+ */
+export const CHANGE_REQUEST_FILTER_DEFINITIONS: Array<{
+  filterKey: keyof ChangeRequestFilterValues;
+  id: string;
+  metadataKey: keyof CaseMetadataResponse;
+}> = [
+  {
+    filterKey: "stateId",
+    id: "state",
+    metadataKey: "changeRequestStates",
+  },
+  {
+    filterKey: "impactId",
+    id: "impact",
+    metadataKey: "changeRequestImpacts",
+  },
+];

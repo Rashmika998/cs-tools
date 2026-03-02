@@ -24,8 +24,8 @@ import {
 
 const mockAttachmentsPage1 = {
   attachments: [
-    { id: "a1", name: "file1.txt", type: "text/plain", size: 100, downloadUrl: "/a1", createdOn: "", createdBy: "" },
-    { id: "a2", name: "file2.txt", type: "text/plain", size: 200, downloadUrl: "/a2", createdOn: "", createdBy: "" },
+    { id: "a1", name: "file1.txt", size: 100, createdOn: "", createdBy: "" },
+    { id: "a2", name: "file2.txt", size: 200, createdOn: "", createdBy: "" },
   ],
   totalRecords: 12,
   offset: 0,
@@ -34,7 +34,7 @@ const mockAttachmentsPage1 = {
 
 const mockAttachmentsPage2 = {
   attachments: [
-    { id: "a3", name: "file3.txt", type: "text/plain", size: 300, downloadUrl: "/a3", createdOn: "", createdBy: "" },
+    { id: "a3", name: "file3.txt", size: 300, createdOn: "", createdBy: "" },
   ],
   totalRecords: 12,
   offset: 10,
