@@ -19,6 +19,7 @@ import {
   Box,
   Button,
   Chip,
+  Divider,
   Paper,
   Stack,
   Typography,
@@ -478,13 +479,7 @@ export default function ServiceRequestDetailContent({
                     {section.value}
                   </Typography>
                   {index < requestDetailSections.length - 1 && (
-                    <Box
-                      sx={{
-                        mt: 1.5,
-                        borderBottom: "1px solid",
-                        borderColor: "divider",
-                      }}
-                    />
+                    <Divider sx={{ mt: 1.5 }} />
                   )}
                 </Box>
               ))
@@ -597,13 +592,7 @@ export default function ServiceRequestDetailContent({
                   alignItems: "center",
                   gap: 1,
                   p: 1.5,
-                  borderRadius: 1,
                   bgcolor: alpha(theme.palette.primary?.main ?? "#fa7b3f", 0.08),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    theme.palette.primary?.main ?? "#fa7b3f",
-                    0.35,
-                  ),
                 }}
               >
                 <Users
@@ -621,13 +610,7 @@ export default function ServiceRequestDetailContent({
                     alignItems: "center",
                     gap: 1,
                     p: 1.5,
-                    borderRadius: 1,
                     bgcolor: alpha(theme.palette.info?.light ?? "#0288d1", 0.12),
-                    border: "1px solid",
-                    borderColor: alpha(
-                      theme.palette.info?.main ?? "#0288d1",
-                      0.25,
-                    ),
                   }}
                 >
                   <Folder
@@ -748,7 +731,6 @@ export default function ServiceRequestDetailContent({
                   bottom: 14,
                   width: 2,
                   bgcolor: "grey.400",
-                  borderRadius: 1,
                 },
               }}
             >
@@ -768,8 +750,7 @@ export default function ServiceRequestDetailContent({
                       width: 24,
                       height: 24,
                       borderRadius: "50%",
-                      border: "2px solid",
-                      borderColor: theme.palette.primary?.main ?? "#fa7b3f",
+                      boxShadow: `0 0 0 2px ${theme.palette.primary?.main ?? "#fa7b3f"}`,
                       bgcolor: "background.paper",
                       flexShrink: 0,
                       zIndex: 1,

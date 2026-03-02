@@ -148,10 +148,6 @@ export default function ServiceRequestsSearchBar({
                   ...(statusFilter === tab.value && {
                     bgcolor: isDark ? "#fff" : "#000",
                     color: isDark ? "#000" : "#fff",
-                    "&:hover": {
-                      bgcolor: isDark ? "#eee" : "#333",
-                      color: isDark ? "#000" : "#fff",
-                    },
                   }),
                 }}
               >

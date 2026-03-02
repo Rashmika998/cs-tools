@@ -186,15 +186,7 @@ export default function RequestCard({
           </Button>
         )}
         {footerButtons && footerButtons.length > 0 ? (
-          <Box
-            sx={{
-              display: "flex",
-              border: 1,
-              borderColor: "divider",
-              borderRadius: 1,
-              overflow: "hidden",
-            }}
-          >
+          <Box sx={{ display: "flex", gap: 1 }}>
             {footerButtons.map((btn, index) => (
               <Button
                 key={index}
@@ -208,13 +200,7 @@ export default function RequestCard({
                   justifyContent: "flex-start",
                   textTransform: "none",
                   fontWeight: 500,
-                  borderRadius: 0,
-                  borderRight: index < footerButtons.length - 1 ? 1 : 0,
-                  borderColor: "divider",
                   color: colors.blue[600],
-                  "&:hover": {
-                    bgcolor: alpha(colors.blue[50], 0.5),
-                  },
                 }}
               >
                 {btn.label}
@@ -232,7 +218,6 @@ export default function RequestCard({
               onClick={onSecondaryClick}
               sx={{
                 textTransform: "none",
-                borderColor: "divider",
                 color: "text.primary",
               }}
             >
