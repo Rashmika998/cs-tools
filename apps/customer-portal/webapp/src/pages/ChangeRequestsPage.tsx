@@ -171,7 +171,7 @@ export default function ChangeRequestsPage(): JSX.Element {
       if (isInfiniteError) {
         // Handle error case
         console.error("Failed to fetch change requests for export");
-        setIsExporting(false);
+        setTimeout(() => setIsExporting(false), 0);
       } else if (
         !isInfiniteLoading &&
         !hasNextPage &&
@@ -186,7 +186,7 @@ export default function ChangeRequestsPage(): JSX.Element {
               page.changeRequests,
           ) || [];
         generateChangeRequestsSchedulePdf(allChangeRequests, stats);
-        setIsExporting(false);
+        setTimeout(() => setIsExporting(false), 0);
       }
     }
   }, [

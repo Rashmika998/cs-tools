@@ -19,22 +19,33 @@ import { useAsgardeo } from "@asgardeo/react";
 import { useLogger } from "@hooks/useLogger";
 import { ApiQueryKeys } from "@constants/apiConstants";
 import { useAuthApiClient } from "@context/AuthApiContext";
-import type { ChangeRequestStatsResponse, ChangeRequestStats } from "@models/responses";
+import type {
+  ChangeRequestStatsResponse,
+  ChangeRequestStats,
+} from "@models/responses";
 
 /**
  * Maps the API response to ChangeRequestStats.
- * 
+ *
  * @param {ChangeRequestStatsResponse} response - The API response.
  * @returns {ChangeRequestStats} The mapped stats object.
  */
-function mapChangeRequestStats(response: ChangeRequestStatsResponse): ChangeRequestStats {
+function mapChangeRequestStats(
+  response: ChangeRequestStatsResponse,
+): ChangeRequestStats {
   const { totalCount, stateCount } = response;
 
   // Find scheduled count (label: "Scheduled")
-  const scheduled = stateCount.find((state) => state.label === "Scheduled")?.count ?? 0;
+  const scheduled =
+    stateCount.find((state) => state.label === "Scheduled")?.count ?? 0;
 
   // Calculate in-progress count (sum of: Implement, Review, Customer Approval, Customer Review)
-  const inProgressLabels = ["Implement", "Review", "Customer Approval", "Customer Review"];
+  const inProgressLabels = [
+    "Implement",
+    "Review",
+    "Customer Approval",
+    "Customer Review",
+  ];
   const inProgress = stateCount
     .filter((state) => inProgressLabels.includes(state.label))
     .reduce((sum, state) => sum + state.count, 0);
@@ -69,7 +80,9 @@ export function useGetProjectChangeRequestStats(
   return useQuery<ChangeRequestStats, Error>({
     queryKey: [ApiQueryKeys.CHANGE_REQUEST_STATS, projectId],
     queryFn: async (): Promise<ChangeRequestStats> => {
-      logger.debug(`[useGetProjectChangeRequestStats] Fetching change request stats for project ID: ${projectId}`);
+      logger.debug(
+        `[useGetProjectChangeRequestStats] Fetching change request stats for project ID: ${projectId}`,
+      );
 
       try {
         const baseUrl = window.config?.CUSTOMER_PORTAL_BACKEND_BASE_URL;
@@ -93,11 +106,14 @@ export function useGetProjectChangeRequestStats(
 
         const data: ChangeRequestStatsResponse = await response.json();
         logger.debug("[useGetProjectChangeRequestStats] Data received:", data);
-        
+
         // Map the API response to the expected stats format
         const mappedStats = mapChangeRequestStats(data);
-        logger.debug("[useGetProjectChangeRequestStats] Mapped stats:", mappedStats);
-        
+        logger.debug(
+          "[useGetProjectChangeRequestStats] Mapped stats:",
+          mappedStats,
+        );
+
         return mappedStats;
       } catch (error) {
         logger.error("[useGetProjectChangeRequestStats] Error:", error);
