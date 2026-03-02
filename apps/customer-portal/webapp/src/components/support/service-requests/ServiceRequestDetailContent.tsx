@@ -81,6 +81,17 @@ interface RequestDetailSection {
   value: string;
 }
 
+const WSO2_PRODUCT_LABEL_REGEX = /^\s*wso2\s*product\s*:?\s*/i;
+
+function stripWso2ProductFromText(text: string): string {
+  if (!text?.trim()) return text ?? "";
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !WSO2_PRODUCT_LABEL_REGEX.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 function parseRequestDetails(
   descriptionHtml: string | null | undefined,
 ): RequestDetailSection[] {
@@ -160,7 +171,11 @@ export default function ServiceRequestDetailContent({
   const currentUserEmail = userDetails?.email?.toLowerCase() ?? "";
   const [commentText, setCommentText] = useState("");
 
-  const { data: commentsData } = useGetCaseComments(projectId ?? "", caseId, {
+  const {
+    data: commentsData,
+    isLoading: isCommentsLoading,
+    isError: isCommentsError,
+  } = useGetCaseComments(projectId ?? "", caseId, {
     offset: 0,
     limit: 50,
   });
@@ -470,13 +485,16 @@ export default function ServiceRequestDetailContent({
                   (s) => !/^wso2\s*product$/i.test(s.label.trim()),
                 );
                 if (filtered.length === 0) {
+                  const fallbackText = stripWso2ProductFromText(
+                    stripHtml(data?.description ?? ""),
+                  );
                   return (
                     <Typography
                       variant="body2"
                       color="text.primary"
                       sx={{ whiteSpace: "pre-wrap" }}
                     >
-                      {stripHtml(data?.description ?? "") || "--"}
+                      {fallbackText || "--"}
                     </Typography>
                   );
                 }
@@ -508,7 +526,9 @@ export default function ServiceRequestDetailContent({
                 color="text.primary"
                 sx={{ whiteSpace: "pre-wrap" }}
               >
-                {stripHtml(data?.description ?? "") || "--"}
+                {stripWso2ProductFromText(
+                  stripHtml(data?.description ?? ""),
+                ) || "--"}
               </Typography>
             )}
           </Paper>
@@ -523,7 +543,15 @@ export default function ServiceRequestDetailContent({
               Communication
             </Typography>
             <Stack spacing={2} sx={{ mb: 2 }}>
-              {commentsToShow.length === 0 ? (
+              {isCommentsLoading ? (
+                <Typography variant="body2" color="text.secondary">
+                  Loading comments...
+                </Typography>
+              ) : isCommentsError ? (
+                <Typography variant="body2" color="error.main">
+                  Could not load comments. Please try again.
+                </Typography>
+              ) : commentsToShow.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                   No comments yet.
                 </Typography>
