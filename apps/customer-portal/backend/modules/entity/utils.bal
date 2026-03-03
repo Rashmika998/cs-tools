@@ -126,7 +126,7 @@ public isolated function validateUtcTimes(DateTime[]? utcTimes) returns string|e
 # + payload - Deployment update payload
 # + return - Error message if validation fails, nil otherwise
 public isolated function validateDeploymentUpdatePayload(DeploymentUpdatePayload payload) returns string? {
-    boolean hasDeploymentFields = payload.name !is () && payload.typeKey !is ();
+    boolean hasDeploymentFields = payload.name !is () || payload.typeKey !is () || payload?.description !is ();
 
     // Check if payload has at least one field
     if !hasDeploymentFields && payload.active is () {
@@ -237,7 +237,7 @@ public isolated function validateDeployedProductUpdatePayload(DeployedProductUpd
     string? description = payload?.description;
     if active is boolean {
         if active {
-            return "Invalid value for active field. When updating cores or tps, active field should be set to false.";  
+            return "Invalid value for active field. When updating cores or tps, active field should be set to false.";
         }
         if cores !is () || tps !is () || description !is () {
             return "When deactivating, cores, tps and description fields should not be provided.";
