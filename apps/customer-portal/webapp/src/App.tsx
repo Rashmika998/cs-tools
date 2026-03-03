@@ -101,6 +101,10 @@ export default function App(): JSX.Element {
                         <Route path="chat">
                           <Route index element={<NoveraChatPage />} />
                           <Route
+                            path=":conversationId"
+                            element={<NoveraChatPage />}
+                          />
+                          <Route
                             path="describe-issue"
                             element={<DescribeIssuePage />}
                           />

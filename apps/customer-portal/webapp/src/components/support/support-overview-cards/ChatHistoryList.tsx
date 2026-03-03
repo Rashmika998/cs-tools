@@ -86,7 +86,7 @@ export default function ChatHistoryList({
         return (
           <Form.CardButton
             key={item.chatId}
-            onClick={() => onItemAction?.(item.chatId, action)}
+            onClick={() => onItemAction?.(item.chatId, ChatAction.VIEW)}
             sx={{
               p: 2,
               display: "flex",
@@ -168,6 +168,7 @@ export default function ChatHistoryList({
                     color: "inherit",
                     ml: "6px",
                     mr: "6px",
+                    marginTop: "-1px",
                   },
                   "& .MuiChip-label": {
                     pl: 0,
