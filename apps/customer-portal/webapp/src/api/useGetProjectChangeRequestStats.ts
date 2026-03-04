@@ -16,9 +16,9 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAsgardeo } from "@asgardeo/react";
+import { useAuthApiClient } from "@api/useAuthApiClient";
 import { useLogger } from "@hooks/useLogger";
 import { ApiQueryKeys } from "@constants/apiConstants";
-import { useAuthApiClient } from "@context/AuthApiContext";
 import type {
   ChangeRequestStatsResponse,
   ChangeRequestStats,
@@ -75,7 +75,7 @@ export function useGetProjectChangeRequestStats(
 ): UseQueryResult<ChangeRequestStats, Error> {
   const logger = useLogger();
   const { isSignedIn, isLoading: isAuthLoading } = useAsgardeo();
-  const fetchFn = useAuthApiClient();
+  const authFetch = useAuthApiClient();
 
   return useQuery<ChangeRequestStats, Error>({
     queryKey: [ApiQueryKeys.CHANGE_REQUEST_STATS, projectId],
@@ -92,7 +92,9 @@ export function useGetProjectChangeRequestStats(
         }
 
         const requestUrl = `${baseUrl}/projects/${projectId}/stats/change-requests`;
-        const response = await fetchFn(requestUrl, { method: "GET" });
+        const response = await authFetch(requestUrl, {
+          method: "GET",
+        });
 
         logger.debug(
           `[useGetProjectChangeRequestStats] Response status for ${projectId}: ${response.status}`,
