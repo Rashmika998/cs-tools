@@ -239,6 +239,64 @@ public type ProjectFilterOptions record {|
     map<int> severityBasedAllocationTime;
 |};
 
+# Project data.
+public type Project record {|
+    # ID
+    entity:IdString id;
+    # Name
+    string name;
+    # Project key
+    string key;
+    # Created date and time
+    string createdOn;
+    # Description
+    string? description;
+    # Project type
+    ReferenceItem 'type;
+    json...;
+|};
+
+# Project information.
+public type ProjectResponse record {|
+    *Project;
+    # Salesforce ID
+    string sfId;
+    # Indicates if the project has service requests
+    boolean hasSr;
+    # Project start date
+    entity:Date? startDate;
+    # Project end date 
+    entity:Date? endDate;
+    # Account information
+    record {|
+        # ID of the account
+        entity:IdString id;
+        # Name of the account
+        string? name;
+        # Activation date
+        string? activationDate;
+        # Deactivation date
+        string? deactivationDate;
+        # Support tier
+        string? supportTier;
+        # Region
+        string? region;
+        # Owner email
+        string? ownerEmail;
+        # Technical owner email
+        string? technicalOwnerEmail;
+    |}? account;
+|};
+
+# Projects response.
+public type ProjectsResponse record {|
+    # List of projects
+    Project[] projects;
+    # Total records count
+    int totalRecords;
+    *entity:Pagination;
+|};
+
 # Case statistics for a project.
 public type ProjectCaseStats record {|
     # Total case count

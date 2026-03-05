@@ -256,7 +256,7 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
             };
         }
         return <http:Ok>{
-            body: projectsList
+            body: mapProjectsResponse(projectsList)
         };
     }
 
@@ -265,7 +265,8 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
     # + id - ID of the project
     # + return - Project details or error response
     resource function get projects/[entity:IdString id](http:RequestContext ctx)
-        returns entity:ProjectResponse|http:BadRequest|http:Unauthorized|http:Forbidden|http:InternalServerError {
+        returns types:ProjectResponse|http:BadRequest|http:Unauthorized|http:Forbidden|http:NotFound|
+        http:InternalServerError {
 
         authorization:UserInfoPayload|error userInfo = ctx.getWithType(authorization:HEADER_USER_INFO);
         if userInfo is error {
@@ -286,12 +287,19 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
                     }
                 };
             }
-
             if getStatusCode(projectResponse) == http:STATUS_FORBIDDEN {
                 logForbiddenProjectAccess(id, userInfo.userId);
                 return <http:Forbidden>{
                     body: {
                         message: ERR_MSG_PROJECT_ACCESS_FORBIDDEN
+                    }
+                };
+            }
+            if getStatusCode(projectResponse) == http:STATUS_NOT_FOUND {
+                log:printWarn(string `Project with ID: ${id} not found for user: ${userInfo.userId}`);
+                return <http:NotFound>{
+                    body: {
+                        message: "The requested project does not exist or you don't have access to it."
                     }
                 };
             }
@@ -304,7 +312,7 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
                 }
             };
         }
-        return projectResponse;
+        return mapProjectResponse(projectResponse);
     }
 
     # Get deployments of a project by ID.
@@ -3160,7 +3168,7 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
     }
 
     # Update a change request by change request ID.
-    # 
+    #
     # + id - ID of the change request
     # + payload - Change request update payload containing fields to be updated
     # + return - Updated change request details or an error

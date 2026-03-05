@@ -791,3 +791,50 @@ public isolated function mapProjectChangeRequestStatsResponse(entity:ProjectChan
         select {id: item.id.toString(), label: item.label, count: item.count};
     return {stateCount, totalCount: response.totalCount};
 }
+
+# Map projects response to the desired structure.
+# 
+# + response - Projects response from the entity service
+# + return - Mapped projects response
+public isolated function mapProjectsResponse(entity:ProjectsResponse response) returns types:ProjectsResponse {
+    types:Project[] projects = from entity:Project project in response.projects
+        select {
+            id: project.id,
+            'key: project.key,
+            name: project.name,
+            description: project.description,
+            createdOn: project.createdOn,
+            'type: {id: project.'type.id, label: project.'type.name}
+        };
+
+    return {projects, totalRecords: response.totalRecords, 'limit: response.'limit, offset: response.offset};
+}
+
+# Map project response to the desired structure.
+#
+# + response - Project response from the entity service
+# + return - Mapped project response
+public isolated function mapProjectResponse(entity:ProjectResponse response) returns types:ProjectResponse => {
+    id: response.id,
+    'key: response.key,
+    name: response.name,
+    description: response.description,
+    createdOn: response.createdOn,
+    'type: {id: response.'type.id, label: response.'type.name},
+    sfId: response.sfId,
+    hasSr: response.hasSr,
+    startDate: response.startDate,
+    endDate: response.endDate,
+    account: response.account != () ?
+        {
+            id: response.account?.id ?: "",
+            name: response.account?.name ?: "",
+            activationDate: response.account?.activationDate,
+            deactivationDate: response.account?.deactivationDate,
+            supportTier: response.account?.supportTier,
+            region: response.account?.region,
+            ownerEmail: response.account?.ownerEmail,
+            technicalOwnerEmail: response.account?.technicalOwnerEmail
+        } : ()
+};
+
