@@ -156,9 +156,6 @@ export default function ProjectTimeTracking({
           endDate={endDate}
           onStartDateChange={setStartDate}
           onEndDateChange={setEndDate}
-          state={state}
-          onStateChange={setState}
-          timeCardStates={filters?.timeCardStates}
         />
       </Box>
 
