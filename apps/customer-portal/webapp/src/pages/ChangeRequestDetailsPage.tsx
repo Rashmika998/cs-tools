@@ -52,6 +52,7 @@ import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import useGetChangeRequestDetails from "@api/useGetChangeRequestDetails";
 import { useInfiniteChangeRequestComments } from "@api/useInfiniteChangeRequestComments";
 import ChangeRequestCommentInput from "@components/support/change-requests/ChangeRequestCommentInput";
+import ScheduledMaintenanceWindowCard from "@components/support/change-requests/ScheduledMaintenanceWindowCard";
 import { formatCommentDate, hasDisplayableContent, stripAllTags } from "@utils/support";
 import { generateChangeRequestDetailsPdf } from "@utils/changeRequestDetailsPdf";
 import { ApiMutationKeys } from "@constants/apiConstants";
@@ -707,6 +708,9 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
           </Stack>
         </Box>
       </Paper>
+
+      {/* Scheduled Maintenance Window Card */}
+      <ScheduledMaintenanceWindowCard changeRequest={changeRequest} />
 
       {/* Deployment & Component Card */}
       <Paper variant="outlined">
