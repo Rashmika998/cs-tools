@@ -56,7 +56,6 @@ import { useNavigate, useParams } from "react-router";
 import { CaseType } from "@constants/supportConstants";
 import useGetProjectCases from "@api/useGetProjectCases";
 import useGetProjectFilters from "@api/useGetProjectFilters";
-import useGetUserDetails from "@api/useGetUserDetails";
 import type { AllCasesFilterValues, CaseListItem } from "@models/responses";
 import SecurityReportAnalysisSkeleton from "@components/security/SecurityReportAnalysisSkeleton";
 import TabBar from "@components/common/tab-bar/TabBar";
@@ -87,7 +86,6 @@ const SecurityReportAnalysis = (): JSX.Element => {
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const { data: currentUser } = useGetUserDetails();
 
   // Fetch filter metadata
   const { data: filterMetadata } = useGetProjectFilters(projectId || "");
@@ -97,6 +95,7 @@ const SecurityReportAnalysis = (): JSX.Element => {
     () => ({
       filters: {
         caseTypes: [CaseType.SECURITY_REPORT_ANALYSIS],
+        createdByMe: viewMode === "my" ? true : undefined,
         statusIds: filters.statusId ? [Number(filters.statusId)] : undefined,
         severityId: filters.severityId ? Number(filters.severityId) : undefined,
         issueId: filters.issueTypes ? Number(filters.issueTypes) : undefined,
@@ -108,7 +107,7 @@ const SecurityReportAnalysis = (): JSX.Element => {
         order: sortOrder,
       },
     }),
-    [filters, searchTerm, sortOrder],
+    [filters, searchTerm, sortOrder, viewMode],
   );
 
   // Fetch security report analysis cases
@@ -128,49 +127,10 @@ const SecurityReportAnalysis = (): JSX.Element => {
     void fetchNextPage();
   }, [data, hasNextPage, fetchNextPage]);
 
-  const allCases = useMemo(
+  const displayedCases = useMemo(
     () => data?.pages.flatMap((page) => page.cases) ?? [],
     [data],
   );
-
-  const ownerScopedCases = useMemo(() => {
-    if (viewMode !== "my") {
-      return allCases;
-    }
-
-    const userId = currentUser?.id?.trim();
-    const userEmail = currentUser?.email?.trim().toLowerCase();
-
-    if (!userId && !userEmail) {
-      return [];
-    }
-
-    return allCases.filter((caseItem) => {
-      const caseWithOwner = caseItem as CaseListItem & {
-        ownerId?: string;
-        createdBy?: string;
-      };
-      const assignedEngineer = caseItem.assignedEngineer;
-      const assignedEngineerId =
-        assignedEngineer && typeof assignedEngineer !== "string"
-          ? assignedEngineer.id
-          : undefined;
-      const assignedEngineerLabel =
-        assignedEngineer && typeof assignedEngineer !== "string"
-          ? (assignedEngineer.label ?? assignedEngineer.name ?? "")
-          : (assignedEngineer ?? "");
-
-      return (
-        (userId != null && caseWithOwner.ownerId === userId) ||
-        (userId != null && assignedEngineerId === userId) ||
-        (userEmail != null &&
-          caseWithOwner.createdBy?.toLowerCase() === userEmail) ||
-        (userEmail != null && assignedEngineerLabel.toLowerCase() === userEmail)
-      );
-    });
-  }, [allCases, currentUser?.email, currentUser?.id, viewMode]);
-
-  const displayedCases = ownerScopedCases;
 
   const totalItems = displayedCases.length;
 
