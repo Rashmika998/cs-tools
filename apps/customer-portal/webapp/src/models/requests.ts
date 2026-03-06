@@ -240,9 +240,3 @@ export interface ValidateContactRequest {
 export interface PatchChangeRequestRequest {
   plannedStartOn: string;
 }
-
-// Request body for PATCH /users/me (update user profile).
-export interface PatchUserMeRequest {
-  phoneNumber?: string;
-  timeZone?: string;
-}

@@ -389,14 +389,18 @@ export function formatDateOnly(dateStr: string | null | undefined): string {
  * Converts duration from minutes to formatted string (e.g., "4h 30m").
  * Used for change request duration display.
  *
- * @param {number | null | undefined} minutes - Duration in minutes.
+ * @param {number | string | null | undefined} minutes - Duration in minutes (API may return string).
  * @returns {string} Formatted duration string (e.g., "4h 30m") or "Not Available".
  */
-export function formatDuration(minutes: number | null | undefined): string {
-  if (minutes == null || minutes < 0) return "Not Available";
+export function formatDuration(
+  minutes: number | string | null | undefined,
+): string {
+  if (minutes == null) return "Not Available";
+  const n = typeof minutes === "number" ? minutes : parseInt(String(minutes), 10);
+  if (Number.isNaN(n) || n < 0) return "Not Available";
 
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
+  const hours = Math.floor(n / 60);
+  const mins = n % 60;
 
   if (hours === 0 && mins === 0) return "0m";
   if (hours === 0) return `${mins}m`;
