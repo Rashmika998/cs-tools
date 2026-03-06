@@ -58,6 +58,10 @@ import {
   mapSeverityToDisplay,
   resolveColorFromTheme,
   stripHtml,
+  stripCodeWrapper,
+  convertCodeTagsToHtml,
+  stripCustomerCommentAddedLabel,
+  replaceInlineImageSources,
   hasDisplayableContent,
   ACTION_TO_CASE_STATE_LABEL,
   getAvailableCaseActions,
@@ -66,6 +70,8 @@ import {
 } from "@utils/support";
 import { CASE_STATUS_ACTIONS, CommentType } from "@constants/supportConstants";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
+import CaseDetailsAttachmentsPanel from "@case-details-attachments/CaseDetailsAttachmentsPanel";
+import DOMPurify from "dompurify";
 
 export interface ServiceRequestDetailContentProps {
   data: CaseDetails | undefined;
@@ -479,25 +485,38 @@ export default function ServiceRequestDetailContent({
             <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1.5 }}>
               Request Details
             </Typography>
-            {requestDetailSections.length > 0 ? (
-              (() => {
-                const filtered = requestDetailSections.filter(
-                  (s) => !/^wso2\s*product$/i.test(s.label.trim()),
-                );
-                if (filtered.length === 0) {
-                  const fallbackText = stripWso2ProductFromText(
-                    stripHtml(data?.description ?? ""),
-                  );
-                  return (
+            {(() => {
+              const apiVariables = data?.variables ?? [];
+              const filteredVariables = apiVariables.filter(
+                (v) => !/^wso2\s*product$/i.test((v.name ?? "").trim()),
+              );
+              if (filteredVariables.length > 0) {
+                return filteredVariables.map((v, index) => (
+                  <Box key={`${v.name}-${index}`} sx={{ mb: 1.5 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mb: 0.5 }}
+                    >
+                      {v.name}
+                    </Typography>
                     <Typography
                       variant="body2"
                       color="text.primary"
                       sx={{ whiteSpace: "pre-wrap" }}
                     >
-                      {fallbackText || "--"}
+                      {stripHtml(v.value ?? "").trim() || "--"}
                     </Typography>
-                  );
-                }
+                    {index < filteredVariables.length - 1 && (
+                      <Divider sx={{ mt: 1.5 }} />
+                    )}
+                  </Box>
+                ));
+              }
+              const filtered = requestDetailSections.filter(
+                (s) => !/^wso2\s*product$/i.test(s.label.trim()),
+              );
+              if (filtered.length > 0) {
                 return filtered.map((section, index) => (
                   <Box key={`${section.label}-${index}`} sx={{ mb: 1.5 }}>
                     <Typography
@@ -519,18 +538,31 @@ export default function ServiceRequestDetailContent({
                     )}
                   </Box>
                 ));
-              })()
-            ) : (
-              <Typography
-                variant="body2"
-                color="text.primary"
-                sx={{ whiteSpace: "pre-wrap" }}
-              >
-                {stripWso2ProductFromText(
-                  stripHtml(data?.description ?? ""),
-                ) || "--"}
-              </Typography>
-            )}
+              }
+              const fallbackText = stripWso2ProductFromText(
+                stripHtml(data?.description ?? ""),
+              );
+              return (
+                <Typography
+                  variant="body2"
+                  color="text.primary"
+                  sx={{ whiteSpace: "pre-wrap" }}
+                >
+                  {fallbackText || "--"}
+                </Typography>
+              );
+            })()}
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 0 }}>
+            <Typography
+              variant="subtitle2"
+              color="text.primary"
+              sx={{ mb: 1.5 }}
+            >
+              Attachments
+            </Typography>
+            <CaseDetailsAttachmentsPanel caseId={caseId} />
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 0 }}>
@@ -592,13 +624,41 @@ export default function ServiceRequestDetailContent({
                         >
                           {comment.createdBy} • {formatRelativeTime(comment.createdOn)}
                         </Typography>
-                        <Typography
-                          variant="body2"
-                          color="text.primary"
-                          sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}
-                        >
-                          {stripHtml(comment.content)}
-                        </Typography>
+                        <Box
+                          component="div"
+                          sx={{
+                            mt: 0.5,
+                            "& p": { mb: 0.5 },
+                            "& p:last-child": { mb: 0 },
+                            "& code": {
+                              display: "block",
+                              p: 1,
+                              bgcolor: "action.hover",
+                              fontSize: "0.875rem",
+                              whiteSpace: "pre-wrap",
+                              overflowWrap: "break-word",
+                            },
+                          }}
+                          dangerouslySetInnerHTML={{
+                            __html: (() => {
+                              const raw = comment.content ?? "";
+                              const trimmed = raw.trim();
+                              const isFullCodeWrap =
+                                trimmed.startsWith("[code]") &&
+                                trimmed.endsWith("[/code]");
+                              const afterCode = isFullCodeWrap
+                                ? stripCodeWrapper(raw)
+                                : convertCodeTagsToHtml(raw);
+                              const withoutLabel =
+                                stripCustomerCommentAddedLabel(afterCode);
+                              const withImages = replaceInlineImageSources(
+                                withoutLabel,
+                                comment.inlineAttachments,
+                              );
+                              return DOMPurify.sanitize(withImages);
+                            })(),
+                          }}
+                        />
                       </Box>
                     </Stack>
                   );
