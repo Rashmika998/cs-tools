@@ -42,6 +42,13 @@ export interface Stat {
   key: keyof NonNullable<ProjectStatsResponse["projectStats"]>;
 }
 
+/** Project type labels for conditional UI visibility. */
+export const PROJECT_TYPE_LABELS = {
+  MANAGED_CLOUD_SUBSCRIPTION: "Managed Cloud Subscription",
+  CLOUD_SUPPORT: "Cloud Support",
+  CLOUD_EVALUATION_SUPPORT: "Cloud Evaluation Support",
+} as const;
+
 export const PROJECT_DETAILS_TABS: TabOption[] = [
   {
     id: "overview",
@@ -105,7 +112,12 @@ export const statItems: Stat[] = [
 
 export const getRecentActivityItems = (
   activity?: ProjectStatsResponse["recentActivity"],
+  projectTypeLabel?: string | null,
 ): ActivityItem[] => {
+  const hideTimeTracking =
+    projectTypeLabel === PROJECT_TYPE_LABELS.CLOUD_SUPPORT ||
+    projectTypeLabel === PROJECT_TYPE_LABELS.CLOUD_EVALUATION_SUPPORT;
+
   const formatDateTime = (dateString: string): string => {
     if (!dateString) return "";
     try {
@@ -127,31 +139,38 @@ export const getRecentActivityItems = (
     }
   };
 
-  return [
-    {
-      label: "Total Time Logged",
-      value:
-        activity?.totalHours !== undefined
-          ? `${convertMinutesToHours(activity.totalHours)} hrs`
-          : "N/A",
-      type: "text",
-    },
-    {
-      label: "Billable Hours",
-      value:
-        activity?.billableHours !== undefined
-          ? `${convertMinutesToHours(activity.billableHours)} hrs`
-          : "N/A",
-      type: "text",
-    },
-    {
-      label: "Last Deployment",
-      value: activity?.lastDeploymentOn
-        ? formatDateTime(activity.lastDeploymentOn)
-        : "N/A",
-      type: "text",
-    },
-  ];
+  const items: ActivityItem[] = [];
+
+  if (!hideTimeTracking) {
+    items.push(
+      {
+        label: "Total Time Logged",
+        value:
+          activity?.totalHours !== undefined
+            ? `${convertMinutesToHours(activity.totalHours)} hrs`
+            : "N/A",
+        type: "text",
+      },
+      {
+        label: "Billable Hours",
+        value:
+          activity?.billableHours !== undefined
+            ? `${convertMinutesToHours(activity.billableHours)} hrs`
+            : "N/A",
+        type: "text",
+      },
+    );
+  }
+
+  items.push({
+    label: "Last Deployment",
+    value: activity?.lastDeploymentOn
+      ? formatDateTime(activity.lastDeploymentOn)
+      : "N/A",
+    type: "text",
+  });
+
+  return items;
 };
 
 export const SUBSCRIPTION_STATUS = {
