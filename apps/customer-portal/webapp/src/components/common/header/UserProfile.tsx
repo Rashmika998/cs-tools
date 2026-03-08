@@ -67,7 +67,6 @@ export default function UserProfile(): JSX.Element {
       <UserMenu>
         <UserMenu.Trigger name={name} />
         <UserMenu.Header name={name} email={email} />
-
         <UserMenu.Divider />
         <UserMenu.Item
           icon={<User size={18} />}
