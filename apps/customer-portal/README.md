@@ -69,28 +69,9 @@ This setup helps teams deliver consistent, scalable customer experiences without
 - Node.js 20+ (LTS recommended)
 - `pnpm` 9+
 
-### 1. Run Backend
+### Backend Setup Guides
 
-```bash
-cd backend
-bal run
-```
-
-Backend runs on `http://localhost:9090`.
-
-### 2. Run Webapp
-
-Update `webapp/public/config.js` with your environment values, then run:
-
-```bash
-cd webapp
-pnpm install
-pnpm run dev
-```
-
-Webapp runs on `http://localhost:3000`.
-
-This is the publicly accessible browser experience.
+- [Backend](./backend/README.md)
 
 ### Frontend Setup Guides
 
