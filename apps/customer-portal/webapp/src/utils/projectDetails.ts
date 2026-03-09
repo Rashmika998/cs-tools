@@ -268,13 +268,16 @@ export const getSystemHealthColor = (
 };
 
 /**
- * Determines the subscription status based on the end date.
+ * Determines the subscription status based on start/end dates.
+ * Expiring Soon when progress >= 75% of subscription period.
  *
  * @param {string} endDateString - The subscription end date string.
+ * @param {string} [startDateString] - Optional start date for progress-based Expiring Soon.
  * @returns {SubscriptionStatus} The status string.
  */
 export const getSubscriptionStatus = (
   endDateString: string,
+  startDateString?: string,
 ): SubscriptionStatus => {
   if (!endDateString) {
     return SUBSCRIPTION_STATUS.ACTIVE;
@@ -283,16 +286,19 @@ export const getSubscriptionStatus = (
   const today = new Date();
   const endDate = new Date(endDateString);
 
-  // Calculate difference in milliseconds
   const diffTime = endDate.getTime() - today.getTime();
-  // Convert to days
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
     return SUBSCRIPTION_STATUS.EXPIRED;
   }
 
-  if (diffDays <= 30) {
+  if (startDateString) {
+    const progress = calculateProgress(startDateString, endDateString);
+    if (progress >= 75) {
+      return SUBSCRIPTION_STATUS.EXPIRING_SOON;
+    }
+  } else if (diffDays <= 30) {
     return SUBSCRIPTION_STATUS.EXPIRING_SOON;
   }
 
@@ -347,6 +353,21 @@ export const calculateProgress = (start: string, end: string): number => {
 
   if (total <= 0) return 100;
   return Math.min(100, Math.max(0, (elapsed / total) * 100));
+};
+
+/**
+ * Returns the number of days remaining until the end date.
+ *
+ * @param {string} endDateString - The subscription end date string.
+ * @returns {number} Days remaining (0 if expired).
+ */
+export const getRemainingDays = (endDateString: string): number => {
+  if (!endDateString) return 0;
+  const today = new Date();
+  const endDate = new Date(endDateString);
+  const diffTime = endDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDays);
 };
 
 /**
