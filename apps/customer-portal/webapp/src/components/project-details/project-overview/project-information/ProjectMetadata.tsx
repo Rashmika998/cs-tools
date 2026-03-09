@@ -45,28 +45,45 @@ const ProjectMetadata = ({
 }: ProjectMetadataProps): JSX.Element => {
   return (
     <Box sx={{ pt: 3, borderTop: 1, borderColor: "divider" }}>
-      <Grid container spacing={2}>
+      <Grid container spacing={2} sx={{ alignItems: "center" }}>
         {/* Created Date */}
         <Grid size={{ xs: 12, md: 3 }}>
-          <Typography
-            variant="body2"
-            fontWeight="medium"
-            sx={{ display: "block", mb: 0.5 }}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            Created Date
-          </Typography>
-          {isLoading ? (
+            <Typography
+              variant="body2"
+              fontWeight="medium"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Created Date
+            </Typography>
+            {isLoading ? (
             <Skeleton variant="text" width="60%" />
           ) : isError ? (
             <ErrorIndicator entityName="project metadata" />
           ) : (
             <Typography variant="body2">{createdDate}</Typography>
           )}
+          </Box>
         </Grid>
 
         {/* Project Type */}
         <Grid size={{ xs: 12, md: 3 }}>
-          <Typography
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Typography
             variant="body2"
             fontWeight="medium"
             sx={{ display: "block", mb: 0.5 }}
@@ -81,53 +98,76 @@ const ProjectMetadata = ({
               size="small"
               variant="outlined"
               color={getProjectTypeColor(type?.label ?? "")}
-              sx={{ font: "caption" }}
+              sx={{
+                font: "caption",
+                maxWidth: "100%",
+                "& .MuiChip-label": { overflow: "visible", whiteSpace: "normal" },
+              }}
             />
           )}
+          </Box>
         </Grid>
 
         {/* Support Tier */}
         <Grid size={{ xs: 12, md: 3 }}>
-          <Typography
-            variant="body2"
-            fontWeight="medium"
-            sx={{ display: "block", mb: 0.5 }}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            Support Tier
-          </Typography>
-          {isLoading ? (
-            <Skeleton variant="rounded" width={80} height={24} />
-          ) : (
-            <Chip
-              label={supportTier}
-              size="small"
-              color={getSupportTierColor(supportTier)}
-              variant="outlined"
-              sx={{ font: "caption" }}
-            />
-          )}
+            <Typography
+              variant="body2"
+              fontWeight="medium"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Support Tier
+            </Typography>
+            {isLoading ? (
+              <Skeleton variant="rounded" width={80} height={24} />
+            ) : (
+              <Chip
+                label={supportTier}
+                size="small"
+                color={getSupportTierColor(supportTier)}
+                variant="outlined"
+                sx={{ font: "caption" }}
+              />
+            )}
+          </Box>
         </Grid>
 
         {/* SLA Status */}
         <Grid size={{ xs: 12, md: 3 }}>
-          <Typography
-            variant="body2"
-            fontWeight="medium"
-            sx={{ display: "block", mb: 0.5 }}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            SLA Status
-          </Typography>
-          {isLoading ? (
-            <Skeleton variant="rounded" width={60} height={24} />
-          ) : (
-            <Chip
-              label={slaStatus}
-              size="small"
-              color={getSLAStatusColor(slaStatus)}
-              variant="outlined"
-              sx={{ font: "caption" }}
-            />
-          )}
+            <Typography
+              variant="body2"
+              fontWeight="medium"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              SLA Status
+            </Typography>
+            {isLoading ? (
+              <Skeleton variant="rounded" width={60} height={24} />
+            ) : (
+              <Chip
+                label={slaStatus}
+                size="small"
+                color={getSLAStatusColor(slaStatus)}
+                variant="outlined"
+                sx={{ font: "caption" }}
+              />
+            )}
+          </Box>
         </Grid>
       </Grid>
     </Box>
