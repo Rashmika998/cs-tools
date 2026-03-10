@@ -55,7 +55,7 @@ const ProjectName = ({
               label={projectKey}
               size="small"
               variant="outlined"
-              sx={{ font: "caption" }}
+              sx={{ typography: "caption" }}
             />
           </>
         )}

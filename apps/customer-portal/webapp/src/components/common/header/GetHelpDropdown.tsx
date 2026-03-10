@@ -87,10 +87,7 @@ export default function GetHelpDropdown(): JSX.Element {
     handleClose();
     if (projectId) {
       navigate(
-        `/${projectId}/support/chat/create-case?type=security_report_analysis`,
-        {
-          state: { skipChat: true },
-        },
+        `/${projectId}/support/security-report/create`,
       );
     }
   };

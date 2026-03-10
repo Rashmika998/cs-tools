@@ -120,7 +120,8 @@ export default function CreateCasePage(): JSX.Element {
   // Check if creating a security report analysis case
   const searchParams = new URLSearchParams(location.search);
   const caseType = searchParams.get("type");
-  const isSecurityReport = caseType === CaseType.SECURITY_REPORT_ANALYSIS;
+  const isSecurityReportPath = location.pathname.includes("security-report");
+  const isSecurityReport = caseType === CaseType.SECURITY_REPORT_ANALYSIS || isSecurityReportPath;
   const skipChat = !!locationStateRaw?.skipChat || isSecurityReport;
   const { showLoader, hideLoader } = useLoader();
   const { data: projectDetails, isLoading: isProjectLoading } =

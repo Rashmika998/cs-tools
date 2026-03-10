@@ -17,7 +17,7 @@
 import {
   FolderOpen,
   Headset,
-  Home,
+  LayoutDashboard,
   Megaphone,
   RefreshCw,
   Shield,
@@ -33,7 +33,7 @@ interface AppShellNavItem {
 
 // Navigation items for the app shell.
 export const APP_SHELL_NAV_ITEMS: AppShellNavItem[] = [
-  { id: "dashboard", label: "Dashboard", path: "dashboard", icon: Home },
+  { id: "dashboard", label: "Dashboard", path: "dashboard", icon: LayoutDashboard },
   { id: "support", label: "Support", path: "support", icon: Headset },
   {
     id: "project-details",

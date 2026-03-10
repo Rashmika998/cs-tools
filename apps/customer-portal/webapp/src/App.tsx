@@ -123,6 +123,12 @@ export default function App(): JSX.Element {
                       element={<CreateCasePage />}
                     />
                   </Route>
+                  <Route path="security-report">
+                    <Route
+                      path="create"
+                      element={<CreateCasePage />}
+                    />
+                  </Route>
                 </Route>
                 {/* Updates */}
                 <Route path="updates">

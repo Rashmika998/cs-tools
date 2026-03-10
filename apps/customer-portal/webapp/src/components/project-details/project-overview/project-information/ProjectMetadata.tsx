@@ -14,7 +14,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, Typography, Grid, Chip, Skeleton } from "@wso2/oxygen-ui";
+import {
+  Box,
+  Typography,
+  Grid,
+  Chip,
+  Skeleton,
+  Tooltip,
+} from "@wso2/oxygen-ui";
 import type { JSX } from "react";
 import {
   getProjectTypeColor,
@@ -43,17 +50,34 @@ const ProjectMetadata = ({
   isLoading,
   isError,
 }: ProjectMetadataProps): JSX.Element => {
+  const chipStyle = {
+    typography: "caption",
+    maxWidth: "140px",
+    "& .MuiChip-label": {
+      display: "block",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    },
+  };
+
   return (
     <Box sx={{ pt: 3, borderTop: 1, borderColor: "divider" }}>
-      <Grid container spacing={2} sx={{ alignItems: "center" }}>
-        {/* Created Date */}
+      <Grid
+        container
+        spacing={2}
+        sx={{
+          alignItems: "center",
+          justifyContent: "space-between", // Distributes columns evenly
+        }}
+      >
+        {/* Created Date - Pushed to the far Left */}
         <Grid size={{ xs: 12, md: 3 }}>
           <Box
             sx={{
               display: "flex",
               flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
+              alignItems: { xs: "center", md: "flex-start" },
             }}
           >
             <Typography
@@ -64,58 +88,62 @@ const ProjectMetadata = ({
               Created Date
             </Typography>
             {isLoading ? (
-            <Skeleton variant="text" width="60%" />
-          ) : isError ? (
-            <ErrorIndicator entityName="project metadata" />
-          ) : (
-            <Typography variant="body2">{createdDate}</Typography>
-          )}
+              <Skeleton variant="text" width="60%" />
+            ) : isError ? (
+              <ErrorIndicator entityName="project metadata" />
+            ) : (
+              <Typography variant="body2">{createdDate}</Typography>
+            )}
           </Box>
         </Grid>
 
-        {/* Project Type */}
+        {/* Project Type - Centered */}
         <Grid size={{ xs: 12, md: 3 }}>
           <Box
             sx={{
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
             }}
           >
             <Typography
-            variant="body2"
-            fontWeight="medium"
-            sx={{ display: "block", mb: 0.5 }}
-          >
-            Project Type
-          </Typography>
-          {isLoading ? (
-            <Skeleton variant="rounded" width={80} height={24} />
-          ) : (
-            <Chip
-              label={type?.label ?? ""}
-              size="small"
-              variant="outlined"
-              color={getProjectTypeColor(type?.label ?? "")}
-              sx={{
-                font: "caption",
-                maxWidth: "100%",
-                "& .MuiChip-label": { overflow: "visible", whiteSpace: "normal" },
-              }}
-            />
-          )}
+              variant="body2"
+              fontWeight="medium"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Project Type
+            </Typography>
+            {isLoading || isError ? (
+              <Skeleton variant="rounded" width={80} height={24} />
+            ) : type?.label ? (
+              <Tooltip title={type.label} arrow>
+                <Chip
+                  label={type.label}
+                  size="small"
+                  variant="outlined"
+                  color={getProjectTypeColor(type.label)}
+                  sx={chipStyle}
+                />
+              </Tooltip>
+            ) : (
+              <Chip
+                label=""
+                size="small"
+                variant="outlined"
+                color={getProjectTypeColor("")}
+                sx={chipStyle}
+              />
+            )}
           </Box>
         </Grid>
 
-        {/* Support Tier */}
+        {/* Support Tier - Centered */}
         <Grid size={{ xs: 12, md: 3 }}>
           <Box
             sx={{
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
             }}
           >
             <Typography
@@ -125,28 +153,37 @@ const ProjectMetadata = ({
             >
               Support Tier
             </Typography>
-            {isLoading ? (
+            {isLoading || isError ? (
               <Skeleton variant="rounded" width={80} height={24} />
+            ) : supportTier ? (
+              <Tooltip title={supportTier} arrow>
+                <Chip
+                  label={supportTier}
+                  size="small"
+                  color={getSupportTierColor(supportTier)}
+                  variant="outlined"
+                  sx={chipStyle}
+                />
+              </Tooltip>
             ) : (
               <Chip
                 label={supportTier}
                 size="small"
                 color={getSupportTierColor(supportTier)}
                 variant="outlined"
-                sx={{ font: "caption" }}
+                sx={chipStyle}
               />
             )}
           </Box>
         </Grid>
 
-        {/* SLA Status */}
+        {/* SLA Status - Pushed to the far Right */}
         <Grid size={{ xs: 12, md: 3 }}>
           <Box
             sx={{
               display: "flex",
               flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
+              alignItems: { xs: "center", md: "flex-end" },
             }}
           >
             <Typography
@@ -156,15 +193,25 @@ const ProjectMetadata = ({
             >
               SLA Status
             </Typography>
-            {isLoading ? (
+            {isLoading || isError ? (
               <Skeleton variant="rounded" width={60} height={24} />
+            ) : slaStatus ? (
+              <Tooltip title={slaStatus} arrow>
+                <Chip
+                  label={slaStatus}
+                  size="small"
+                  color={getSLAStatusColor(slaStatus)}
+                  variant="outlined"
+                  sx={chipStyle}
+                />
+              </Tooltip>
             ) : (
               <Chip
                 label={slaStatus}
                 size="small"
                 color={getSLAStatusColor(slaStatus)}
                 variant="outlined"
-                sx={{ font: "caption" }}
+                sx={chipStyle}
               />
             )}
           </Box>

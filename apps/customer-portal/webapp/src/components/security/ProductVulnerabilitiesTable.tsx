@@ -14,15 +14,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { ListingTable } from "@wso2/oxygen-ui";
+import { ListingTable, Divider, Box } from "@wso2/oxygen-ui";
 import { type JSX, useState, useMemo, useEffect } from "react";
 import { usePostProductVulnerabilitiesSearch } from "@api/usePostProductVulnerabilitiesSearch";
 import { useGetVulnerabilitiesMetaData } from "@api/useGetVulnerabilitiesMetaData";
 import { useDebouncedValue } from "@hooks/useDebouncedValue";
-import FilterPopover, {
-  type FilterField,
-} from "@components/common/filter-panel/FilterPopover";
 import ProductVulnerabilitiesTableHeader from "@components/security/ProductVulnerabilitiesTableHeader";
+import ProductVulnerabilitiesFilters from "@components/security/ProductVulnerabilitiesFilters";
 import ProductVulnerabilitiesList from "@components/security/ProductVulnerabilitiesList";
 
 export interface ProductVulnerabilitiesTableProps {
@@ -43,29 +41,16 @@ const ProductVulnerabilitiesTable = ({
 }: ProductVulnerabilitiesTableProps): JSX.Element => {
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput, 350);
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filters, setFilters] = useState<Record<string, string | number>>({});
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  const { data: metaData, isError: isMetaDataError } =
-    useGetVulnerabilitiesMetaData();
+  const { data: metaData } = useGetVulnerabilitiesMetaData();
   const severityOptions = useMemo(
     () =>
       metaData?.severities?.map((s) => ({ value: s.id, label: s.label })) ?? [],
     [metaData?.severities],
-  );
-
-  const dynamicFilterFields: FilterField[] = useMemo(
-    () => [
-      {
-        id: "severityId",
-        label: "Severity",
-        type: "select",
-        options: severityOptions,
-      },
-    ],
-    [severityOptions],
   );
 
   const searchRequest = useMemo(
@@ -105,20 +90,8 @@ const ProductVulnerabilitiesTable = ({
     };
   }, [data]);
 
-  const handleFilterSearch = (newFilters: Record<string, string>) => {
-    setFilters(newFilters);
-    setPage(0);
-  };
-
-  const handleUpdateFilter = (field: string, value: string) => {
+  const handleUpdateFilter = (field: string, value: string | number) => {
     setFilters((prev) => ({ ...prev, [field]: value }));
-    setPage(0);
-  };
-
-  const handleRemoveFilter = (field: string) => {
-    const newFilters = { ...filters };
-    delete newFilters[field];
-    setFilters(newFilters);
     setPage(0);
   };
 
@@ -139,34 +112,37 @@ const ProductVulnerabilitiesTable = ({
   };
 
   const activeFilterFields = useMemo(
-    () =>
-      dynamicFilterFields
-        .filter((f) => f.type === "select")
-        .map((field) => ({
-          id: field.id,
-          label: field.label,
-          options: (field.options || []).map((opt) =>
-            typeof opt === "string" ? { value: opt, label: opt } : opt,
-          ),
+    () => [
+      {
+        id: "severityId",
+        label: "Severity",
+        options: severityOptions.map((opt) => ({
+          value: opt.value,
+          label: opt.label,
         })),
-    [dynamicFilterFields],
+      },
+    ],
+    [severityOptions],
   );
 
   const appliedFilters = useMemo(() => {
-    const result: Record<string, string> = {};
+    const result: Record<string, string | number> = {};
     for (const [key, value] of Object.entries(filters)) {
       if (!value) continue;
       if (key === "severityId") {
         const label = severityOptions.find((o) => o.value === value)?.label;
-        result[key] = label ?? value;
+        result[key] = label ?? String(value);
       } else {
-        result[key] = value;
+        result[key] = String(value);
       }
     }
     return result;
   }, [filters, severityOptions]);
 
-  const displayFiltersForPopover = useMemo(() => ({ ...filters }), [filters]);
+  const activeFilterCount = useMemo(
+    () => activeFilterFields.filter((f) => appliedFilters[f.id]).length,
+    [activeFilterFields, appliedFilters],
+  );
 
   return (
     <ListingTable.Container sx={{ width: "100%", mb: 4, p: 3 }}>
@@ -176,16 +152,30 @@ const ProductVulnerabilitiesTable = ({
           setSearchInput(v);
           setPage(0);
         }}
-        onFilterIconClick={() => setIsFilterOpen(true)}
-        activeFiltersCount={
-          activeFilterFields.filter((f) => appliedFilters[f.id]).length
-        }
-        appliedFilters={appliedFilters}
-        filterFields={activeFilterFields}
-        onRemoveFilter={handleRemoveFilter}
-        onClearAll={handleClearFilters}
-        onUpdateFilter={handleUpdateFilter}
+        onFilterToggle={() => {
+          if (activeFilterCount > 0) {
+            handleClearFilters();
+          } else {
+            setIsFilterOpen(!isFilterOpen);
+          }
+        }}
+        isFiltersOpen={isFilterOpen}
+        activeFiltersCount={activeFilterCount}
       />
+
+      {/* Filter dropdowns section */}
+      {isFilterOpen && (
+        <>
+          <Divider sx={{ my: 2 }} />
+          <Box sx={{ mb: 3 }}>
+            <ProductVulnerabilitiesFilters
+              filters={filters}
+              severityOptions={severityOptions}
+              onFilterChange={handleUpdateFilter}
+            />
+          </Box>
+        </>
+      )}
 
       <ProductVulnerabilitiesList
         isLoading={isFetching || (!data && !isError)}
@@ -196,17 +186,6 @@ const ProductVulnerabilitiesTable = ({
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
         onVulnerabilityClick={onVulnerabilityClick}
-      />
-
-      <FilterPopover
-        open={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        onSearch={handleFilterSearch}
-        initialFilters={displayFiltersForPopover}
-        fields={dynamicFilterFields}
-        title="Filter Vulnerabilities"
-        isLoading={!metaData}
-        isError={isMetaDataError}
       />
     </ListingTable.Container>
   );

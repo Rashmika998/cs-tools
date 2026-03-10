@@ -145,10 +145,7 @@ const SecurityReportAnalysis = (): JSX.Element => {
   const handleCreateReport = () => {
     // Navigate to create case page with security report analysis type
     navigate(
-      `/${projectId}/support/chat/create-case?type=security_report_analysis`,
-      {
-        state: { skipChat: true },
-      },
+      `/${projectId}/support/security-report/create`,
     );
   };
 
