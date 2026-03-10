@@ -14,8 +14,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, IconButton, Tooltip } from "@wso2/oxygen-ui";
-import { Send, PanelTopClose } from "@wso2/oxygen-ui-icons-react";
+import {
+  Box,
+  Button,
+  IconButton,
+  Tooltip,
+  alpha,
+  colors,
+} from "@wso2/oxygen-ui";
+import { Send, PanelTopClose, FileText } from "@wso2/oxygen-ui-icons-react";
 import { type JSX, useState } from "react";
 import Editor from "@components/common/rich-text-editor/Editor";
 import { htmlToPlainText } from "@utils/richTextEditor";
@@ -24,7 +31,9 @@ interface ChatInputProps {
   inputValue: string;
   setInputValue: (value: string) => void;
   onSend: () => void;
+  onCreateCase?: () => void;
   isSending?: boolean;
+  isCreateCaseLoading?: boolean;
   resetTrigger?: number;
 }
 
@@ -40,7 +49,9 @@ export default function ChatInput({
   inputValue,
   setInputValue,
   onSend,
+  onCreateCase,
   isSending = false,
+  isCreateCaseLoading = false,
   resetTrigger = 0,
 }: ChatInputProps): JSX.Element {
   const plainText = htmlToPlainText(inputValue).trim();
@@ -54,77 +65,121 @@ export default function ChatInput({
   const BUTTON_TOP_WITH_TOOLBAR = 56;
 
   return (
-    <Box sx={{ p: 2, bgcolor: "background.paper", flexShrink: 0 }}>
-      <Box sx={{ display: "flex", gap: 1, alignItems: "flex-end" }}>
-        <Box sx={{ flex: 1, minWidth: 0, position: "relative" }}>
-          {/* Toolbar toggle button as prefix */}
-          <Box
+    <Box sx={{ flexShrink: 0 }}>
+      {/* Create Case Banner */}
+      <Box
+        sx={{
+          px: 6,
+          py: 1.5,
+          bgcolor: alpha(colors.yellow[800], 0.05),
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+          }}
+        >
+          <Button
+            onClick={onCreateCase}
+            disabled={isCreateCaseLoading}
+            variant="outlined"
+            size="small"
+            color="warning"
+            startIcon={<FileText size={14} />}
             sx={{
-              position: "absolute",
-              left: 8,
-              top: showToolbar
-                ? BUTTON_TOP_WITH_TOOLBAR
-                : BUTTON_TOP_WITHOUT_TOOLBAR,
-              zIndex: 10,
-              transition: "top 0.2s ease",
-            }}
-          >
-            <Tooltip
-              title={showToolbar ? "Hide formatting" : "Show formatting"}
-            >
-              <IconButton
-                onClick={() => setShowToolbar(!showToolbar)}
-                color="default"
-                size="small"
-                sx={{
-                  flexShrink: 0,
-                  width: 32,
-                  height: 32,
-                  "&:hover": {
-                    backgroundColor: "action.hover",
-                  },
-                }}
-                aria-label={showToolbar ? "Hide formatting" : "Show formatting"}
-              >
-                <PanelTopClose size={16} />
-              </IconButton>
-            </Tooltip>
-          </Box>
-
-          {/* Editor with adjusted padding for prefix button */}
-          <Box
-            sx={{
-              "& .MuiPaper-root": {
-                pl: 6, // Add padding-left to make room for the button
+              textTransform: "none",
+              fontWeight: 500,
+              backgroundColor: "background.paper",
+              borderColor: "orange.300",
+              textColor: "orange.600",
+              "&:hover": {
+                backgroundColor: "orange.50",
+                borderColor: "orange.400",
               },
             }}
           >
-            <Editor
-              id="novera-chat-input-editor"
-              value={inputValue}
-              onChange={setInputValue}
-              placeholder={CHAT_PLACEHOLDER}
-              minHeight={singleLineHeight}
-              maxHeight={maxLinesHeight}
-              showToolbar={showToolbar}
-              toolbarVariant="describeIssue"
-              onSubmitKeyDown={() => !isSendDisabled && onSend()}
-              disabled={isSending}
-              resetTrigger={resetTrigger}
-            />
-          </Box>
+            Create Case
+          </Button>
         </Box>
+      </Box>
 
-        {/* Send button */}
-        <IconButton
-          disabled={isSendDisabled}
-          onClick={onSend}
-          color="warning"
-          sx={{ flexShrink: 0 }}
-          aria-label="Send message"
-        >
-          <Send size={18} />
-        </IconButton>
+      {/* Input Area */}
+      <Box sx={{ p: 2, bgcolor: "background.paper", flexShrink: 0 }}>
+        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-end" }}>
+          <Box sx={{ flex: 1, minWidth: 0, position: "relative" }}>
+            {/* Toolbar toggle button as prefix */}
+            <Box
+              sx={{
+                position: "absolute",
+                left: 8,
+                top: showToolbar
+                  ? BUTTON_TOP_WITH_TOOLBAR
+                  : BUTTON_TOP_WITHOUT_TOOLBAR,
+                zIndex: 10,
+                transition: "top 0.2s ease",
+              }}
+            >
+              <Tooltip
+                title={showToolbar ? "Hide formatting" : "Show formatting"}
+              >
+                <IconButton
+                  onClick={() => setShowToolbar(!showToolbar)}
+                  color="default"
+                  size="small"
+                  sx={{
+                    flexShrink: 0,
+                    width: 32,
+                    height: 32,
+                    "&:hover": {
+                      backgroundColor: "action.hover",
+                    },
+                  }}
+                  aria-label={
+                    showToolbar ? "Hide formatting" : "Show formatting"
+                  }
+                >
+                  <PanelTopClose size={16} />
+                </IconButton>
+              </Tooltip>
+            </Box>
+
+            {/* Editor with adjusted padding for prefix button */}
+            <Box
+              sx={{
+                "& .MuiPaper-root": {
+                  pl: 6, // Add padding-left to make room for the button
+                },
+              }}
+            >
+              <Editor
+                id="novera-chat-input-editor"
+                value={inputValue}
+                onChange={setInputValue}
+                placeholder={CHAT_PLACEHOLDER}
+                minHeight={singleLineHeight}
+                maxHeight={maxLinesHeight}
+                showToolbar={showToolbar}
+                toolbarVariant="describeIssue"
+                onSubmitKeyDown={() => !isSendDisabled && onSend()}
+                disabled={isSending}
+                resetTrigger={resetTrigger}
+              />
+            </Box>
+          </Box>
+
+          {/* Send button */}
+          <IconButton
+            disabled={isSendDisabled}
+            onClick={onSend}
+            color="warning"
+            sx={{ flexShrink: 0 }}
+            aria-label="Send message"
+          >
+            <Send size={18} />
+          </IconButton>
+        </Box>
       </Box>
     </Box>
   );
