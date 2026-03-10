@@ -844,6 +844,16 @@ public isolated function mapProjectResponse(entity:ProjectResponse response) ret
         region: response.account.region,
         ownerEmail: response.account.ownerEmail,
         technicalOwnerEmail: response.account.technicalOwnerEmail
-    }
+    },
+    totalQueryHours: response.totalQueryHours,
+    consumedQueryHours: response.consumedQueryHours,
+    consumedOnboardingHours: response.consumedOnboardingHours,
+    remainingQueryHours: response.remainingQueryHours,
+    goLiveDate: response.goLiveDate,
+    goLivePlanDate: response.goLivePlanDate,
+    totalOnboardingHours: response.totalOnboardingHours,
+    remainingOnboardingHours: response.remainingOnboardingHours,
+    onboardingExpiryDate: response.onboardingExpiryDate,
+    onboardingStatus: response.onboardingStatus
 };
 
