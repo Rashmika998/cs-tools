@@ -43,8 +43,8 @@ body:
       label: Platform (if applicable)
       description: Specify the frontend platform if relevant.
       options:
-        - Webapp
-        - Microapp
+        - Web App
+        - Mobile App
         - Other
 
   - type: textarea
