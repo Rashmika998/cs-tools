@@ -692,7 +692,7 @@ public type Attachment record {|
     # Created date and time
     string createdOn;
     # Download URL
-    string downloadUrl;
+    string? downloadUrl;
     # Base64 encoded file content (data URI format: data:@file/<type>;base64,<content>)
     string content;
     # Description of the attachment
