@@ -18,6 +18,7 @@ import { COLLAPSE_LINE_THRESHOLD } from "@/constants/supportConstants";
 import { estimateLineCount } from "@/utils/support";
 import { Box, Button, Divider, Paper } from "@wso2/oxygen-ui";
 import { ChevronDown } from "@wso2/oxygen-ui-icons-react";
+import { useCallback, useEffect, useRef } from "react";
 import type { JSX } from "react";
 
 export interface ChatMessageCardProps {
@@ -26,6 +27,7 @@ export interface ChatMessageCardProps {
   onToggleExpand: () => void;
   isCurrentUser: boolean;
   primaryBg: string;
+  onImageClick?: (src: string) => void;
 }
 
 /**
@@ -41,9 +43,32 @@ export default function ChatMessageCard({
   onToggleExpand,
   isCurrentUser,
   primaryBg,
+  onImageClick,
 }: ChatMessageCardProps): JSX.Element {
+  const contentRef = useRef<HTMLDivElement>(null);
   const lineCount = estimateLineCount(htmlContent);
   const showExpandButton = lineCount > COLLAPSE_LINE_THRESHOLD;
+
+  const handleClick = useCallback(
+    (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "IMG" && target instanceof HTMLImageElement) {
+        const src = target.src || target.getAttribute("src");
+        if (src && onImageClick) {
+          e.preventDefault();
+          onImageClick(src);
+        }
+      }
+    },
+    [onImageClick],
+  );
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    el.addEventListener("click", handleClick);
+    return () => el.removeEventListener("click", handleClick);
+  }, [handleClick]);
 
   return (
     <Paper
@@ -93,6 +118,7 @@ export default function ChatMessageCard({
               overflow: "hidden",
             }),
         }}
+        ref={contentRef}
         dangerouslySetInnerHTML={{ __html: htmlContent }}
       />
       {showExpandButton && (
