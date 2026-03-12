@@ -60,18 +60,12 @@ describe("ChartLayout", () => {
       high: 3,
       critical: 1,
       catastrophic: 0,
-      serviceRequest: 0,
-      securityReportAnalysis: 0,
       total: 11,
     },
     activeCases: {
-      open: 5,
-      workInProgress: 10,
-      awaitingInfo: 3,
-      waitingOnWso2: 5,
-      solutionProposed: 0,
-      reopened: 0,
-      total: 23,
+      serviceRequests: 12,
+      changeRequests: 8,
+      total: 20,
     },
     casesTrend: [
       {

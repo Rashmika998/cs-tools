@@ -24,7 +24,7 @@ import {
 import type { JSX } from "react";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import { ChartLegend } from "@components/dashboard/charts/ChartLegend";
-import { OUTSTANDING_ENGAGEMENTS_CHART_DATA } from "@constants/dashboardConstants";
+import { OUTSTANDING_INCIDENTS_CHART_DATA } from "@constants/dashboardConstants";
 
 interface OutstandingIncidentsChartProps {
   data: {
@@ -33,8 +33,6 @@ interface OutstandingIncidentsChartProps {
     high: number;
     critical: number;
     catastrophic: number;
-    serviceRequest: number;
-    securityReportAnalysis: number;
     total: number;
   };
   isLoading?: boolean;
@@ -62,16 +60,14 @@ export const OutstandingIncidentsChart = ({
     high: 0,
     critical: 0,
     catastrophic: 0,
-    serviceRequest: 0,
-    securityReportAnalysis: 0,
     total: 0,
   };
 
   const chartSource = excludeS0
-    ? OUTSTANDING_ENGAGEMENTS_CHART_DATA.filter(
+    ? OUTSTANDING_INCIDENTS_CHART_DATA.filter(
         (item) => item.key !== "catastrophic",
       )
-    : OUTSTANDING_ENGAGEMENTS_CHART_DATA;
+    : OUTSTANDING_INCIDENTS_CHART_DATA;
 
   const chartData = isError
     ? chartSource.map((item) => ({
@@ -91,7 +87,7 @@ export const OutstandingIncidentsChart = ({
     <Card sx={{ height: "100%", p: 2 }}>
       {/* Title */}
       <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-        Outstanding Engagements
+        Outstanding Support Cases
       </Typography>
       {/* Chart state */}
       {isLoading ? (

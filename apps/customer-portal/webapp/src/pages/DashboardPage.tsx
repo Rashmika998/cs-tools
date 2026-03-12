@@ -24,11 +24,7 @@ import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
 import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectDetails from "@api/useGetProjectDetails";
 import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
-import {
-  DASHBOARD_STATS,
-  OUTSTANDING_ENGAGEMENTS_CHART_DATA,
-  SEVERITY_API_LABELS,
-} from "@constants/dashboardConstants";
+import { DASHBOARD_STATS, SEVERITY_API_LABELS } from "@constants/dashboardConstants";
 import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
 import { getIncidentAndQueryIds } from "@utils/support";
 import { StatCard } from "@components/dashboard/stats/StatCard";
@@ -124,61 +120,30 @@ export default function DashboardPage(): JSX.Element {
     }
   }, [isErrorCases, isErrorFilters, showError, logger, projectId]);
 
-  const activeCases = useMemo(() => {
-    const open = casesStats?.stateCount.find((s) => s.label === "Open")?.count ?? 0;
-    const workInProgress = casesStats?.stateCount.find((s) => s.label === "Work In Progress")?.count ?? 0;
-    const awaitingInfo = casesStats?.stateCount.find((s) => s.label === "Awaiting Info")?.count ?? 0;
-    const waitingOnWso2 = casesStats?.stateCount.find((s) => s.label === "Waiting On WSO2")?.count ?? 0;
-    const solutionProposed = casesStats?.stateCount.find((s) => s.label === "Solution Proposed")?.count ?? 0;
-    const reopened = casesStats?.stateCount.find((s) => s.label === "Reopened")?.count ?? 0;
-    const total = open + workInProgress + awaitingInfo + waitingOnWso2 + solutionProposed + reopened;
-
-    return {
-      open,
-      workInProgress,
-      awaitingInfo,
-      waitingOnWso2,
-      solutionProposed,
-      reopened,
-      total,
-    };
-  }, [casesStats]);
-
   const outstandingCases = useMemo(() => {
-    const severityByKey: Record<string, number> = {};
-    for (const item of OUTSTANDING_ENGAGEMENTS_CHART_DATA) {
-      if (item.key === "serviceRequest" || item.key === "securityReportAnalysis") break;
-      severityByKey[item.key] =
-        casesStats?.outstandingSeverityCount.find((s) => s.label === item.label)
-          ?.count ?? 0;
-    }
-    const serviceRequest =
-      casesStats?.caseTypeCount.find(
-        (c) => /service\s*request/i.test(c.label),
+    const catastrophicCount =
+      casesStats?.outstandingSeverityCount.find(
+        (s) => s.label === SEVERITY_API_LABELS[0],
       )?.count ?? 0;
-    const securityReportAnalysis =
-      casesStats?.caseTypeCount.find(
-        (c) => /security\s*report\s*analysis/i.test(c.label),
+    const critical =
+      casesStats?.outstandingSeverityCount.find(
+        (s) => s.label === SEVERITY_API_LABELS[1],
+      )?.count ?? 0;
+    const high =
+      casesStats?.outstandingSeverityCount.find(
+        (s) => s.label === SEVERITY_API_LABELS[2],
+      )?.count ?? 0;
+    const medium =
+      casesStats?.outstandingSeverityCount.find(
+        (s) => s.label === SEVERITY_API_LABELS[3],
+      )?.count ?? 0;
+    const low =
+      casesStats?.outstandingSeverityCount.find(
+        (s) => s.label === SEVERITY_API_LABELS[4],
       )?.count ?? 0;
 
-    let catastrophic = severityByKey.catastrophic ?? 0;
-    const critical = severityByKey.critical ?? 0;
-    const high = severityByKey.high ?? 0;
-    const medium = severityByKey.medium ?? 0;
-    const low = severityByKey.low ?? 0;
-
-    if (!isManagedCloudSubscription) {
-      catastrophic = 0;
-    }
-
-    const total =
-      catastrophic +
-      critical +
-      high +
-      medium +
-      low +
-      serviceRequest +
-      securityReportAnalysis;
+    const catastrophic = isManagedCloudSubscription ? catastrophicCount : 0;
+    const total = catastrophic + critical + high + medium + low;
 
     return {
       catastrophic,
@@ -186,33 +151,19 @@ export default function DashboardPage(): JSX.Element {
       high,
       medium,
       low,
-      serviceRequest,
-      securityReportAnalysis,
       total,
     };
   }, [casesStats, isManagedCloudSubscription]);
 
-  const casesTrend = useMemo(() => {
-    const catastrophicCount = isManagedCloudSubscription
-      ? (s: { label: string; count?: number }[]) =>
-          s.find((x) => x.label === SEVERITY_API_LABELS[0])?.count ?? 0
-      : () => 0;
-    const mapped = (casesStats?.casesTrend ?? []).map(({ period, severities }) => ({
-      period,
-      catastrophic: catastrophicCount(severities),
-      critical: severities.find((s) => s.label === SEVERITY_API_LABELS[1])?.count ?? 0,
-      high: severities.find((s) => s.label === SEVERITY_API_LABELS[2])?.count ?? 0,
-      medium: severities.find((s) => s.label === SEVERITY_API_LABELS[3])?.count ?? 0,
-      low: severities.find((s) => s.label === SEVERITY_API_LABELS[4])?.count ?? 0,
-    }));
-    return mapped.sort((a, b) => {
-      const parse = (p: string) => {
-        const m = p.match(/(\d{4})\D*[Qq](\d)/);
-        return m ? Number(m[1]) * 4 + Number(m[2]) : 0;
-      };
-      return parse(a.period) - parse(b.period);
-    });
-  }, [casesStats, isManagedCloudSubscription]);
+  // TODO(DashboardPage): Replace mock outstandingOperations counts with API-driven operations stats.
+  const outstandingOperations = useMemo(
+    () => ({
+      serviceRequests: 12,
+      changeRequests: 8,
+      total: 20,
+    }),
+    [],
+  );
 
   return (
     <Box sx={{ width: "100%", pt: 0, position: "relative" }}>
@@ -285,8 +236,7 @@ export default function DashboardPage(): JSX.Element {
       {/* Charts row */}
       <ChartLayout
         outstandingCases={outstandingCases}
-        activeCases={activeCases}
-        casesTrend={casesTrend || []}
+        activeCases={outstandingOperations}
         isLoading={
           (isDashboardLoading || !casesStats) && !isErrorCases
         }

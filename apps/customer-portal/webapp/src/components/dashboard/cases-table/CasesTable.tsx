@@ -26,11 +26,7 @@ import type { FilterField } from "@components/common/filter-panel/FilterPopover"
 import CasesTableHeader from "@components/dashboard/cases-table/CasesTableHeader";
 import CasesFilters from "@components/dashboard/cases-table/CasesFilters";
 import CasesList from "@components/dashboard/cases-table/CasesList";
-import {
-  normalizeCaseTypeOptions,
-  mapSeverityToDisplay,
-  isS0Case,
-} from "@utils/support";
+import { mapSeverityToDisplay, isS0Case } from "@utils/support";
 import { isS0SeverityLabel } from "@constants/dashboardConstants";
 import type { CaseListItem, CaseSearchResponse } from "@models/responses";
 
@@ -105,12 +101,6 @@ const CasesTable = ({
           value: d.id,
         })) || [],
     },
-    {
-      id: "caseTypes",
-      label: "Case Type",
-      type: "select",
-      options: normalizeCaseTypeOptions(filtersMetadata?.caseTypes || []),
-    },
   ];
 
   const caseSearchRequest = useMemo(
@@ -121,7 +111,6 @@ const CasesTable = ({
         severityId: filters.severityId ? Number(filters.severityId) : undefined,
         issueId: filters.issueTypes ? Number(filters.issueTypes) : undefined,
         deploymentId: filters.deploymentId || undefined,
-        caseTypes: filters.caseTypes?.length ? [filters.caseTypes] : undefined,
       },
       sortBy: {
         field: "createdOn",

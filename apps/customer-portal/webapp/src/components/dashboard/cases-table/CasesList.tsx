@@ -37,10 +37,7 @@ import {
   getStatusColor,
   mapSeverityToDisplay,
 } from "@utils/support";
-import {
-  getCaseTypeChipConfig,
-  getSeverityLegendColor,
-} from "@constants/dashboardConstants";
+import { getSeverityLegendColor } from "@constants/dashboardConstants";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import CasesTableSkeleton from "@components/dashboard/cases-table/CasesTableSkeleton";
 
@@ -76,11 +73,10 @@ const CasesList = ({
           <TableHead>
             <TableRow>
               <TableCell>Created</TableCell>
-              <TableCell>Engagement</TableCell>
-              <TableCell>Type</TableCell>
+              <TableCell>Details</TableCell>
+              <TableCell>Severity</TableCell>
               <TableCell>Assigned to</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Severity</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -88,7 +84,7 @@ const CasesList = ({
               <CasesTableSkeleton rowsPerPage={rowsPerPage} />
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={5} align="center">
                   <Box
                     sx={{
                       display: "flex",
@@ -106,7 +102,7 @@ const CasesList = ({
               </TableRow>
             ) : data?.cases.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={5} align="center">
                   No cases found.
                 </TableCell>
               </TableRow>
@@ -170,39 +166,24 @@ const CasesList = ({
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const typeLabel =
-                        row.type?.label ?? row.caseTypes?.label;
-                      const config = getCaseTypeChipConfig(typeLabel ?? undefined);
-                      if (!config) {
-                        return (
-                          <Typography variant="body2" color="text.secondary">
-                            --
-                          </Typography>
-                        );
-                      }
-                      const { Icon } = config;
-                      const mainColor = config.textColor;
+                      const severityColor = getSeverityLegendColor(
+                        row.severity?.label,
+                      );
                       return (
                         <Chip
-                          icon={<Icon size={12} />}
-                          label={config.displayLabel}
+                          label={mapSeverityToDisplay(row.severity?.label)}
                           size="small"
                           variant="outlined"
                           sx={{
+                            bgcolor: alpha(severityColor, 0.1),
+                            color: severityColor,
+                            borderColor: alpha(severityColor, 0.3),
                             fontWeight: 500,
-                            bgcolor: alpha(mainColor, 0.1),
-                            color: mainColor,
-                            borderColor: alpha(mainColor, 0.3),
                             px: 0,
                             height: 20,
                             fontSize: "0.75rem",
-                            "& .MuiChip-icon": {
-                              color: "inherit",
-                              ml: "6px",
-                              mr: "6px",
-                            },
                             "& .MuiChip-label": {
-                              pl: 0,
+                              pl: "6px",
                               pr: "6px",
                             },
                           }}
@@ -236,33 +217,6 @@ const CasesList = ({
                         {row.status?.label || "--"}
                       </Typography>
                     </Box>
-                  </TableCell>
-                  <TableCell>
-                    {(() => {
-                      const severityColor = getSeverityLegendColor(
-                        row.severity?.label,
-                      );
-                      return (
-                        <Chip
-                          label={mapSeverityToDisplay(row.severity?.label)}
-                          size="small"
-                          variant="outlined"
-                          sx={{
-                            bgcolor: alpha(severityColor, 0.1),
-                            color: severityColor,
-                            borderColor: alpha(severityColor, 0.3),
-                            fontWeight: 500,
-                            px: 0,
-                            height: 20,
-                            fontSize: "0.75rem",
-                            "& .MuiChip-label": {
-                              pl: "6px",
-                              pr: "6px",
-                            },
-                          }}
-                        />
-                      );
-                    })()}
                   </TableCell>
                 </TableRow>
               ))

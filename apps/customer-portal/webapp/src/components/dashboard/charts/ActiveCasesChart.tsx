@@ -28,12 +28,8 @@ import { ACTIVE_CASES_CHART_DATA } from "@constants/dashboardConstants";
 
 interface ActiveCasesChartProps {
   data: {
-    open: number;
-    workInProgress: number;
-    awaitingInfo: number;
-    waitingOnWso2: number;
-    solutionProposed: number;
-    reopened: number;
+    serviceRequests: number;
+    changeRequests: number;
     total: number;
   };
   isLoading?: boolean;
@@ -53,12 +49,8 @@ export const ActiveCasesChart = ({
   isError,
 }: ActiveCasesChartProps): JSX.Element => {
   const safeData = data ?? {
-    open: 0,
-    workInProgress: 0,
-    awaitingInfo: 0,
-    waitingOnWso2: 0,
-    solutionProposed: 0,
-    reopened: 0,
+    serviceRequests: 0,
+    changeRequests: 0,
     total: 0,
   };
 
@@ -80,7 +72,7 @@ export const ActiveCasesChart = ({
     <Card sx={{ height: "100%", p: 2 }}>
       {/* Title */}
       <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-        Active Engagements
+        Outstanding Operations
       </Typography>
       {/* Chart state */}
       {isLoading ? (

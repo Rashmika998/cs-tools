@@ -82,7 +82,14 @@ export function useGetProjectSupportStats(
           );
         }
 
-        const data: ProjectSupportStats = await response.json();
+        const raw = (await response.json()) as any;
+        const data: ProjectSupportStats = {
+          ongoingCases: raw?.ongoingCases ?? 0,
+          resolvedRecently:
+            raw?.resolvedRecently ?? raw?.sessionChats ?? 0,
+          resolvedChats: raw?.resolvedChats ?? 0,
+          activeChats: raw?.activeChats ?? 0,
+        };
         logger.debug("[useGetProjectSupportStats] Data received:", data);
         return data;
       } catch (error) {

@@ -27,27 +27,13 @@ interface ChartLayoutProps {
     high: number;
     critical: number;
     catastrophic: number;
-    serviceRequest: number;
-    securityReportAnalysis: number;
     total: number;
   };
   activeCases: {
-    open: number;
-    workInProgress: number;
-    awaitingInfo: number;
-    waitingOnWso2: number;
-    solutionProposed: number;
-    reopened: number;
+    serviceRequests: number;
+    changeRequests: number;
     total: number;
   };
-  casesTrend: Array<{
-    period: string;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-    catastrophic: number;
-  }>;
   isLoading?: boolean;
   isErrorOutstanding?: boolean;
   isErrorActiveCases?: boolean;
@@ -56,20 +42,18 @@ interface ChartLayoutProps {
 }
 
 /**
- * ChartLayout component displays multiple chart sections including
- * outstanding engagements (severities + case types), active cases, and cases trend.
+ * ChartLayout component displays the three dashboard charts:
+ * outstanding support cases, outstanding operations, and outstanding engagements.
  *
  * @param {ChartLayoutProps} props - Component props
- * @param {Object} props.outstandingCases - Severity and case type counts for Outstanding Engagements chart.
- * @param {Object} props.activeCases - State counts for Active Engagements chart.
- * @param {Array} props.casesTrend - Array of trend data for Cases Trend chart.
+ * @param {Object} props.outstandingCases - Severity counts for Outstanding Support Cases chart.
+ * @param {Object} props.activeCases - Counts for Outstanding Operations chart.
  * @param {boolean} props.isLoading - Flag indicating if the data is loading.
  * @returns {JSX.Element} The chart layout element.
  */
 const ChartLayout = ({
   outstandingCases,
   activeCases,
-  casesTrend,
   isLoading,
   isErrorOutstanding,
   isErrorActiveCases,
@@ -100,10 +84,8 @@ const ChartLayout = ({
       {/* Cases Trend */}
       <Grid size={{ xs: 12, md: 4 }}>
         <CasesTrendChart
-          data={casesTrend}
           isLoading={isLoading}
           isError={isErrorTrend}
-          excludeS0={excludeS0}
         />
       </Grid>
     </Grid>

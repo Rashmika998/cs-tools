@@ -291,7 +291,7 @@ describe("SupportPage", () => {
       data: {
         ongoingCases: 10,
         activeChats: 5,
-        sessionChats: 15,
+        resolvedRecently: 15,
         resolvedChats: 20,
       },
     });
@@ -308,7 +308,7 @@ describe("SupportPage", () => {
     expect(screen.getByText("20")).toBeInTheDocument();
     expect(screen.getByText("Ongoing Cases")).toBeInTheDocument();
     expect(screen.getByText("Active Chats")).toBeInTheDocument();
-    expect(screen.getByText("Chat Sessions")).toBeInTheDocument();
+    expect(screen.getByText("Resolved Recently")).toBeInTheDocument();
     expect(screen.getByText("Resolved via Chat")).toBeInTheDocument();
     expect(mockLogger.debug).toHaveBeenCalledWith(
       "Support stats loaded for project: project-1",
@@ -321,7 +321,7 @@ describe("SupportPage", () => {
       data: {
         ongoingCases: 10,
         activeChats: 5,
-        sessionChats: 15,
+        resolvedRecently: 15,
         resolvedChats: 20,
       },
     });
@@ -345,7 +345,7 @@ describe("SupportPage", () => {
       data: {
         ongoingCases: 10,
         activeChats: 5,
-        sessionChats: 15,
+        resolvedRecently: 15,
         resolvedChats: 20,
       },
     });

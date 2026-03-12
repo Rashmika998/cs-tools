@@ -64,7 +64,7 @@ describe("CasesTableHeader", () => {
   it("should render title and buttons", () => {
     render(<CasesTableHeader {...mockProps} />);
 
-    expect(screen.getByText("Outstanding Engagements")).toBeInTheDocument();
+    expect(screen.getByText("Outstanding Support Cases")).toBeInTheDocument();
     expect(screen.getByText("Create")).toBeInTheDocument();
     expect(screen.getByText("Filters")).toBeInTheDocument();
   });

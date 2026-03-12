@@ -44,10 +44,24 @@ vi.mock("@wso2/oxygen-ui", () => ({
 
 // Mock @wso2/oxygen-ui-charts-react
 vi.mock("@wso2/oxygen-ui-charts-react", () => ({
-  BarChart: ({ children }: any) => (
-    <div data-testid="bar-chart">{children}</div>
+  PieChart: ({ children }: any) => (
+    <div data-testid="pie-chart">{children}</div>
   ),
-  Bar: () => <div data-testid="bar-series" />,
+  Pie: ({ data, paddingAngle, minAngle, children }: any) => (
+    <div
+      data-testid="pie"
+      data-padding-angle={paddingAngle}
+      data-min-angle={minAngle}
+    >
+      {data.map((item: any, index: number) => (
+        <div key={index} data-testid="pie-segment" data-value={item.value}>
+          {item.name}
+        </div>
+      ))}
+      {children}
+    </div>
+  ),
+  Cell: () => <div data-testid="pie-cell" />,
   ResponsiveContainer: ({ children }: any) => (
     <div data-testid="responsive-container">{children}</div>
   ),
@@ -64,45 +78,35 @@ vi.mock("../ChartLegend", () => ({
   ),
 }));
 
-describe("CasesTrendChart", () => {
-  const mockData = [
-    {
-      period: "Jan",
-      critical: 10,
-      high: 20,
-      medium: 30,
-      low: 40,
-      catastrophic: 5,
-    },
-    {
-      period: "Feb",
-      critical: 15,
-      high: 25,
-      medium: 35,
-      low: 45,
-      catastrophic: 0,
-    },
-  ];
+vi.mock("@components/common/error-indicator/ErrorIndicator", () => ({
+  __esModule: true,
+  default: ({ entityName }: { entityName: string }) => (
+    <div data-testid="error-indicator">Error: {entityName}</div>
+  ),
+}));
 
+describe("CasesTrendChart", () => {
   it("should render title correctly", () => {
-    render(<CasesTrendChart data={mockData} isLoading={false} />);
-    expect(screen.getByText(/Cases Trend/i)).toBeInTheDocument();
+    render(<CasesTrendChart isLoading={false} />);
+    expect(screen.getByText(/Outstanding Engagements/i)).toBeInTheDocument();
   });
 
   it("should render skeleton when loading", () => {
-    render(<CasesTrendChart data={mockData} isLoading={true} />);
+    render(<CasesTrendChart isLoading={true} />);
     const skeletons = screen.getAllByTestId("skeleton");
     expect(skeletons.length).toBeGreaterThan(0);
   });
 
-  it("should render chart and legend when data is loaded", () => {
-    render(<CasesTrendChart data={mockData} isLoading={false} />);
-    expect(screen.getByTestId("bar-chart")).toBeInTheDocument();
+  it("should render pie chart and legend when data is loaded", () => {
+    render(<CasesTrendChart isLoading={false} />);
+    expect(screen.getByTestId("pie-chart")).toBeInTheDocument();
     expect(screen.getByTestId("chart-legend")).toBeInTheDocument();
   });
 
-  it("should not crash and render empty chart when data is undefined", () => {
-    render(<CasesTrendChart data={undefined as any} isLoading={false} />);
-    expect(screen.getByTestId("bar-chart")).toBeInTheDocument();
+  it("should render error state correctly", () => {
+    render(<CasesTrendChart isLoading={false} isError={true} />);
+
+    expect(screen.getByTestId("pie-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("error-indicator")).toBeInTheDocument();
   });
 });

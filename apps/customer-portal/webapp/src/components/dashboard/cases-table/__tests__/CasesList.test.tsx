@@ -158,33 +158,6 @@ describe("CasesList", () => {
     expect(screen.getByText("No cases found.")).toBeInTheDocument();
   });
 
-  it("should render Case chip when type is Incident", () => {
-    const dataWithType = {
-      cases: [
-        {
-          ...mockData.cases[0],
-          type: { id: "1", label: "Incident" },
-        },
-      ],
-      totalRecords: 1,
-      offset: 0,
-      limit: 10,
-    } as typeof mockData;
-
-    render(
-      <CasesList
-        isLoading={false}
-        data={dataWithType}
-        page={0}
-        rowsPerPage={10}
-        onPageChange={mockOnPageChange}
-        onRowsPerPageChange={mockOnRowsPerPageChange}
-      />,
-    );
-
-    expect(screen.getByText("Case")).toBeInTheDocument();
-  });
-
   it("should render list of cases", () => {
     render(
       <CasesList
