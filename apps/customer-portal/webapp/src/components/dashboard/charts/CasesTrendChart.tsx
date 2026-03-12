@@ -16,27 +16,21 @@
 
 import { Card, Typography, Box, Skeleton, colors } from "@wso2/oxygen-ui";
 import {
-  BarChart,
-  Bar,
+  PieChart,
+  Pie,
+  Cell,
   ResponsiveContainer,
 } from "@wso2/oxygen-ui-charts-react";
 import type { JSX } from "react";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
-import { CASES_TREND_CHART_DATA } from "@constants/dashboardConstants";
+import {
+  OUTSTANDING_ENGAGEMENTS_CATEGORY_CHART_DATA,
+} from "@constants/dashboardConstants";
 import { ChartLegend } from "@components/dashboard/charts/ChartLegend";
 
 interface CasesTrendChartProps {
-  data: Array<{
-    period: string;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-    catastrophic: number;
-  }>;
   isLoading?: boolean;
   isError?: boolean;
-  excludeS0?: boolean;
 }
 
 /**
@@ -45,28 +39,51 @@ interface CasesTrendChartProps {
  * `@param` props - Component props
  */
 export const CasesTrendChart = ({
-  data,
   isLoading,
   isError,
-  excludeS0 = false,
 }: CasesTrendChartProps): JSX.Element => {
-  const chartData = isError ? [] : (data ?? []);
-  const trendChartItems = excludeS0
-    ? CASES_TREND_CHART_DATA.filter((item) => item.key !== "catastrophic")
-    : CASES_TREND_CHART_DATA;
+  const chartSource = OUTSTANDING_ENGAGEMENTS_CATEGORY_CHART_DATA;
+
+  const chartData = isError
+    ? chartSource.map((item) => ({
+        name: item.name,
+        value: 1,
+        color: colors.grey?.[300] ?? "#D1D5DB",
+      }))
+    : isLoading
+      ? []
+      : [
+          { name: "Onboarding", value: 12, color: chartSource[0].color },
+          { name: "Migration", value: 8, color: chartSource[1].color },
+          { name: "Services", value: 15, color: chartSource[2].color },
+          { name: "Improvements", value: 10, color: chartSource[3].color },
+        ];
+
+  const total = !isError && !isLoading
+    ? chartData.reduce((sum, item) => sum + (item.value ?? 0), 0)
+    : 0;
 
   return (
     <Card sx={{ p: 2, height: "100%" }}>
       {/* Title */}
       <Typography variant="h6" component="h3" sx={{ mb: 2 }}>
-        Cases Trend
+        Outstanding Engagements
       </Typography>
       {isLoading ? (
-        <Box sx={{ height: 240 }}>
+        <Box
+          sx={{
+            height: 240,
+          }}
+        >
           <Skeleton variant="rectangular" width="100%" height="100%" />
         </Box>
       ) : (
-        <Box sx={{ height: 240, position: "relative" }}>
+        <Box
+          sx={{
+            height: 240,
+            position: "relative",
+          }}
+        >
           {isError && (
             <Box
               sx={{
@@ -82,7 +99,7 @@ export const CasesTrendChart = ({
                 pointerEvents: "none",
               }}
             >
-              <ErrorIndicator entityName="cases trend" />
+              <ErrorIndicator entityName="outstanding engagements" />
             </Box>
           )}
           <Box
@@ -94,47 +111,58 @@ export const CasesTrendChart = ({
             }}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                xAxisDataKey="period"
-                grid={{ show: true }}
-                xAxis={{ show: true }}
-                yAxis={{ show: true }}
-                tooltip={{ show: !isError }}
-                legend={{ show: false }}
-                margin={{ top: 10, right: 0, left: -20, bottom: 0 }}
-              >
-                {trendChartItems.map((item) => (
-                  <Bar
-                    key={item.key}
-                    dataKey={item.key}
-                    stackId="a"
-                    fill={isError ? colors.grey[300] : item.color}
-                    radius={item.radius}
-                  />
-                ))}
-              </BarChart>
+              <PieChart legend={{ show: false }} tooltip={{ show: !isError }}>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={0}
+                  minAngle={15}
+                  dataKey="value"
+                  nameKey="name"
+                  startAngle={90}
+                  endAngle={-270}
+                  label={false}
+                  labelLine={false}
+                >
+                  {chartData.map((entry, index) => (
+                    <Cell
+                      // eslint-disable-next-line react/no-array-index-key
+                      key={`cell-${index}`}
+                      fill={entry.color}
+                      stroke={colors.common.white}
+                    />
+                  ))}
+                </Pie>
+              </PieChart>
             </ResponsiveContainer>
           </Box>
+          {/* Center content: total value */}
+          {!isError && (
+            <Box
+              sx={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                textAlign: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <Typography variant="h4">
+                {chartData.length > 0 ? total : "N/A"}
+              </Typography>
+              <Typography variant="caption">Total</Typography>
+            </Box>
+          )}
         </Box>
       )}
-      {/* Custom Trend Legend */}
-      {isLoading ? (
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 2,
-            mt: 2,
-          }}
-        >
-          {trendChartItems.map((_, i) => (
-            <Skeleton key={i} variant="rounded" width={60} height={20} />
-          ))}
-        </Box>
-      ) : (
+      {/* Legend */}
+      {!isLoading && (
         <ChartLegend
-          data={trendChartItems.map((item) => ({
+          data={chartSource.map((item) => ({
             name: item.name,
             value: 0,
             color: item.color,

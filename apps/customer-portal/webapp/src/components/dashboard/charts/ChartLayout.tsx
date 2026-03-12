@@ -27,27 +27,13 @@ interface ChartLayoutProps {
     high: number;
     critical: number;
     catastrophic: number;
-    serviceRequest: number;
-    securityReportAnalysis: number;
     total: number;
   };
   activeCases: {
-    open: number;
-    workInProgress: number;
-    awaitingInfo: number;
-    waitingOnWso2: number;
-    solutionProposed: number;
-    reopened: number;
+    serviceRequests: number;
+    changeRequests: number;
     total: number;
   };
-  casesTrend: Array<{
-    period: string;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-    catastrophic: number;
-  }>;
   isLoading?: boolean;
   isErrorOutstanding?: boolean;
   isErrorActiveCases?: boolean;
@@ -69,7 +55,6 @@ interface ChartLayoutProps {
 const ChartLayout = ({
   outstandingCases,
   activeCases,
-  casesTrend,
   isLoading,
   isErrorOutstanding,
   isErrorActiveCases,
@@ -100,10 +85,8 @@ const ChartLayout = ({
       {/* Cases Trend */}
       <Grid size={{ xs: 12, md: 4 }}>
         <CasesTrendChart
-          data={casesTrend}
           isLoading={isLoading}
           isError={isErrorTrend}
-          excludeS0={excludeS0}
         />
       </Grid>
     </Grid>

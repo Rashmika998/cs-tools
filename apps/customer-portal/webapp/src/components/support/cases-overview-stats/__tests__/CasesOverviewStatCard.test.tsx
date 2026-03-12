@@ -87,10 +87,10 @@ describe("CasesOverviewStatCard", () => {
 
   it("should render statistics correctly when data is loaded", () => {
     const mockStats = {
-      activeChats: 5,
-      resolvedChats: 20,
-      sessionChats: 15,
       ongoingCases: 10,
+      resolvedRecently: 15,
+      resolvedChats: 20,
+      activeChats: 5,
     };
 
     render(<CasesOverviewStatCard isLoading={false} stats={mockStats} />);

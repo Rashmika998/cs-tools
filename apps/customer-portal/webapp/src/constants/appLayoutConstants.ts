@@ -16,12 +16,12 @@
 
 import {
   Briefcase,
+  Cog,
   FolderOpen,
   Headset,
   LayoutDashboard,
   Megaphone,
   RefreshCw,
-  Settings,
   Shield,
 } from "@wso2/oxygen-ui-icons-react";
 import type { ComponentType } from "react";
@@ -37,7 +37,7 @@ interface AppShellNavItem {
 export const APP_SHELL_NAV_ITEMS: AppShellNavItem[] = [
   { id: "dashboard", label: "Dashboard", path: "dashboard", icon: LayoutDashboard },
   { id: "support", label: "Support", path: "support", icon: Headset },
-  { id: "operations", label: "Operations", path: "operations", icon: Settings },
+  { id: "operations", label: "Operations", path: "operations", icon: Cog},
   { id: "updates", label: "Updates", path: "updates", icon: RefreshCw },
   {
     id: "security-center",
