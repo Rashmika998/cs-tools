@@ -32,6 +32,7 @@ export interface ProjectListItem {
 /** Account nested in project details response. */
 export interface ProjectDetailsAccount {
   id: string;
+  hasAgent?: boolean;
   name: string;
   activationDate?: string | null;
   deactivationDate?: string | null;
@@ -57,6 +58,16 @@ export interface ProjectDetails {
   startDate?: string;
   endDate?: string;
   account?: ProjectDetailsAccount;
+  totalQueryHours?: number;
+  consumedQueryHours?: number;
+  remainingQueryHours?: number;
+  goLiveDate?: string | null;
+  goLivePlanDate?: string | null;
+  totalOnboardingHours?: number;
+  consumedOnboardingHours?: number;
+  remainingOnboardingHours?: number;
+  onboardingExpiryDate?: string | null;
+  onboardingStatus?: string | null;
 }
 
 // Project Search Response.
