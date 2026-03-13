@@ -38,6 +38,8 @@ interface ProjectMetadataProps {
   };
   supportTier: string;
   slaStatus: string;
+  goLivePlanDate: string;
+  onboardingStatus: string;
   isLoading?: boolean;
   isError?: boolean;
 }
@@ -47,6 +49,8 @@ const ProjectMetadata = ({
   type,
   supportTier,
   slaStatus,
+  goLivePlanDate,
+  onboardingStatus,
   isLoading,
   isError,
 }: ProjectMetadataProps): JSX.Element => {
@@ -63,16 +67,17 @@ const ProjectMetadata = ({
 
   return (
     <Box sx={{ pt: 3, borderTop: 1, borderColor: "divider" }}>
+      {/* Row 1: Created Date, Project Type, Support Tier */}
       <Grid
         container
         spacing={2}
         sx={{
           alignItems: "center",
-          justifyContent: "space-between", // Distributes columns evenly
+          justifyContent: "space-between",
+          mb: 2,
         }}
       >
-        {/* Created Date - Pushed to the far Left */}
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Box
             sx={{
               display: "flex",
@@ -96,9 +101,7 @@ const ProjectMetadata = ({
             )}
           </Box>
         </Grid>
-
-        {/* Project Type - Centered */}
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Box
             sx={{
               display: "flex",
@@ -136,14 +139,12 @@ const ProjectMetadata = ({
             )}
           </Box>
         </Grid>
-
-        {/* Support Tier - Centered */}
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Box
             sx={{
               display: "flex",
               flexDirection: "column",
-              alignItems: "center",
+              alignItems: { xs: "center", md: "flex-end" },
             }}
           >
             <Typography
@@ -176,14 +177,23 @@ const ProjectMetadata = ({
             )}
           </Box>
         </Grid>
+      </Grid>
 
-        {/* SLA Status - Pushed to the far Right */}
-        <Grid size={{ xs: 12, md: 3 }}>
+      {/* Row 2: SLA Status, Go Live Date, Onboarding Status */}
+      <Grid
+        container
+        spacing={2}
+        sx={{
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Grid size={{ xs: 12, md: 4 }}>
           <Box
             sx={{
               display: "flex",
               flexDirection: "column",
-              alignItems: { xs: "center", md: "flex-end" },
+              alignItems: { xs: "center", md: "flex-start" },
             }}
           >
             <Typography
@@ -210,6 +220,68 @@ const ProjectMetadata = ({
                 label={slaStatus}
                 size="small"
                 color={getSLAStatusColor(slaStatus)}
+                variant="outlined"
+                sx={chipStyle}
+              />
+            )}
+          </Box>
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+            }}
+          >
+            <Typography
+              variant="body2"
+              fontWeight="medium"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Go Live Date
+            </Typography>
+            {isLoading ? (
+              <Skeleton variant="text" width="60%" />
+            ) : isError ? (
+              <ErrorIndicator entityName="go live date" />
+            ) : (
+              <Typography variant="body2">{goLivePlanDate}</Typography>
+            )}
+          </Box>
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: { xs: "center", md: "flex-end" },
+            }}
+          >
+            <Typography
+              variant="body2"
+              fontWeight="medium"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Onboarding Status
+            </Typography>
+            {isLoading || isError ? (
+              <Skeleton variant="rounded" width={80} height={24} />
+            ) : onboardingStatus ? (
+              <Tooltip title={onboardingStatus} arrow>
+                <Chip
+                  label={onboardingStatus}
+                  size="small"
+                  color="info"
+                  variant="outlined"
+                  sx={chipStyle}
+                />
+              </Tooltip>
+            ) : (
+              <Chip
+                label={onboardingStatus}
+                size="small"
+                color="info"
                 variant="outlined"
                 sx={chipStyle}
               />

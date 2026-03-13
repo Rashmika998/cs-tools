@@ -44,6 +44,8 @@ describe("ProjectMetadata", () => {
     type: { id: "subscription", label: "Subscription" },
     supportTier: "Enterprise",
     slaStatus: "Good",
+    goLivePlanDate: "Sep 12, 2025",
+    onboardingStatus: "Not-Applicable",
     isLoading: false,
   };
 
@@ -61,6 +63,12 @@ describe("ProjectMetadata", () => {
 
     expect(screen.getByText("SLA Status")).toBeInTheDocument();
     expect(screen.getByText("Good")).toBeInTheDocument();
+
+    expect(screen.getByText("Go Live Date")).toBeInTheDocument();
+    expect(screen.getByText("Sep 12, 2025")).toBeInTheDocument();
+
+    expect(screen.getByText("Onboarding Status")).toBeInTheDocument();
+    expect(screen.getByText("Not-Applicable")).toBeInTheDocument();
   });
 
   it("should render skeletons when loading", () => {
