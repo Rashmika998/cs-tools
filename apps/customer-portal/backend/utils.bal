@@ -535,7 +535,7 @@ public isolated function mapCaseResponse(entity:CaseResponse response) returns t
     entity:ReferenceTableItem? catalogItem = response?.catalogItem;
     entity:ReferenceTableItem? assignedTeam = response.assignedTeam;
     entity:ReferenceTableItem[]? changeRequests = response?.changeRequests;
-    entity:ReferenceTableItem[]? engagementPaymentType = response.engagementPaymentType;
+    entity:ReferenceTableItem? engagementPaymentType = response.engagementPaymentType;
     entity:ServiceRequestVariable[]? variables = response?.variables;
     entity:ReferenceTableItem? product = response.product;
     entity:ChoiceListItem? engagementType = response.engagementType;
@@ -595,8 +595,10 @@ public isolated function mapCaseResponse(entity:CaseResponse response) returns t
             } : (),
         changeRequests: changeRequests != () ? from entity:ReferenceTableItem item in changeRequests
                 select {id: item.id, label: item.name} : (),
-        engagementPaymentType: engagementPaymentType != () ? from entity:ReferenceTableItem item in engagementPaymentType
-                select {id: item.id, label: item.name} : (),
+        engagementPaymentType: engagementPaymentType != () ? {
+                id: engagementPaymentType.id,
+                label: engagementPaymentType.name
+            } : (),
         hasAutoClosed: response?.hasAutoClosed,
         engagementStartDate: response?.engagementStartDate,
         engagementEndDate: response?.engagementEndDate,

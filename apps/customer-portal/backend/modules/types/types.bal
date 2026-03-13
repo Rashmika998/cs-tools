@@ -148,7 +148,7 @@ public type CaseResponse record {|
     # Change requests (only for service requests)
     ReferenceItem[]? changeRequests?;
     # Engagement payment type information
-    ReferenceItem[] engagementPaymentType?;
+    ReferenceItem engagementPaymentType?;
     # Engagement start date
     entity:Date? engagementStartDate?;
     # Engagement end date

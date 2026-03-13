@@ -484,7 +484,7 @@ public type CaseResponse record {|
     # Variables for service request
     ServiceRequestVariable[]? variables?;
     # Engagement payment type information
-    ReferenceTableItem[] engagementPaymentType?;
+    ReferenceTableItem engagementPaymentType?;
     # Engagement start date
     Date? engagementStartDate?;
     # Engagement end date
