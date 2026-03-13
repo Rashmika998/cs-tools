@@ -18,15 +18,19 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ProjectTimeTracking from "@time-tracking/ProjectTimeTracking";
 import useSearchProjectTimeCards from "@api/useSearchProjectTimeCards";
-import useGetTimeCardsStats from "@api/useGetTimeCardsStats";
 import useGetProjectFilters from "@api/useGetProjectFilters";
 
 vi.mock("@api/useSearchProjectTimeCards");
-vi.mock("@api/useGetTimeCardsStats");
 vi.mock("@api/useGetProjectFilters");
 
-vi.mock("@time-tracking/TimeTrackingStatCards", () => ({
-  default: ({ isLoading, isError }: { isLoading?: boolean; isError?: boolean }) => (
+vi.mock("@time-tracking/ServiceHoursStatCards", () => ({
+  default: ({
+    isLoading,
+    isError,
+  }: {
+    isLoading?: boolean;
+    isError?: boolean;
+  }) => (
     <div data-testid="stat-cards">
       {isLoading ? "Stats Loading" : "Stats Loaded"}
       {isError ? "Stats Error" : "Stats OK"}
@@ -35,22 +39,16 @@ vi.mock("@time-tracking/TimeTrackingStatCards", () => ({
 }));
 
 vi.mock("@time-tracking/TimeCardsDateFilter", () => ({
-  default: ({ state, onStateChange, startDate, endDate }: {
-    state: string;
-    onStateChange: (value: string) => void;
+  default: ({
+    startDate,
+    endDate,
+  }: {
     startDate: string;
     endDate: string;
   }) => (
     <div data-testid="date-filter">
-      <span data-testid="filter-state">{state || "no-state"}</span>
       <span data-testid="filter-start-date">{startDate}</span>
       <span data-testid="filter-end-date">{endDate}</span>
-      <button
-        data-testid="change-state-btn"
-        onClick={() => onStateChange("Approved")}
-      >
-        Change State
-      </button>
     </div>
   ),
 }));
@@ -98,12 +96,6 @@ describe("ProjectTimeTracking", () => {
   });
 
   it("should render 7 skeletons when time cards are loading", () => {
-    vi.mocked(useGetTimeCardsStats).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-    } as any);
-
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -112,18 +104,19 @@ describe("ProjectTimeTracking", () => {
       fetchNextPage: vi.fn(),
     } as any);
 
-    render(<ProjectTimeTracking projectId={projectId} />);
+    render(
+      <ProjectTimeTracking
+        projectId={projectId}
+        project={null}
+        isProjectLoading={false}
+        isProjectError={false}
+      />,
+    );
 
     expect(screen.getAllByTestId("skeleton")).toHaveLength(7);
   });
 
   it("should render error state when time cards fail to load", () => {
-    vi.mocked(useGetTimeCardsStats).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-    } as any);
-
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -132,7 +125,14 @@ describe("ProjectTimeTracking", () => {
       fetchNextPage: vi.fn(),
     } as any);
 
-    render(<ProjectTimeTracking projectId={projectId} />);
+    render(
+      <ProjectTimeTracking
+        projectId={projectId}
+        project={null}
+        isProjectLoading={false}
+        isProjectError={false}
+      />,
+    );
 
     expect(screen.getByTestId("error-state")).toBeInTheDocument();
   });
@@ -170,12 +170,6 @@ describe("ProjectTimeTracking", () => {
       ],
     };
 
-    vi.mocked(useGetTimeCardsStats).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-    } as any);
-
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
       data: mockData,
       isLoading: false,
@@ -184,7 +178,14 @@ describe("ProjectTimeTracking", () => {
       fetchNextPage: vi.fn(),
     } as any);
 
-    render(<ProjectTimeTracking projectId={projectId} />);
+    render(
+      <ProjectTimeTracking
+        projectId={projectId}
+        project={null}
+        isProjectLoading={false}
+        isProjectError={false}
+      />,
+    );
 
     expect(screen.getByText("Log 1")).toBeInTheDocument();
     expect(screen.getByText("Log 2")).toBeInTheDocument();
@@ -192,12 +193,6 @@ describe("ProjectTimeTracking", () => {
   });
 
   it("should always render stat cards regardless of time cards state", () => {
-    vi.mocked(useGetTimeCardsStats).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-    } as any);
-
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -206,18 +201,19 @@ describe("ProjectTimeTracking", () => {
       fetchNextPage: vi.fn(),
     } as any);
 
-    render(<ProjectTimeTracking projectId={projectId} />);
+    render(
+      <ProjectTimeTracking
+        projectId={projectId}
+        project={null}
+        isProjectLoading={false}
+        isProjectError={false}
+      />,
+    );
 
     expect(screen.getByTestId("stat-cards")).toBeInTheDocument();
   });
 
   it("should render date filter between stats and time cards", () => {
-    vi.mocked(useGetTimeCardsStats).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-    } as any);
-
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
       data: { pages: [{ timeCards: [], totalRecords: 0, offset: 0, limit: 10 }] },
       isLoading: false,
@@ -226,18 +222,19 @@ describe("ProjectTimeTracking", () => {
       fetchNextPage: vi.fn(),
     } as any);
 
-    render(<ProjectTimeTracking projectId={projectId} />);
+    render(
+      <ProjectTimeTracking
+        projectId={projectId}
+        project={null}
+        isProjectLoading={false}
+        isProjectError={false}
+      />,
+    );
 
     expect(screen.getByTestId("date-filter")).toBeInTheDocument();
   });
 
   it("should render empty state when there are no time cards", () => {
-    vi.mocked(useGetTimeCardsStats).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-    } as any);
-
     vi.mocked(useSearchProjectTimeCards).mockReturnValue({
       data: { pages: [{ timeCards: [], totalRecords: 0, offset: 0, limit: 10 }] },
       isLoading: false,
@@ -246,7 +243,14 @@ describe("ProjectTimeTracking", () => {
       fetchNextPage: vi.fn(),
     } as any);
 
-    render(<ProjectTimeTracking projectId={projectId} />);
+    render(
+      <ProjectTimeTracking
+        projectId={projectId}
+        project={null}
+        isProjectLoading={false}
+        isProjectError={false}
+      />,
+    );
 
     expect(screen.getByTestId("empty-state")).toBeInTheDocument();
     expect(screen.getByText("No time logs available.")).toBeInTheDocument();
