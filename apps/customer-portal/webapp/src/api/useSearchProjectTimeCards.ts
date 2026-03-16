@@ -78,12 +78,14 @@ export default function useSearchProjectTimeCards({
         }
 
         const requestUrl = `${baseUrl}/projects/${projectId}/time-cards/search`;
+        const filters: TimeCardSearchRequest["filters"] = {
+          ...(startDate && { startDate }),
+          ...(endDate && { endDate }),
+          ...(states && states.length > 0 && { states }),
+        };
+
         const body: TimeCardSearchRequest = {
-          filters: {
-            startDate,
-            endDate,
-            ...(states && states.length > 0 && { states }),
-          },
+          filters,
           pagination: { limit: 10, offset: pageParam as number },
         };
 
@@ -116,12 +118,7 @@ export default function useSearchProjectTimeCards({
       return nextOffset < lastPage.totalRecords ? nextOffset : undefined;
     },
     enabled:
-      enabled !== false &&
-      !!projectId &&
-      !!startDate &&
-      !!endDate &&
-      isSignedIn &&
-      !isAuthLoading,
+      enabled !== false && !!projectId && isSignedIn && !isAuthLoading,
     staleTime: 5 * 60 * 1000,
   });
 }

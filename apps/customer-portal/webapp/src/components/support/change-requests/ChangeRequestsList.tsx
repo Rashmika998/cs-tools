@@ -241,6 +241,27 @@ export default function ChangeRequestsList({
                   flexWrap: "wrap",
                 }}
               >
+                {item.createdOn && (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0.5,
+                    }}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      Created:
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {formatDateTime(item.createdOn)}
+                    </Typography>
+                  </Box>
+                )}
+                {item.createdOn && (item.startDate || item.endDate) && (
+                  <Typography variant="body2" color="text.disabled">
+                    |
+                  </Typography>
+                )}
                 <Box
                   sx={{
                     display: "flex",
