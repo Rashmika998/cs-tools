@@ -40,9 +40,12 @@ export interface FetchDeploymentProductsOptions {
  */
 export async function fetchDeploymentProducts(
   deploymentId: string,
-  options: FetchDeploymentProductsOptions,
+  options: FetchDeploymentProductsOptions & {
+    offset?: number;
+    limit?: number;
+  },
 ): Promise<DeployedProductsResponse> {
-  const { fetchFn } = options;
+  const { fetchFn, offset = 0, limit = 10 } = options;
 
   const baseUrl = window.config?.CUSTOMER_PORTAL_BACKEND_BASE_URL;
 
@@ -51,8 +54,8 @@ export async function fetchDeploymentProducts(
   }
 
   const searchParams = new URLSearchParams();
-  searchParams.set("offset", "0");
-  searchParams.set("limit", "10");
+  searchParams.set("offset", String(offset));
+  searchParams.set("limit", String(limit));
 
   const requestUrl = `${baseUrl}/deployments/${deploymentId}/products?${searchParams.toString()}`;
 
