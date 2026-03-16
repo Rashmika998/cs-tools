@@ -34,17 +34,10 @@ function formatHoursDisplay(
   consumed: number | undefined,
   total: number | undefined,
 ): string {
-  if (
-    consumed == null ||
-    total == null ||
-    (typeof consumed !== "number" && typeof total !== "number")
-  ) {
-    return NOT_AVAILABLE;
-  }
-  const c = Number(consumed);
-  const t = Number(total);
-  if (t === 0) return NOT_AVAILABLE;
-  const pct = Math.round((c / t) * 100);
+  if (consumed == null && total == null) return NOT_AVAILABLE;
+  const c = Number(consumed ?? 0);
+  const t = Number(total ?? 0);
+  const pct = t === 0 ? 0 : Math.round((c / t) * 100);
   return `${c}/${t}h (${pct}%)`;
 }
 
