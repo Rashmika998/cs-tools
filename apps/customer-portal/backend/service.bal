@@ -4278,6 +4278,7 @@ isolated service /ws on new websocket:Listener(wsPort) {
 isolated service class WsProxyService {
     *websocket:Service;
     private final string sessionId;
+    private boolean streaming = false;
 
     isolated function init(string sessionId) {
         self.sessionId = sessionId;
@@ -4293,10 +4294,26 @@ isolated service class WsProxyService {
             check caller->writeTextMessage(string `{"type":"pong","ts":${ts}}`);
             return;
         }
+        boolean alreadyStreaming;
+        lock {
+            alreadyStreaming = self.streaming;
+            if !alreadyStreaming {
+                self.streaming = true;
+            }
+        }
+        if alreadyStreaming {
+            json busyPayload = {"type": "error", "message": "A response is already being streamed. Please wait."};
+            check caller->writeTextMessage(busyPayload.toJsonString());
+            return;
+        }
         error? err = ai_chat_agent:streamChat(self.sessionId, data, caller);
+        lock {
+            self.streaming = false;
+        }
         if err is error {
             log:printError("WebSocket proxy stream error", err);
-            error? writeErr = caller->writeTextMessage(string `{"type":"error","message":"${err.message()}"}`);
+            json errorPayload = {"type": "error", "message": err.message()};
+            error? writeErr = caller->writeTextMessage(errorPayload.toJsonString());
             if writeErr is error {
                 log:printError("Failed to send error to caller (client disconnected)", writeErr);
             }

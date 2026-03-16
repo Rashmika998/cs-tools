@@ -98,7 +98,8 @@ public isolated function streamChat(string sessionId, string payload, websocket:
             if event is websocket:ConnectionClosureError {
                 upstreamClosed = true;
             } else {
-                error? writeErr = caller->writeTextMessage(string `{"type":"error","message":"${event.message()}"}`);
+                json errorPayload = {"type": "error", "message": event.message()};
+                error? writeErr = caller->writeTextMessage(errorPayload.toJsonString());
                 if writeErr is error {
                     log:printError("Failed to send error to caller (client disconnected)", writeErr);
                 }
