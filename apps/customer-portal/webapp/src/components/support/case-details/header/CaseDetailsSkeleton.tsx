@@ -61,6 +61,7 @@ export function CaseDetailsHeaderSkeleton(): JSX.Element {
  */
 export default function CaseDetailsSkeleton({
   hideActionRow = false,
+  showEngineerOnly = false,
 }: CaseDetailsSkeletonProps = {}): JSX.Element {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -97,11 +98,15 @@ export default function CaseDetailsSkeleton({
                 Support Engineer
               </Box>
             </Box>
-            <Divider orientation="vertical" flexItem />
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Skeleton variant="circular" width={12} height={12} />
-              <Skeleton variant="text" width={100} height={14} />
-            </Stack>
+            {!showEngineerOnly && (
+              <>
+                <Divider orientation="vertical" flexItem />
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <Skeleton variant="circular" width={12} height={12} />
+                  <Skeleton variant="text" width={100} height={14} />
+                </Stack>
+              </>
+            )}
           </Stack>
         </Paper>
       )}
