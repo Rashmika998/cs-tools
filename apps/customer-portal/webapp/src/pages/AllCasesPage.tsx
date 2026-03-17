@@ -166,9 +166,7 @@ export default function AllCasesPage(): JSX.Element {
     [currentPageCases, excludeS0],
   );
 
-  const totalItems = excludeS0
-    ? filteredAndSearchedCases.length
-    : apiTotalRecords || filteredAndSearchedCases.length;
+  const totalItems = apiTotalRecords || filteredAndSearchedCases.length;
 
   const paginatedCases = filteredAndSearchedCases;
 
