@@ -105,8 +105,13 @@ export default function NoveraChatPage(): JSX.Element {
     () => urlConversationId ?? conversationResponse?.conversationId ?? null,
   );
 
-  const { data: conversationHistory, isLoading: isLoadingHistory } =
-    useGetConversationMessages(urlConversationId || "", { pageSize: 50 });
+  const {
+    data: conversationHistory,
+    isLoading: isLoadingHistory,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useGetConversationMessages(urlConversationId || "", { pageSize: 10 });
   const [isCreateCaseLoading, setIsCreateCaseLoading] = useState(false);
   const [isWaitingForClassification, setIsWaitingForClassification] =
     useState(false);
@@ -167,7 +172,14 @@ export default function NoveraChatPage(): JSX.Element {
         (page) => page.comments,
       );
 
-      const convertedMessages: Message[] = allMessages.map((msg, index) => {
+      const convertedMessages: Message[] = allMessages
+        .slice()
+        .sort((a, b) => {
+          const aT = a.createdOn ? new Date(a.createdOn).getTime() : 0;
+          const bT = b.createdOn ? new Date(b.createdOn).getTime() : 0;
+          return aT - bT;
+        })
+        .map((msg, index) => {
         // Determine if message is from bot (same logic as ConversationDetailsPage)
         const isBot =
           msg.type?.toLowerCase() === "bot" ||
@@ -422,6 +434,12 @@ export default function NoveraChatPage(): JSX.Element {
               messages={messages}
               messagesEndRef={messagesEndRef}
               onCreateCase={handleCreateCase}
+              onFetchOlder={
+                urlConversationId && hasNextPage && !isFetchingNextPage
+                  ? () => fetchNextPage()
+                  : undefined
+              }
+              isFetchingOlder={isFetchingNextPage}
             />
           )}
 
