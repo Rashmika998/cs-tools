@@ -31,8 +31,8 @@ public type Result1 record {|
     int status;
     # Choreo application ID
     string applicationId?;
-    json ...;
-|};
+    json...;
+};
 
 # Project status request payload structure (inbound to this service).
 public type ProjectStatusRequest record {
@@ -46,8 +46,11 @@ public type ProjectStatusRequest record {
 
 # Choreo application creation response structure.
 public type ApplicationCreateResponse record {
+    # Application name
+    string name;
     # Application ID
-    string id;
+    string applicationId;
+    json...;
 };
 
 # Choreo credentials generation response structure.
@@ -109,3 +112,62 @@ public type LicenseResponse record {|
     # Result object
     LicenseResult result;
 |};
+
+
+
+
+
+# Project status response structure.
+public type ProjectStatusResponse record {|
+    # Application status code
+    int status;
+    # Choreo application ID
+    string applicationId?;
+    json...;
+};
+
+// ─── CHOREO APPLICATION TYPES ────────────────────────────────────────────────
+
+# Application Create payload structure.
+public type ApplicationCreatePayload record {|
+    # Name of the application
+    string name;
+    # Description of the application
+    string description;
+|};
+
+# Application Subscription payload structure.
+public type ApplicationSubscriptionPayload record {|
+    # Application ID
+    string applicationId?;
+|};
+
+# Application subscription response structure.
+public type ApplicationSubscriptionResponse record {|
+    # Application ID
+    string applicationId;
+    # Subscription ID
+    string subscriptionId;
+    # API ID
+    string apiId;
+    json...;
+};
+
+# Application Key Generation payload structure.
+public type ApplicationKeyGenerationPayload record {|
+    # Key type (e.g., "PRODUCTION" or "SANDBOX")
+    string keyType;
+    # Key manager name
+    string keyManager;
+    # Grant types to be supported
+    string[] grantTypesToBeSupported;
+|};
+
+# Application key generation response structure.
+public type ApplicationKeyGenerationResponse record {|
+    # Consumer key
+    string consumerKey;
+    # Consumer secret
+    string consumerSecret;
+    json...;
+};

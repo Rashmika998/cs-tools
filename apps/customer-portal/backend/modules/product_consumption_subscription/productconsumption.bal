@@ -37,9 +37,9 @@ public isolated  function process(ProjectStatusRequest payload) returns json|err
     if status == 1 {
         ApplicationCreateResponse app =
             check productConsumptionClient->/applications
-                .post({name: payload.projectId, description: "Application for project " + payload.projectId});
+                .post({name: payload.projectId+"Test", description: "Application for project " + payload.projectId});
 
-        applicationId = app.id;
+        applicationId = app.applicationId;
 
         Result _ = check productConsumptionClient->/projects/[payload.projectId]
             .patch({
@@ -52,7 +52,9 @@ public isolated  function process(ProjectStatusRequest payload) returns json|err
 
     // STATUS 2 → SUBSCRIBE
     if status == 2 {
-        Result _ = check productConsumptionClient->/applications/[applicationId]/subscribe.post({});
+        ApplicationSubscriptionResponse _ = check productConsumptionClient->/applications/[applicationId]/subscribe.post(<ApplicationSubscriptionPayload>{
+            applicationId: applicationId
+        });
 
         Result _ = check productConsumptionClient->/projects/[payload.projectId]
             .patch({
@@ -64,9 +66,13 @@ public isolated  function process(ProjectStatusRequest payload) returns json|err
 
     // STATUS 3 → GENERATE CREDENTIALS
     if status == 3 {
-        CredentialsResponse creds =
+        ApplicationKeyGenerationResponse creds =
             check productConsumptionClient->/applications/[applicationId]/generate\-credentials
-                .post({});
+                .post(<ApplicationKeyGenerationPayload>{
+            keyType: "PRODUCTION",
+            keyManager: "Resident Key Manager",
+            grantTypesToBeSupported: ["client_credentials"]
+        });
 
         Result _ = check productConsumptionClient->/projects/[payload.projectId]
             .patch({
