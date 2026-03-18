@@ -26,6 +26,10 @@ const testProjects = [
     name: "Project 1",
     description: "Description 1",
     createdOn: "2026-01-01 10:00:00",
+    hasAgent: true,
+    activeCasesCount: 3,
+    activeChatsCount: 4,
+    slaStatus: "Needs Attention",
   },
   {
     id: "project-2",
@@ -33,6 +37,10 @@ const testProjects = [
     name: "Project 2",
     description: "Description 2",
     createdOn: "2026-01-02 11:00:00",
+    hasAgent: true,
+    activeCasesCount: 15,
+    activeChatsCount: 5,
+    slaStatus: "Needs Attention",
   },
 ];
 

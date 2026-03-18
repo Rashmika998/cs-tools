@@ -19,8 +19,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProjectSwitcher from "@components/common/header/ProjectSwitcher";
 
 const mockProjects = [
-  { id: "1", name: "Project A", key: "PA", createdOn: "2025-01-01", description: "Desc A" },
-  { id: "2", name: "Project B", key: "PB", createdOn: "2025-01-02", description: "Desc B" },
+  {
+    id: "1",
+    name: "Project A",
+    key: "PA",
+    createdOn: "2025-01-01",
+    description: "Desc A",
+    hasAgent: true,
+    activeCasesCount: 3,
+    activeChatsCount: 4,
+    slaStatus: "Needs Attention",
+  },
+  {
+    id: "2",
+    name: "Project B",
+    key: "PB",
+    createdOn: "2025-01-02",
+    description: "Desc B",
+    hasAgent: true,
+    activeCasesCount: 15,
+    activeChatsCount: 5,
+    slaStatus: "Needs Attention",
+  },
 ];
 
 // Mock @wso2/oxygen-ui

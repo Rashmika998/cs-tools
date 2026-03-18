@@ -22,7 +22,7 @@ import {
 } from "@wso2/oxygen-ui";
 import { FolderOpen } from "@wso2/oxygen-ui-icons-react";
 import type { JSX } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { ProjectListItem } from "@models/responses";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 
@@ -52,9 +52,8 @@ export default function ProjectSwitcher({
   isError,
 }: ProjectSwitcherProps): JSX.Element {
   const [displayLimit, setDisplayLimit] = useState(INITIAL_DISPLAY_LIMIT);
-  const listElementRef = useRef<HTMLElement | null>(null);
 
-  const handleMenuScroll = (event: any) => {
+  const handleMenuScroll = (event: React.UIEvent<HTMLElement>) => {
     const list = event.currentTarget;
     const scrollTop = list.scrollTop;
     const scrollHeight = list.scrollHeight;
@@ -68,17 +67,6 @@ export default function ProjectSwitcher({
     }
   };
 
-  // Attach scroll listener when list element is available
-  useEffect(() => {
-    if (!listElementRef.current) return;
-
-    const listElement = listElementRef.current;
-    listElement.addEventListener("scroll", handleMenuScroll);
-
-    return () => {
-      listElement.removeEventListener("scroll", handleMenuScroll);
-    };
-  }, [displayLimit, projects.length]);
   if (isLoading) {
     return (
       <HeaderUI.Switchers showDivider={false}>
@@ -91,7 +79,7 @@ export default function ProjectSwitcher({
             px: 1.5,
             border: "1px solid",
             borderColor: "action.disabledBackground",
-            borderRadius: "4px",
+            borderRadius: 0,
           }}
         >
           <FolderOpen size={16} />
@@ -115,7 +103,7 @@ export default function ProjectSwitcher({
             px: 1.5,
             border: "1px solid",
             borderColor: "error.main",
-            borderRadius: "4px",
+            borderRadius: 0,
             color: "error.main",
           }}
         >
@@ -140,7 +128,7 @@ export default function ProjectSwitcher({
             px: 1.5,
             border: "1px solid",
             borderColor: "divider",
-            borderRadius: "4px",
+            borderRadius: 0,
             backgroundColor: "background.paper",
           }}
         >
@@ -174,31 +162,6 @@ export default function ProjectSwitcher({
             },
           },
         }}
-        slotProps={{
-          popper: {
-            modifiers: [
-              {
-                name: "customMaxHeight",
-                enabled: true,
-                phase: "afterWrite",
-                fn: ({ state }) => {
-                  const maxHeight = 320;
-                  if (state.styles.popper.maxHeight) {
-                    state.styles.popper.maxHeight = `${maxHeight}px`;
-                  }
-                },
-              },
-            ],
-          },
-          paper: {
-            sx: {
-              maxHeight: "320px",
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
-            },
-          },
-        }}
         MenuProps={{
           PaperProps: {
             sx: {
@@ -212,16 +175,8 @@ export default function ProjectSwitcher({
               },
             },
           },
-          onEntered: (element: any) => {
-            // Capture the list element reference after menu opens
-            const listElement = element?.querySelector(".MuiList-root");
-            if (listElement) {
-              listElementRef.current = listElement;
-            }
-          },
-          onExited: () => {
-            // Clear reference when menu closes
-            listElementRef.current = null;
+          MenuListProps: {
+            onScroll: handleMenuScroll,
           },
         }}
         renderValue={(selected) => {

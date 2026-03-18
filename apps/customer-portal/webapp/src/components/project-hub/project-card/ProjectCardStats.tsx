@@ -32,9 +32,9 @@ import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import { formatProjectDate } from "@utils/projectCard";
 
 interface ProjectCardStatsProps {
-  activeChats: number | undefined;
+  activeChatsCount: number | undefined;
   date: string;
-  openCases: number | undefined;
+  activeCasesCount: number | undefined;
   isError?: boolean;
   isLoading?: boolean;
 }
@@ -46,8 +46,8 @@ interface ProjectCardStatsProps {
  * @returns {JSX.Element} The rendered stats section.
  */
 export default function ProjectCardStats({
-  openCases,
-  activeChats,
+  activeCasesCount,
+  activeChatsCount,
   date,
   isError,
   isLoading,
@@ -61,7 +61,7 @@ export default function ProjectCardStats({
           gap: 1.5,
         }}
       >
-        {/* Open Cases */}
+        {/* Outstanding support cases */}
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Box
             display="flex"
@@ -71,16 +71,16 @@ export default function ProjectCardStats({
           >
             <CircleAlert size={16} />
             <Typography variant="body2" color="inherit">
-              Open Cases
+              Outstanding support cases
             </Typography>
           </Box>
           {isLoading ? (
             <Skeleton variant="text" width={20} />
           ) : isError ? (
-            <ErrorIndicator entityName="Open Cases" />
+            <ErrorIndicator entityName="Outstanding support cases" />
           ) : (
             <Typography variant="body2" color="primary">
-              {openCases ?? "--"}
+              {activeCasesCount ?? "--"}
             </Typography>
           )}
         </Box>
@@ -104,7 +104,7 @@ export default function ProjectCardStats({
             <ErrorIndicator entityName="Active Chats" />
           ) : (
             <Typography variant="body2" color={colors.blue[500]}>
-              {activeChats ?? "--"}
+              {activeChatsCount ?? "--"}
             </Typography>
           )}
         </Box>

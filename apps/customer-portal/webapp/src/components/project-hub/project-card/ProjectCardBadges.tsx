@@ -19,6 +19,7 @@ import { type JSX } from "react";
 
 interface ProjectCardBadgesProps {
   projectKey: string;
+  slaStatus: string;
 }
 
 /**
@@ -29,11 +30,18 @@ interface ProjectCardBadgesProps {
  */
 export default function ProjectCardBadges({
   projectKey,
+  slaStatus,
 }: ProjectCardBadgesProps): JSX.Element {
   return (
     <Form.CardContent sx={{ width: "100%", pt: 2, pb: 0 }}>
-      <Box display="flex" justifyContent="flex-start" alignItems="center">
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        gap={1}
+      >
         <Chip label={projectKey} variant="outlined" size="small" />
+        <Chip label={slaStatus} variant="outlined" size="small" />
       </Box>
     </Form.CardContent>
   );

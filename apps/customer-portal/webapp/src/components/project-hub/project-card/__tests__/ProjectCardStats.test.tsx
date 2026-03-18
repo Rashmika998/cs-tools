@@ -54,8 +54,8 @@ vi.mock("@/components/common/error-indicator/ErrorIndicator", () => ({
 describe("ProjectCardStats", () => {
   it("should render counts and formatted date", () => {
     const props = {
-      openCases: 10,
-      activeChats: 5,
+      activeCasesCount: 10,
+      activeChatsCount: 5,
       date: "2025-07-17",
     };
 
@@ -68,8 +68,8 @@ describe("ProjectCardStats", () => {
 
   it("should render icons", () => {
     const props = {
-      openCases: 0,
-      activeChats: 0,
+      activeCasesCount: 0,
+      activeChatsCount: 0,
       date: "2025-07-17",
     };
 
@@ -82,23 +82,25 @@ describe("ProjectCardStats", () => {
 
   it("should render error indicators when isError is true", () => {
     const props = {
-      openCases: 0,
-      activeChats: 0,
+      activeCasesCount: 0,
+      activeChatsCount: 0,
       date: "2025-07-17",
       isError: true,
     };
 
     render(<ProjectCardStats {...props} />);
 
-    expect(screen.getByText("Error: Open Cases")).toBeInTheDocument();
+    expect(
+      screen.getByText("Error: Outstanding support cases"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Error: Active Chats")).toBeInTheDocument();
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
   it("should render skeletons when isLoading is true", () => {
     const props = {
-      openCases: 0,
-      activeChats: 0,
+      activeCasesCount: 0,
+      activeChatsCount: 0,
       date: "2025-07-17",
       isLoading: true,
     };

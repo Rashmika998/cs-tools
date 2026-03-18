@@ -32,7 +32,6 @@ import {
 import type { JSX } from "react";
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { getNoveraChatEnabled } from "@utils/settingsStorage";
 import useInfiniteProjects, { flattenProjectPages } from "@api/useGetProjects";
 import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
 
@@ -85,7 +84,7 @@ export default function GetHelpDropdown(): JSX.Element {
   const handleIssue = () => {
     handleClose();
     if (projectId) {
-      const noveraEnabled = getNoveraChatEnabled();
+      const noveraEnabled = selectedProject?.hasAgent ?? false;
       if (noveraEnabled) {
         navigate(`/projects/${projectId}/support/chat/describe-issue`);
       } else {

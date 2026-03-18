@@ -27,6 +27,10 @@ export interface ProjectListItem {
     id: string;
     label: string;
   };
+  hasAgent: boolean;
+  activeCasesCount: number;
+  activeChatsCount: number;
+  slaStatus: string;
 }
 
 /** Account nested in project details response. */
@@ -49,6 +53,7 @@ export interface ProjectDetails {
   name: string;
   description: string;
   createdOn: string;
+  hasAgent?: boolean;
   type: {
     id: string;
     label: string;

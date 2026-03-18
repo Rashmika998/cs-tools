@@ -17,7 +17,6 @@
 import { Form } from "@wso2/oxygen-ui";
 import { type JSX, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { useGetProjectStat } from "@api/useGetProjectStat";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import ProjectCardActions from "@components/project-hub/project-card/ProjectCardActions";
 import ProjectCardBadges from "@components/project-hub/project-card/ProjectCardBadges";
@@ -28,8 +27,11 @@ import ProjectCardStats from "@components/project-hub/project-card/ProjectCardSt
 export interface ProjectCardProps {
   date: string;
   id: string;
+  activeCasesCount: number;
+  activeChatsCount: number;
   onViewDashboard?: () => void;
   projectKey: string;
+  slaStatus: string;
   subtitle: string;
   title: string;
 }
@@ -43,14 +45,17 @@ export interface ProjectCardProps {
 export default function ProjectCard({
   id,
   projectKey,
+  slaStatus,
   title,
   subtitle,
   date,
+  activeCasesCount,
+  activeChatsCount,
   onViewDashboard,
 }: ProjectCardProps): JSX.Element {
   // Hook to navigate between routes.
   const navigate = useNavigate();
-  const { showLoader, hideLoader } = useLoader();
+  const { hideLoader } = useLoader();
 
   const handleViewDashboard = () => {
     if (onViewDashboard) {
@@ -60,24 +65,9 @@ export default function ProjectCard({
     }
   };
 
-  // Hook to fetch project statistics.
-  const {
-    data: statsData,
-    isLoading: isStatsLoading,
-    isError: isStatsQueryError,
-  } = useGetProjectStat(id);
-
   useEffect(() => {
-    if (isStatsLoading) {
-      showLoader();
-      return () => hideLoader();
-    }
-  }, [isStatsLoading, showLoader, hideLoader]);
-
-  const resolvedOpenCases = statsData?.projectStats?.openCases;
-  const resolvedActiveChats = statsData?.projectStats?.activeChats;
-
-  const resolvedIsStatsError = isStatsQueryError;
+    hideLoader();
+  }, [hideLoader]);
 
   return (
     <Form.CardButton
@@ -90,16 +80,14 @@ export default function ProjectCard({
       }}
     >
       {/* project card badges */}
-      <ProjectCardBadges projectKey={projectKey} />
+      <ProjectCardBadges projectKey={projectKey} slaStatus={slaStatus} />
       {/* project card info */}
       <ProjectCardInfo subtitle={subtitle} title={title} />
       {/* project card stats */}
       <ProjectCardStats
-        activeChats={resolvedActiveChats}
+        activeChatsCount={activeChatsCount}
         date={date}
-        openCases={resolvedOpenCases}
-        isError={resolvedIsStatsError}
-        isLoading={isStatsLoading}
+        activeCasesCount={activeCasesCount}
       />
       {/* project card actions */}
       <ProjectCardActions onViewDashboard={handleViewDashboard} />
