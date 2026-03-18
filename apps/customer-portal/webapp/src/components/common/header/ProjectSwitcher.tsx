@@ -52,30 +52,32 @@ export default function ProjectSwitcher({
   isError,
 }: ProjectSwitcherProps): JSX.Element {
   const [displayLimit, setDisplayLimit] = useState(INITIAL_DISPLAY_LIMIT);
-  const listContainerRef = useRef<HTMLDivElement>(null);
+  const listElementRef = useRef<HTMLElement | null>(null);
 
-  // Handle scroll to load more projects
+  const handleMenuScroll = (event: any) => {
+    const list = event.currentTarget;
+    const scrollTop = list.scrollTop;
+    const scrollHeight = list.scrollHeight;
+    const clientHeight = list.clientHeight;
+
+    if (
+      scrollHeight - (scrollTop + clientHeight) < SCROLL_LOAD_THRESHOLD &&
+      displayLimit < projects.length
+    ) {
+      setDisplayLimit((prev) => Math.min(prev + 10, projects.length));
+    }
+  };
+
+  // Attach scroll listener when list element is available
   useEffect(() => {
-    const container = listContainerRef.current;
-    if (!container) return;
+    if (!listElementRef.current) return;
 
-    const handleScroll = () => {
-      // Check if scrolled near bottom
-      const scrollTop = container.scrollTop;
-      const scrollHeight = container.scrollHeight;
-      const clientHeight = container.clientHeight;
+    const listElement = listElementRef.current;
+    listElement.addEventListener("scroll", handleMenuScroll);
 
-      if (
-        scrollHeight - (scrollTop + clientHeight) < SCROLL_LOAD_THRESHOLD &&
-        displayLimit < projects.length
-      ) {
-        // Load 10 more items
-        setDisplayLimit((prev) => Math.min(prev + 10, projects.length));
-      }
+    return () => {
+      listElement.removeEventListener("scroll", handleMenuScroll);
     };
-
-    container.addEventListener("scroll", handleScroll);
-    return () => container.removeEventListener("scroll", handleScroll);
   }, [displayLimit, projects.length]);
   if (isLoading) {
     return (
@@ -158,7 +160,70 @@ export default function ProjectSwitcher({
         value={selectedProject?.id || ""}
         onChange={(event: any) => onProjectChange(event.target.value)}
         size="small"
-        sx={{ minWidth: 200 }}
+        sx={{
+          minWidth: 200,
+          "& .MuiOutlinedInput-root": {
+            "& fieldset": {
+              borderColor: "divider",
+            },
+            "&:hover fieldset": {
+              borderColor: "action.active",
+            },
+            "&.Mui-focused fieldset": {
+              borderColor: "primary.main",
+            },
+          },
+        }}
+        slotProps={{
+          popper: {
+            modifiers: [
+              {
+                name: "customMaxHeight",
+                enabled: true,
+                phase: "afterWrite",
+                fn: ({ state }) => {
+                  const maxHeight = 320;
+                  if (state.styles.popper.maxHeight) {
+                    state.styles.popper.maxHeight = `${maxHeight}px`;
+                  }
+                },
+              },
+            ],
+          },
+          paper: {
+            sx: {
+              maxHeight: "320px",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            },
+          },
+        }}
+        MenuProps={{
+          PaperProps: {
+            sx: {
+              maxHeight: "320px",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              "& .MuiList-root": {
+                flex: 1,
+                overflow: "auto",
+              },
+            },
+          },
+          onEntered: (element: any) => {
+            // Capture the list element reference after menu opens
+            const listElement = element?.querySelector(".MuiList-root");
+            if (listElement) {
+              listElementRef.current = listElement;
+            }
+          },
+          onExited: () => {
+            // Clear reference when menu closes
+            listElementRef.current = null;
+          },
+        }}
         renderValue={(selected) => {
           const project = projects.find((project) => project.id === selected);
           return (
@@ -173,35 +238,29 @@ export default function ProjectSwitcher({
       >
         <ComplexSelect.ListHeader>Switch Project</ComplexSelect.ListHeader>
         {/* project switcher list items - limited with scroll to load more */}
-        <Box
-          ref={listContainerRef}
-          sx={{
-            maxHeight: "320px",
-            overflowY: "auto",
-          }}
-        >
-          {projects.slice(0, displayLimit).map((project) => (
-            <ComplexSelect.MenuItem key={project.id} value={project.id}>
-              <ComplexSelect.MenuItem.Text
-                primary={project.name}
-                secondary={project.key}
-              />
-            </ComplexSelect.MenuItem>
-          ))}
-          {displayLimit < projects.length && (
-            <Box
-              sx={{
-                py: 1,
-                px: 2,
-                textAlign: "center",
-                fontSize: "0.75rem",
-                color: "text.secondary",
-              }}
-            >
-              Scroll to load more ({displayLimit} of {projects.length})
-            </Box>
-          )}
-        </Box>
+        {projects.slice(0, displayLimit).map((project) => (
+          <ComplexSelect.MenuItem key={project.id} value={project.id}>
+            <ComplexSelect.MenuItem.Text
+              primary={project.name}
+              secondary={project.key}
+            />
+          </ComplexSelect.MenuItem>
+        ))}
+        {displayLimit < projects.length && (
+          <Box
+            sx={{
+              py: 1,
+              px: 2,
+              textAlign: "center",
+              fontSize: "0.75rem",
+              color: "text.secondary",
+              borderTop: "1px solid",
+              borderColor: "divider",
+            }}
+          >
+            Scroll to load more ({displayLimit} of {projects.length})
+          </Box>
+        )}
       </ComplexSelect>
     </HeaderUI.Switchers>
   );

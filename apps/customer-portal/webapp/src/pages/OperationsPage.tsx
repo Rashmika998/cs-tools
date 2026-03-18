@@ -53,8 +53,7 @@ export default function OperationsPage(): JSX.Element {
     projectTypeLabel === PROJECT_TYPE_LABELS.CLOUD_SUPPORT ||
     projectTypeLabel === PROJECT_TYPE_LABELS.CLOUD_EVALUATION_SUPPORT;
 
-  const isServiceRequestEnabled =
-    isManagedCloudSubscription || isCloudSupport;
+  const isServiceRequestEnabled = isManagedCloudSubscription || isCloudSupport;
   const isChangeRequestEnabled = isManagedCloudSubscription;
 
   const {
@@ -130,9 +129,10 @@ export default function OperationsPage(): JSX.Element {
               activeChangeRequests,
             }),
           ...(completedThisMonth > 0 && { completedThisMonth }),
-          ...(isChangeRequestEnabled && scheduledCrCount > 0 && {
-            upcomingChanges: scheduledCrCount,
-          }),
+          ...(isChangeRequestEnabled &&
+            scheduledCrCount > 0 && {
+              upcomingChanges: scheduledCrCount,
+            }),
         };
 
   const isError =
@@ -140,16 +140,16 @@ export default function OperationsPage(): JSX.Element {
     (isChangeRequestEnabled && isCrStatsError);
 
   const operationsStatConfigs = useMemo(() => {
-    const configs = [...OPERATIONS_STAT_CONFIGS];
-    if (!isServiceRequestEnabled) {
-      return configs.filter((c) => c.key !== "activeServiceRequests");
+    if (!isServiceRequestEnabled && !isChangeRequestEnabled) {
+      return [];
     }
-    if (!isChangeRequestEnabled) {
-      return configs.filter(
-        (c) => c.key !== "activeChangeRequests" && c.key !== "upcomingChanges",
-      );
-    }
-    return configs;
+
+    return OPERATIONS_STAT_CONFIGS.filter(
+      (c) =>
+        (isServiceRequestEnabled || c.key !== "activeServiceRequests") &&
+        (isChangeRequestEnabled ||
+          (c.key !== "activeChangeRequests" && c.key !== "upcomingChanges")),
+    );
   }, [isServiceRequestEnabled, isChangeRequestEnabled]);
 
   const overviewGridSize =
@@ -191,7 +191,9 @@ export default function OperationsPage(): JSX.Element {
                     {
                       label: "View all requests",
                       onClick: () =>
-                        navigate(`/projects/${projectId}/operations/service-requests`),
+                        navigate(
+                          `/projects/${projectId}/operations/service-requests`,
+                        ),
                     },
                   ]}
                   isError={isSrError}
@@ -250,4 +252,3 @@ export default function OperationsPage(): JSX.Element {
     </Stack>
   );
 }
-
