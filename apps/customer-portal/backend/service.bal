@@ -4252,7 +4252,7 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
     # + deploymentId - ID of the deployment
     # + payload - Project status request containing email
     # + return - Change request details object or Error
-    resource function post projects/[string projectId]/deployments/[string deploymentId]/license
+    isolated resource function post projects/[string projectId]/deployments/[string deploymentId]/license
         (product_consumption_subscription:DownloadLicensePayload payload, http:RequestContext ctx)
         returns product_consumption_subscription:License|http:InternalServerError|http:Unauthorized|http:Forbidden|http:NotFound {
 
