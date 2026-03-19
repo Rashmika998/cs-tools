@@ -17,6 +17,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider, createTheme } from "@wso2/oxygen-ui";
+import { MemoryRouter, Route, Routes } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConversationSummary } from "@components/support/case-creation-layout/form-sections/conversation-summary-section/ConversationSummary";
 
 vi.mock("@components/common/error-indicator/ErrorIndicator", () => ({
@@ -26,13 +28,38 @@ vi.mock("@components/common/error-indicator/ErrorIndicator", () => ({
   ),
 }));
 
+vi.mock("@api/useGetConversationSummary", () => ({
+  __esModule: true,
+  default: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  })),
+}));
+
 function renderSummary(
   props: Partial<Parameters<typeof ConversationSummary>[0]> = {},
+  initialRoute = "/projects/test-project/support/chat/create-case",
 ) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+
   return render(
-    <ThemeProvider theme={createTheme()}>
-      <ConversationSummary {...props} />
-    </ThemeProvider>,
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider theme={createTheme()}>
+        <MemoryRouter initialEntries={[initialRoute]}>
+          <Routes>
+            <Route
+              path="/projects/:projectId/support/chat/create-case"
+              element={<ConversationSummary {...props} />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -49,7 +76,7 @@ describe("ConversationSummary", () => {
     expect(screen.getAllByText("KB articles reviewed").length).toBeGreaterThan(0);
   });
 
-  it("should render View full conversation link", () => {
+  it("should render View full conversation button", () => {
     renderSummary();
     expect(screen.getByText("View full conversation")).toBeInTheDocument();
   });
@@ -61,7 +88,7 @@ describe("ConversationSummary", () => {
     ).toBeInTheDocument();
   });
 
-  it("should show error indicators when metadata is undefined", () => {
+  it("should show error indicators when conversationId is not provided or API fails", () => {
     renderSummary();
     const indicators = screen.getAllByTestId("error-indicator");
     expect(indicators.length).toBe(3);
@@ -76,23 +103,39 @@ describe("ConversationSummary", () => {
     );
   });
 
-  it("should display metadata values when provided", () => {
-    renderSummary({
-      metadata: {
-        conversationSummary: {
-          messagesExchanged: 5,
-          troubleshootingAttempts: "3 steps",
-          kbArticlesReviewed: "2 articles",
-        },
-      } as any,
-    });
+  it("should display summary values when API returns data", async () => {
+    const useGetConversationSummary = await import(
+      "@api/useGetConversationSummary"
+    );
+    vi.mocked(useGetConversationSummary.default).mockReturnValue({
+      data: {
+        accountId: "test-account",
+        conversationId: "test-conversation",
+        messagesExchanged: 5,
+        troubleshootingAttempts: 3,
+        kbArticlesReviewed: 2,
+      },
+      isLoading: false,
+      isError: false,
+    } as any);
+
+    renderSummary({ conversationId: "test-conversation" });
     expect(screen.getByText("5")).toBeInTheDocument();
-    expect(screen.getByText("3 steps")).toBeInTheDocument();
-    expect(screen.getByText("2 articles")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
   });
 
-  it("should show skeletons when isLoading is true", () => {
-    renderSummary({ isLoading: true });
+  it("should show skeletons when API is loading", async () => {
+    const useGetConversationSummary = await import(
+      "@api/useGetConversationSummary"
+    );
+    vi.mocked(useGetConversationSummary.default).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+    } as any);
+
+    renderSummary({ conversationId: "test-conversation" });
     const skeletons = document.querySelectorAll('[class*="MuiSkeleton"]');
     expect(skeletons.length).toBeGreaterThan(0);
   });
