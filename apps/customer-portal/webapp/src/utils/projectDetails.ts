@@ -42,7 +42,8 @@ export const getTimeCardStateColorPath = (
   if (!state?.id) return "text.secondary";
 
   // Normalize state ID to match TIME_CARD_STATE constants (title case)
-  const normalizedId = state.id.charAt(0).toUpperCase() + state.id.slice(1).toLowerCase();
+  const normalizedId =
+    state.id.charAt(0).toUpperCase() + state.id.slice(1).toLowerCase();
 
   switch (normalizedId) {
     case TIME_CARD_STATE.APPROVED:
@@ -202,7 +203,7 @@ export const getSLAStatusColor = (status: string): ProjectStatusChipColor => {
   }
 
   if (normalizedStatus === "needs attention") {
-    return "error";
+    return "warning";
   }
 
   return "default";

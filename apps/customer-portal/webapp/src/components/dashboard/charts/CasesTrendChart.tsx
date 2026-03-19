@@ -27,10 +27,10 @@ import { ChartLegend } from "@components/dashboard/charts/ChartLegend";
 
 interface CasesTrendChartProps {
   data: {
-    onboarding: number;
-    migration: number;
-    services: number;
-    improvements: number;
+    categories: Array<{
+      name: string;
+      value: number;
+    }>;
     total: number;
   };
   isLoading?: boolean;
@@ -48,14 +48,15 @@ export const CasesTrendChart = ({
   isError,
 }: CasesTrendChartProps): JSX.Element => {
   const chartSource = OUTSTANDING_ENGAGEMENTS_CATEGORY_CHART_DATA;
+  const colorByLabel = new Map(
+    chartSource.map((item) => [item.name.toLowerCase(), item.color]),
+  );
+  const fallbackColors = chartSource.map((item) => item.color);
 
   const safeData =
     data ??
     ({
-      onboarding: 0,
-      migration: 0,
-      services: 0,
-      improvements: 0,
+      categories: [],
       total: 0,
     } as const);
 
@@ -70,26 +71,14 @@ export const CasesTrendChart = ({
               : item.color,
         }))
       : [
-          {
-            name: "Onboarding",
-            value: safeData.onboarding,
-            color: chartSource[0].color,
-          },
-          {
-            name: "Migration",
-            value: safeData.migration,
-            color: chartSource[1].color,
-          },
-          {
-            name: "Services",
-            value: safeData.services,
-            color: chartSource[2].color,
-          },
-          {
-            name: "Improvements",
-            value: safeData.improvements,
-            color: chartSource[3].color,
-          },
+          ...safeData.categories.map((category, index) => ({
+            name: category.name,
+            value: category.value,
+            color:
+              colorByLabel.get(category.name.toLowerCase()) ??
+              fallbackColors[index % fallbackColors.length] ??
+              (colors.grey?.[500] ?? "#9CA3AF"),
+          })),
         ];
 
   const total = !isError && !isLoading ? safeData.total : 0;

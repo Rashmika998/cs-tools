@@ -16,6 +16,7 @@
 
 import { Box, Chip, Form } from "@wso2/oxygen-ui";
 import { type JSX } from "react";
+import { getSLAStatusColor } from "@utils/projectDetails";
 
 interface ProjectCardBadgesProps {
   projectKey: string;
@@ -41,7 +42,12 @@ export default function ProjectCardBadges({
         gap={1}
       >
         <Chip label={projectKey} variant="outlined" size="small" />
-        <Chip label={slaStatus} variant="outlined" size="small" />
+        <Chip
+          label={slaStatus}
+          color={getSLAStatusColor(slaStatus)}
+          variant="outlined"
+          size="small"
+        />
       </Box>
     </Form.CardContent>
   );

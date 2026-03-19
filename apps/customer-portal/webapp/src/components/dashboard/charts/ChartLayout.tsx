@@ -35,10 +35,10 @@ interface ChartLayoutProps {
     total: number;
   };
   engagements: {
-    onboarding: number;
-    migration: number;
-    services: number;
-    improvements: number;
+    categories: Array<{
+      name: string;
+      value: number;
+    }>;
     total: number;
   };
   isLoading?: boolean;

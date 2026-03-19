@@ -26,8 +26,9 @@ import type { FilterField } from "@components/common/filter-panel/FilterPopover"
 import CasesTableHeader from "@components/dashboard/cases-table/CasesTableHeader";
 import CasesFilters from "@components/dashboard/cases-table/CasesFilters";
 import CasesList from "@components/dashboard/cases-table/CasesList";
-import { mapSeverityToDisplay, isS0Case } from "@utils/support";
+import { mapSeverityToDisplay, isS0Case, deriveFilterLabels } from "@utils/support";
 import { isS0SeverityLabel } from "@constants/dashboardConstants";
+import { CaseType, ALL_CASES_FILTER_DEFINITIONS } from "@constants/supportConstants";
 import type { CaseListItem, CaseSearchResponse } from "@models/responses";
 
 const OUTSTANDING_STATUS_IDS = [1, 10, 18, 1003, 1006] as const;
@@ -57,57 +58,53 @@ const CasesTable = ({
   // Fetch deployments for the deployment filter
   const { data: deploymentsData } = useGetDeployments(projectId);
 
-  const severityOptions = (filtersMetadata?.severities ?? [])
-    .filter((s) => !excludeS0 || !isS0SeverityLabel(s.label))
-    .map((s) => ({
-      label: mapSeverityToDisplay(s.label),
-      value: s.id,
-    }));
+  const dynamicFilterFields: FilterField[] = useMemo(() => {
+    return ALL_CASES_FILTER_DEFINITIONS.map((def) => {
+      const { label } = deriveFilterLabels(def.id);
 
-  const dynamicFilterFields: FilterField[] = [
-    {
-      id: "statusId",
-      label: "Status",
-      type: "select",
-      options: (
-        filtersMetadata?.caseStates ??
-        filtersMetadata?.statuses ??
-        []
-      ).map((s) => ({ label: s.label, value: s.id })),
-    },
-    {
-      id: "severityId",
-      label: "Severity",
-      type: "select",
-      options: severityOptions,
-    },
-    {
-      id: "issueTypes",
-      label: "Category",
-      type: "select",
-      options:
-        filtersMetadata?.issueTypes?.map((t) => ({
-          label: t.label,
-          value: t.id,
-        })) || [],
-    },
-    {
-      id: "deploymentId",
-      label: "Deployment",
-      type: "select",
-      options:
-        deploymentsData?.deployments?.map((d) => ({
-          label: d.type?.label || d.name,
-          value: d.id,
-        })) || [],
-    },
-  ];
+      const isDeploymentFilter = def.id === "deployment";
+      const options = isDeploymentFilter && deploymentsData
+        ? deploymentsData.deployments?.map((deployment) => ({
+            label: deployment.type?.label || deployment.name,
+            value: deployment.id,
+          })) || []
+        : (() => {
+            const metadataOptions = filtersMetadata?.[def.metadataKey as keyof typeof filtersMetadata];
+            if (!Array.isArray(metadataOptions)) return [];
+            const filtered =
+              def.metadataKey === "severities" && excludeS0
+                ? metadataOptions.filter(
+                    (item: { label: string }) =>
+                      !isS0SeverityLabel(item.label),
+                  )
+                : def.metadataKey === "caseStates" || def.metadataKey === "statuses"
+                ? (metadataOptions as any[]).filter(
+                    (s) => s.label?.toLowerCase() !== "closed"
+                  )
+                : metadataOptions;
+            return filtered.map((item: { label: string; id: string }) => ({
+              label:
+                def.metadataKey === "severities"
+                  ? mapSeverityToDisplay(item.label)
+                  : item.label,
+              value: item.id,
+            }));
+          })();
+
+      return {
+        id: def.filterKey,
+        label,
+        type: "select" as const,
+        options,
+      };
+    });
+  }, [filtersMetadata, deploymentsData, excludeS0]);
 
   const caseSearchRequest = useMemo(
     () => ({
       filters: {
-        statusId: filters.statusId ? Number(filters.statusId) : undefined,
-        statusIds: filters.statusId ? undefined : [...OUTSTANDING_STATUS_IDS],
+        statusIds: filters.statusId ? [Number(filters.statusId)] : [...OUTSTANDING_STATUS_IDS],
+        caseTypes: filters.caseTypeId ? [filters.caseTypeId] : [CaseType.DEFAULT_CASE],
         severityId: filters.severityId ? Number(filters.severityId) : undefined,
         issueId: filters.issueTypes ? Number(filters.issueTypes) : undefined,
         deploymentId: filters.deploymentId || undefined,
