@@ -14,7 +14,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, ColorSchemeToggle, Divider, Header as HeaderUI } from "@wso2/oxygen-ui";
+import {
+  Box,
+  ColorSchemeToggle,
+  Divider,
+  Header as HeaderUI,
+} from "@wso2/oxygen-ui";
 import type { JSX } from "react";
 import { useLocation } from "react-router";
 import GetHelpDropdown from "@components/common/header/GetHelpDropdown";
@@ -35,13 +40,13 @@ export default function Actions({
 }: ActionsProps): JSX.Element {
   const location = useLocation();
   const isProjectHub = location.pathname === "/";
-  const isLoginPage = location.pathname === "/login";
+  const isPublicLandingPage = location.pathname === "/home";
 
   return (
     <HeaderUI.Actions>
-      {/* Get Help dropdown (before theme switcher, not on project hub or login) */}
-      {!isProjectHub && !isLoginPage && <GetHelpDropdown />}
-      {!isProjectHub && !isLoginPage && (
+      {/* Get Help dropdown (before theme switcher, not on project hub or public landing page) */}
+      {!isProjectHub && !isPublicLandingPage && <GetHelpDropdown />}
+      {!isProjectHub && !isPublicLandingPage && (
         <Divider
           orientation="vertical"
           flexItem
