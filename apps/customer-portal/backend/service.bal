@@ -59,7 +59,6 @@ service class ErrorInterceptor {
     }
 }
 
-// TODO: Remove after the ballerina header configs setting through choreo issue is fixed
 configurable int wsPort = 9091;
 
 http:ListenerConfiguration listenerConf = {
@@ -928,7 +927,8 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
 
         return {
             ongoingCases: ongoingCases is int ? ongoingCases : (),
-            activeChats: mappedConversationStats.activeCount,
+            activeChats: 
+                conversationStats is entity:ProjectConversationStatsResponse ? conversationStats.activeCount : (),
             sessionChats: mappedConversationStats.sessionCount,
             resolvedChats: mappedConversationStats.resolvedCount
         };
