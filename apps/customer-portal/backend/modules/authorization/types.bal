@@ -14,6 +14,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+# [Configurable] Token validator configuration.
+public type TokenValidatorConfig record {|
+    # Issuer
+    string issuer;
+    # Audience  
+    string audience;
+    # JWKS EndPoint 
+    string jwksEndPoint;
+    # Clock skew
+    decimal clockSkew;
+|};
+
 # JWT payload data structure from decoded token.
 type CustomJwtPayload record {|
     # User email
@@ -40,8 +52,6 @@ public type UserInfoPayload record {|
 
 # Application specific role mapping.
 public type AppRoles record {|
-    # Role for the user
-    string userRole;
     # Role for an Admin
     string adminRole;
 |};
