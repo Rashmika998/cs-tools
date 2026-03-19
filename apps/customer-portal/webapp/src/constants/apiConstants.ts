@@ -31,6 +31,7 @@ export const ApiQueryKeys = {
   CONVERSATIONS_SEARCH: "conversations-search",
   CONVERSATION_MESSAGES: "conversation-messages",
   CONVERSATION_STATS: "conversation-stats",
+  CONVERSATION_SUMMARY: "conversation-summary",
   DEPLOYMENTS: "deployments",
   DEPLOYMENT_ATTACHMENTS: "deployment-attachments",
   PRODUCTS: "products",
