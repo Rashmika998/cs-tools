@@ -20,6 +20,7 @@ const DEFAULT_LIMIT = 10;
 
 # Valid call request update state values.
 public const PENDING_ON_WSO2 = 2;
+const CUSTOMER_REJECTED = 4;
 public const CANCELED = 6;
 
 # Valid conversation state values

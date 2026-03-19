@@ -82,24 +82,24 @@ public isolated function getAttachments(string idToken, string id, ReferenceType
 # + payload - Call request update payload
 # + return - Error message if validation fails, nil otherwise
 public isolated function validateCallRequestUpdatePayload(CallRequestUpdatePayload payload) returns string? {
-    // Validate stateKey is either 2 (Pending on WSO2) or 6 (Canceled)
-    if payload.stateKey != PENDING_ON_WSO2 && payload.stateKey != CANCELED {
-        return "Invalid status. Allowed values are Pending on WSO2 or Canceled.";
-    }
+    int stateKey = payload.stateKey;
 
     string[]? utcTimes = payload.utcTimes;
+    boolean hasUtcTimes = utcTimes !is () && utcTimes.length() > 0;
 
-    // If stateKey is 2 (Pending on WSO2), utcTimes is mandatory
-    if payload.stateKey == PENDING_ON_WSO2 && (utcTimes is () || utcTimes.length() == 0) {
+    if stateKey == PENDING_ON_WSO2 {
+        if !hasUtcTimes {
+            return "At least one UTC time is required when the status is Pending on WSO2.";
+        }
+    }
+
+    if stateKey == PENDING_ON_WSO2 && (utcTimes is () || utcTimes.length() == 0) {
         return "At least one UTC time is required when the status is Pending on WSO2.";
+    } else if (stateKey == CUSTOMER_REJECTED || stateKey == CANCELED) && utcTimes !is () {
+        return "UTC times should not be provided when the status is Customer Rejected or Canceled.";
+    } else {
+        return "Invalid state key. Allowed values are Pending on WSO2, Customer Rejected, or Canceled.";
     }
-
-    // If stateKey is 6 (Canceled), utcTimes should not be present
-    if payload.stateKey == CANCELED && utcTimes !is () {
-        return "UTC times must not be provided when the status is Canceled.";
-    }
-
-    return ();
 }
 
 # Validate UTC times in the call request payloads.
