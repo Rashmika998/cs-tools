@@ -83,8 +83,7 @@ public isolated function downloadLicense(LicenseDownloadPayload payload) returns
 
     // GENERATE SECRET KEYS
     if status == 4 {
-        SecretKeysResponse keys =
-            check productConsumptionClient->/generate\-secret\-keys.post({});
+        SecretKeysResponse keys = check productConsumptionClient->/generate\-secret\-keys.post({});
 
         Result _ = check productConsumptionClient->/projects/[payload.projectId]
             .patch({
