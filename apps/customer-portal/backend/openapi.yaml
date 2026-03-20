@@ -163,9 +163,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Deployment'
+                $ref: '#/components/schemas/DeploymentsResponse'
         "400":
           description: BadRequest
           content:
@@ -762,6 +760,42 @@ paths:
           description: InternalServerError
         "403":
           description: Forbidden
+  /projects/{Id}/conversations/{conversationId}/summary:
+    get:
+      summary: Get Conversation summary for a project.
+      operationId: getProjectsIdConversationsConversationidSummary
+      parameters:
+      - name: Id
+        in: path
+        description: ID of the project
+        required: true
+        schema:
+          $ref: '#/components/schemas/IdString'
+      - name: conversationId
+        in: path
+        description: ID of the conversation
+        required: true
+        schema:
+          $ref: '#/components/schemas/IdString'
+      responses:
+        "200":
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationSummaryResponse'
+        "400":
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        "401":
+          description: Unauthorized
+        "500":
+          description: InternalServerError
+        "403":
+          description: Forbidden
   /projects/{projectId}/conversations/{conversationId}/messages:
     post:
       summary: Add a message to an existing conversation and get response using AI
@@ -1076,6 +1110,37 @@ paths:
         "403":
           description: Forbidden
   /attachments/{id}:
+    get:
+      summary: Get an attachment.
+      operationId: getAttachmentsId
+      parameters:
+      - name: id
+        in: path
+        description: ID of the attachment
+        required: true
+        schema:
+          $ref: '#/components/schemas/IdString'
+      responses:
+        "200":
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentResponse'
+        "401":
+          description: Unauthorized
+        "500":
+          description: InternalServerError
+        "403":
+          description: Forbidden
+        "404":
+          description: NotFound
+        "400":
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
     delete:
       summary: Delete an attachment.
       operationId: deleteAttachmentsId
@@ -1114,15 +1179,26 @@ paths:
         required: true
         schema:
           $ref: '#/components/schemas/IdString'
+      - name: offset
+        in: query
+        description: Offset for pagination
+        schema:
+          type: integer
+          format: int64
+          default: 0
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          format: int64
+          default: 10
       responses:
         "200":
           description: Ok
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DeployedProduct'
+                $ref: '#/components/schemas/DeployedProductsResponse'
         "400":
           description: BadRequest
           content:
@@ -2181,10 +2257,12 @@ components:
           type: string
           description: Allowed domain list of the account
           nullable: true
+          default: ""
         classification:
           type: string
           description: Account classification
           nullable: true
+          default: ""
         isPartner:
           type: boolean
           description: Whether the account is a partner or not
@@ -2192,7 +2270,6 @@ components:
       description: Account details record
     Attachment:
       required:
-      - content
       - createdBy
       - createdOn
       - description
@@ -2226,9 +2303,6 @@ components:
           type: string
           description: Download URL
           nullable: true
-        content:
-          type: string
-          description: "Base64 encoded file content (data URI format: data:@file/<type>;base64,<content>)"
         description:
           type: string
           description: Description of the attachment
@@ -2257,6 +2331,18 @@ components:
           nullable: true
       additionalProperties: false
       description: Payload for creating an attachment.
+    AttachmentResponse:
+      type: object
+      description: Attachment details response.
+      allOf:
+      - $ref: '#/components/schemas/Attachment'
+      - required:
+        - content
+        type: object
+        properties:
+          content:
+            type: string
+            description: "Base64 encoded file content (data URI format: data:@file/<type>;base64,<content>)"
     AttachmentUpdatePayload:
       type: object
       properties:
@@ -2673,6 +2759,18 @@ components:
             nullable: true
             items:
               $ref: '#/components/schemas/ReferenceItem'
+          engagementPaymentType:
+            $ref: '#/components/schemas/ReferenceItem'
+          engagementStartDate:
+            description: Engagement start date
+            nullable: true
+            allOf:
+            - $ref: '#/components/schemas/Date'
+          engagementEndDate:
+            description: Engagement end date
+            nullable: true
+            allOf:
+            - $ref: '#/components/schemas/Date'
           variables:
             type: array
             description: Variables for service request
@@ -3352,6 +3450,34 @@ components:
           format: int64
       additionalProperties: false
       description: Conversation statistics by state for a project.
+    ConversationSummaryResponse:
+      required:
+      - accountId
+      - conversationId
+      - kbArticlesReviewed
+      - messagesExchanged
+      - troubleshootingAttempts
+      type: object
+      properties:
+        accountId:
+          type: string
+          description: Account ID
+        conversationId:
+          type: string
+          description: Conversation ID
+        messagesExchanged:
+          type: integer
+          description: Number of messages exchanged in the conversation
+          format: int64
+        troubleshootingAttempts:
+          type: integer
+          description: Number of troubleshooting attempts in the conversation
+          format: int64
+        kbArticlesReviewed:
+          type: integer
+          description: Number of KB articles reviewed in the conversation
+          format: int64
+      description: Conversation summary information.
     CreatedAttachment:
       required:
       - createdBy
@@ -3490,8 +3616,8 @@ components:
       - product
       - releasedOn
       - tps
-      - updateLevel
       - updatedOn
+      - updates
       - version
       type: object
       properties:
@@ -3528,6 +3654,12 @@ components:
           nullable: true
           allOf:
           - $ref: '#/components/schemas/ReferenceItem'
+        updates:
+          type: array
+          description: Product updates
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ProductUpdate'
         cores:
           type: integer
           description: Cores allocated for the product
@@ -3545,10 +3677,6 @@ components:
         endOfLifeOn:
           type: string
           description: End of life date of the product
-          nullable: true
-        updateLevel:
-          type: string
-          description: Update level of the product
           nullable: true
       additionalProperties: false
       description: Deployed product data.
@@ -3601,12 +3729,43 @@ components:
           type: string
           description: Description of the deployed product
           nullable: true
+        updates:
+          type: array
+          description: Product updates
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ProductUpdate'
         active:
           type: boolean
           description: Active status (can only be set to false to deactivate deployed
             product)
       additionalProperties: false
       description: Payload for updating a deployed product.
+    DeployedProductsResponse:
+      type: object
+      description: Deployed products response.
+      allOf:
+      - $ref: '#/components/schemas/Pagination'
+      - required:
+        - deployedProducts
+        - totalRecords
+        type: object
+        properties:
+          deployedProducts:
+            type: array
+            description: List of deployed products
+            items:
+              $ref: '#/components/schemas/DeployedProduct'
+          totalRecords:
+            type: integer
+            description: Total records count
+            format: int64
+          offset:
+            type: integer
+            format: int64
+          limit:
+            type: integer
+            format: int64
     Deployment:
       required:
       - createdOn
@@ -3688,6 +3847,31 @@ components:
           description: Active status (can only be set to false to deactivate deployment)
       additionalProperties: false
       description: Request payload for updating a deployment.
+    DeploymentsResponse:
+      type: object
+      description: Deployments response.
+      allOf:
+      - $ref: '#/components/schemas/Pagination'
+      - required:
+        - deployments
+        - totalRecords
+        type: object
+        properties:
+          deployments:
+            type: array
+            description: List of deployments
+            items:
+              $ref: '#/components/schemas/Deployment'
+          totalRecords:
+            type: integer
+            description: Total records count
+            format: int64
+          offset:
+            type: integer
+            format: int64
+          limit:
+            type: integer
+            format: int64
     ErrorPayload:
       required:
       - message
@@ -3813,6 +3997,23 @@ components:
           type: string
           description: Name
       description: Product data.
+    ProductUpdate:
+      required:
+      - date
+      - updateLevel
+      type: object
+      properties:
+        updateLevel:
+          type: integer
+          description: Update level
+          format: int64
+        date:
+          $ref: '#/components/schemas/Date'
+        details:
+          type: string
+          description: Update details
+          nullable: true
+      description: Product update information.
     ProductUpdateLevel:
       required:
       - productName
@@ -3833,10 +4034,7 @@ components:
       type: object
       properties:
         pagination:
-          description: Pagination details
-          allOf:
-          - $ref: '#/components/schemas/Pagination'
-          default: {}
+          $ref: '#/components/schemas/Pagination'
       additionalProperties: false
       description: Request payload for searching product versions.
     ProductVulnerability:
@@ -3936,44 +4134,30 @@ components:
       additionalProperties: false
       description: Payload for searching product vulnerabilities.
     ProductsResponse:
-      required:
-      - products
       type: object
-      properties:
-        products:
-          type: array
-          description: List of products
-          items:
-            $ref: '#/components/schemas/Product'
       description: Products response.
-    Project:
-      required:
-      - createdOn
-      - description
-      - id
-      - key
-      - name
-      - type
-      type: object
-      properties:
-        id:
-          $ref: '#/components/schemas/IdString'
-        name:
-          type: string
-          description: Name
-        key:
-          type: string
-          description: Project key
-        createdOn:
-          type: string
-          description: Created date and time
-        description:
-          type: string
-          description: Description
-          nullable: true
-        type:
-          $ref: '#/components/schemas/ReferenceItem'
-      description: Project data.
+      allOf:
+      - $ref: '#/components/schemas/Pagination'
+      - required:
+        - products
+        - totalRecords
+        type: object
+        properties:
+          products:
+            type: array
+            description: List of products
+            items:
+              $ref: '#/components/schemas/Product'
+          totalRecords:
+            type: integer
+            description: Total records count
+            format: int64
+          offset:
+            type: integer
+            format: int64
+          limit:
+            type: integer
+            format: int64
     ProjectCaseStats:
       required:
       - activeCount
@@ -3988,17 +4172,12 @@ components:
       - resolvedCases
       - severityCount
       - stateCount
-      - totalCases
-      - totalInteractions
+      - totalCount
       type: object
       properties:
-        totalInteractions:
+        totalCount:
           type: integer
-          description: Total interaction count
-          format: int64
-        totalCases:
-          type: integer
-          description: Total cases count(last 30d)
+          description: Total count(last 30d)
           format: int64
         activeCount:
           type: integer
@@ -4122,6 +4301,7 @@ components:
       - changeRequestStates
       - conversationStates
       - deploymentTypes
+      - engagementPaymentTypes
       - engagementTypes
       - issueTypes
       - severities
@@ -4190,6 +4370,11 @@ components:
           description: List of available engagement types
           items:
             $ref: '#/components/schemas/ReferenceItem'
+        engagementPaymentTypes:
+          type: array
+          description: List of available engagement payment types
+          items:
+            $ref: '#/components/schemas/ReferenceItem'
         severityBasedAllocationTime:
           type: object
           additionalProperties:
@@ -4200,135 +4385,162 @@ components:
       additionalProperties: false
       description: Project filter options.
     ProjectResponse:
+      required:
+      - account
+      - consumedOnboardingHours
+      - consumedQueryHours
+      - createdOn
+      - description
+      - endDate
+      - goLiveDate
+      - goLivePlanDate
+      - hasSr
+      - id
+      - key
+      - name
+      - onboardingExpiryDate
+      - onboardingStatus
+      - remainingOnboardingHours
+      - remainingQueryHours
+      - sfId
+      - startDate
+      - totalOnboardingHours
+      - totalQueryHours
+      - type
       type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/IdString'
+        name:
+          type: string
+          description: Name of the project
+        key:
+          type: string
+          description: Project key
+        createdOn:
+          type: string
+          description: Created date and time
+        description:
+          type: string
+          description: Description of the project
+          nullable: true
+        type:
+          $ref: '#/components/schemas/ReferenceItem'
+        sfId:
+          type: string
+          description: Salesforce ID
+        hasSr:
+          type: boolean
+          description: Indicates if the project has service requests
+        startDate:
+          description: Project start date
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Date'
+        endDate:
+          description: Project end date
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Date'
+        account:
+          required:
+          - activationDate
+          - deactivationDate
+          - hasAgent
+          - id
+          - name
+          - ownerEmail
+          - region
+          - supportTier
+          - technicalOwnerEmail
+          type: object
+          properties:
+            id:
+              $ref: '#/components/schemas/IdString'
+            hasAgent:
+              type: boolean
+              description: Indicates whether the agent is enabled for the account
+            name:
+              type: string
+              description: Name of the account
+              nullable: true
+            activationDate:
+              type: string
+              description: Activation date
+              nullable: true
+            deactivationDate:
+              type: string
+              description: Deactivation date
+              nullable: true
+            supportTier:
+              type: string
+              description: Support tier
+              nullable: true
+            region:
+              type: string
+              description: Region
+              nullable: true
+            ownerEmail:
+              type: string
+              description: Owner email
+              nullable: true
+            technicalOwnerEmail:
+              type: string
+              description: Technical owner email
+              nullable: true
+          additionalProperties: false
+          description: Account information
+        totalQueryHours:
+          type: number
+          description: Query hour information
+          format: double
+          nullable: true
+        consumedQueryHours:
+          type: number
+          description: Consumed query hours
+          format: double
+          nullable: true
+        remainingQueryHours:
+          type: number
+          description: Remaining query hours
+          format: double
+          nullable: true
+        goLiveDate:
+          description: Go-live date
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Date'
+        goLivePlanDate:
+          description: Go-live plan date
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Date'
+        totalOnboardingHours:
+          type: number
+          description: Onboarding hour information
+          format: double
+          nullable: true
+        consumedOnboardingHours:
+          type: number
+          description: Consumed onboarding hours
+          format: double
+          nullable: true
+        remainingOnboardingHours:
+          type: number
+          description: Remaining onboarding hours
+          format: double
+          nullable: true
+        onboardingExpiryDate:
+          description: Onboarding expiry date
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Date'
+        onboardingStatus:
+          type: string
+          description: Onboarding status
+          nullable: true
+      additionalProperties: false
       description: Project information.
-      allOf:
-      - $ref: '#/components/schemas/Project'
-      - required:
-        - account
-        - consumedOnboardingHours
-        - consumedQueryHours
-        - endDate
-        - goLiveDate
-        - goLivePlanDate
-        - hasSr
-        - onboardingExpiryDate
-        - onboardingStatus
-        - remainingOnboardingHours
-        - remainingQueryHours
-        - sfId
-        - startDate
-        - totalOnboardingHours
-        - totalQueryHours
-        type: object
-        properties:
-          sfId:
-            type: string
-            description: Salesforce ID
-          hasSr:
-            type: boolean
-            description: Indicates if the project has service requests
-          startDate:
-            description: Project start date
-            nullable: true
-            allOf:
-            - $ref: '#/components/schemas/Date'
-          endDate:
-            description: Project end date
-            nullable: true
-            allOf:
-            - $ref: '#/components/schemas/Date'
-          account:
-            required:
-            - activationDate
-            - deactivationDate
-            - hasAgent
-            - id
-            - name
-            - ownerEmail
-            - region
-            - supportTier
-            - technicalOwnerEmail
-            type: object
-            properties:
-              id:
-                $ref: '#/components/schemas/IdString'
-              hasAgent:
-                type: boolean
-                description: Indicates whether the agent is enabled for the account
-              name:
-                type: string
-                description: Name of the account
-                nullable: true
-              activationDate:
-                type: string
-                description: Activation date
-                nullable: true
-              deactivationDate:
-                type: string
-                description: Deactivation date
-                nullable: true
-              supportTier:
-                type: string
-                description: Support tier
-                nullable: true
-              region:
-                type: string
-                description: Region
-                nullable: true
-              ownerEmail:
-                type: string
-                description: Owner email
-                nullable: true
-              technicalOwnerEmail:
-                type: string
-                description: Technical owner email
-                nullable: true
-            additionalProperties: false
-            description: Account information
-          totalQueryHours:
-            type: string
-            description: Query hour information
-            nullable: true
-          consumedQueryHours:
-            type: string
-            description: Consumed query hours
-            nullable: true
-          remainingQueryHours:
-            type: string
-            description: Remaining query hours
-            nullable: true
-          goLiveDate:
-            description: Go-live date
-            nullable: true
-            allOf:
-            - $ref: '#/components/schemas/Date'
-          goLivePlanDate:
-            description: Go-live plan date
-            nullable: true
-            allOf:
-            - $ref: '#/components/schemas/Date'
-          totalOnboardingHours:
-            type: string
-            description: Onboarding hour information
-            nullable: true
-          consumedOnboardingHours:
-            type: string
-            description: Consumed onboarding hours
-            nullable: true
-          remainingOnboardingHours:
-            type: string
-            description: Remaining onboarding hours
-            nullable: true
-          onboardingExpiryDate:
-            description: Onboarding expiry date
-            nullable: true
-            allOf:
-            - $ref: '#/components/schemas/Date'
-          onboardingStatus:
-            type: string
-            description: Onboarding status
-            nullable: true
     ProjectSearchPayload:
       type: object
       properties:
@@ -4340,10 +4552,7 @@ components:
               description: Search query for projects
           description: Filter criteria
         pagination:
-          description: Pagination details
-          allOf:
-          - $ref: '#/components/schemas/Pagination'
-          default: {}
+          $ref: '#/components/schemas/Pagination'
       additionalProperties: false
       description: Payload for searching projects.
     ProjectStats:
