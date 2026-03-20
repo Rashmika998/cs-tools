@@ -19,6 +19,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode } from "react";
 import useGetConversationSummary from "@api/useGetConversationSummary";
+import { useAuthApiClient } from "@api/useAuthApiClient";
 
 vi.mock("@asgardeo/react", () => ({
   useAsgardeo: vi.fn(() => ({
@@ -57,8 +58,7 @@ const createWrapper = () => {
 describe("useGetConversationSummary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    const { useAuthApiClient } = require("@api/useAuthApiClient");
-    useAuthApiClient.mockReturnValue(mockAuthFetch);
+    vi.mocked(useAuthApiClient).mockReturnValue(mockAuthFetch);
     (window as any).config = {
       CUSTOMER_PORTAL_BACKEND_BASE_URL: "http://localhost:9090",
     };
