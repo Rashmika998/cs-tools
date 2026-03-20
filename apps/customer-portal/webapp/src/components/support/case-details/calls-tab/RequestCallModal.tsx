@@ -159,8 +159,7 @@ export default function RequestCallModal({
   const isPending = postCallRequest.isPending || patchCallRequest.isPending;
   const isValid =
     form.preferredDateTimeLocal.trim() !== "" &&
-    form.notes.trim() !== "" &&
-    (isEdit || form.durationInMinutes > 0);
+    (isEdit || (form.notes.trim() !== "" && form.durationInMinutes > 0));
 
   const handleClose = useCallback(() => {
     setForm(INITIAL_FORM);
@@ -348,22 +347,20 @@ export default function RequestCallModal({
         </FormControl>
         )}
 
-        <TextField
-          id="additional-notes"
-          label="Reason *"
-          placeholder={
-            isEdit
-              ? "Describe your reschedule request..."
-              : "Describe your call request or topics you'd like to discuss."
-          }
-          value={form.notes}
-          onChange={handleTextChange("notes")}
-          fullWidth
-          size="small"
-          multiline
-          rows={3}
-          disabled={isPending}
-        />
+        {!isEdit && (
+          <TextField
+            id="additional-notes"
+            label="Reason *"
+            placeholder="Describe your call request or topics you'd like to discuss."
+            value={form.notes}
+            onChange={handleTextChange("notes")}
+            fullWidth
+            size="small"
+            multiline
+            rows={3}
+            disabled={isPending}
+          />
+        )}
       </DialogContent>
 
       <DialogActions

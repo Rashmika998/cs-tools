@@ -149,26 +149,30 @@ export default function CallsPanel({
     setRejectCall(null);
     setErrorMessage(null);
   }, []);
-  const handleConfirmReject = useCallback(() => {
-    if (!rejectCall) return;
-    patchCallRequest.mutate(
-      {
-        callRequestId: rejectCall.id,
-        stateKey: rejectStateKey ?? CALL_REQUEST_STATE_CANCELLED,
-      },
-      {
-        onSuccess: () => {
-          handleCloseRejectModal();
-          setSuccessMessage("Call request rejected.");
-          refetch();
+  const handleConfirmReject = useCallback(
+    (reason: string) => {
+      if (!rejectCall) return;
+      patchCallRequest.mutate(
+        {
+          callRequestId: rejectCall.id,
+          reason: reason.trim(),
+          stateKey: rejectStateKey ?? CALL_REQUEST_STATE_CANCELLED,
         },
-        onError: (error) => {
-          handleCloseRejectModal();
-          setErrorMessage(error.message || "Failed to reject call request.");
+        {
+          onSuccess: () => {
+            handleCloseRejectModal();
+            setSuccessMessage("Call request rejected.");
+            refetch();
+          },
+          onError: (error) => {
+            handleCloseRejectModal();
+            setErrorMessage(error.message || "Failed to reject call request.");
+          },
         },
-      },
-    );
-  }, [rejectCall, rejectStateKey, patchCallRequest, handleCloseRejectModal, refetch]);
+      );
+    },
+    [rejectCall, rejectStateKey, patchCallRequest, handleCloseRejectModal, refetch],
+  );
 
   const handleConfirmDelete = useCallback(
     (reason: string) => {

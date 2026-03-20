@@ -198,7 +198,7 @@ export default function DescribeIssuePage(): JSX.Element {
                 value={value}
                 onChange={setValue}
                 placeholder={ISSUE_PLACEHOLDER}
-                minHeight={300}
+                minHeight={270}
                 showToolbar
                 toolbarVariant="describeIssue"
                 onSubmitKeyDown={handleSubmit}

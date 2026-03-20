@@ -19,6 +19,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useGetCallRequests } from "@api/useGetCallRequests";
+import useGetUserDetails from "@api/useGetUserDetails";
 import { CALL_REQUEST_STATE_CANCELLED } from "@constants/supportConstants";
 import CallsPanel from "@case-details-calls/CallsPanel";
 
@@ -38,13 +39,7 @@ vi.mock("@api/usePatchCallRequest", () => ({
   }),
 }));
 
-vi.mock("@api/useGetUserDetails", () => ({
-  default: () => ({
-    data: { timeZone: "America/New_York" },
-    isLoading: false,
-    isError: false,
-  }),
-}));
+vi.mock("@api/useGetUserDetails");
 
 vi.mock("@api/usePatchUserMe", () => ({
   usePatchUserMe: () => ({
@@ -91,6 +86,11 @@ const mockCaseId = "case-1";
 describe("CallsPanel", () => {
   beforeEach(() => {
     mockPatchMutate.mockClear();
+    vi.mocked(useGetUserDetails).mockReturnValue({
+      data: { timeZone: "America/New_York" },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useGetUserDetails>);
   });
 
   it("should render loading state", () => {
@@ -292,16 +292,19 @@ describe("CallsPanel", () => {
     renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
     fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
 
-    // Reject modal should open with no reason input
+    // Reject modal should open with a reason input
     expect(screen.getByText("Reject Call Request")).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText(/Enter reason for rejection/i)).not.toBeInTheDocument();
+    const reasonInput = screen.getByPlaceholderText(/Enter reason for rejection/i);
+    expect(reasonInput).toBeInTheDocument();
 
-    // Confirm directly — no reason required
-    fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
+    // Enter reason then confirm
+    fireEvent.change(reasonInput, { target: { value: "Not available" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /^Reject$/i }).at(-1)!);
 
     expect(mockPatchMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         callRequestId: "call-2",
+        reason: "Not available",
         // stateKey derived from filter: "Customer Rejected" → id "4" → number 4
         stateKey: 4,
       }),
@@ -386,14 +389,12 @@ describe("CallsPanel", () => {
     expect(mockFetchNextPage).toHaveBeenCalled();
   });
 
-  it("should show missing timezone dialog when user has no timezone set", async () => {
-    vi.doMock("@api/useGetUserDetails", () => ({
-      default: () => ({
-        data: { timeZone: null },
-        isLoading: false,
-        isError: false,
-      }),
-    }));
+  it("should show missing timezone dialog when user has no timezone set", () => {
+    vi.mocked(useGetUserDetails).mockReturnValue({
+      data: { timeZone: null },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useGetUserDetails>);
 
     vi.mocked(useGetCallRequests).mockReturnValue({
       isPending: false,
@@ -405,10 +406,8 @@ describe("CallsPanel", () => {
       data: { pages: [{ callRequests: [] }] },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    // The dialog is shown only when timeZone is falsy - already tested by MissingTimezoneDialog unit tests
-    // Here we verify it does NOT appear for users with a timezone
     renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
-    expect(screen.queryByText("Time Zone Not Set")).not.toBeInTheDocument();
+    expect(screen.getByText("Time Zone Not Set")).toBeInTheDocument();
   });
 
   it("should open Request Call modal when button is clicked", () => {

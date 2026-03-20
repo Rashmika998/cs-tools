@@ -39,11 +39,11 @@ const defaultProps = {
 };
 
 describe("RejectCallRequestModal", () => {
-  it("should render with title and description", () => {
+  it("should render with title and reason input", () => {
     render(<RejectCallRequestModal {...defaultProps} />);
     expect(screen.getByText("Reject Call Request")).toBeInTheDocument();
     expect(
-      screen.getByText(/Are you sure you want to reject this call request/i),
+      screen.getByPlaceholderText(/Enter reason for rejection/i),
     ).toBeInTheDocument();
   });
 
@@ -52,18 +52,29 @@ describe("RejectCallRequestModal", () => {
     expect(screen.queryByText("Reject Call Request")).not.toBeInTheDocument();
   });
 
-  it("should have Reject button enabled by default", () => {
+  it("should have Reject button disabled when reason is empty", () => {
     render(<RejectCallRequestModal {...defaultProps} />);
-    const rejectBtn = screen.getByRole("button", { name: /^Reject$/i });
-    expect(rejectBtn).not.toBeDisabled();
+    const rejectButtons = screen.getAllByRole("button", { name: /^Reject$/i });
+    expect(rejectButtons.at(-1)).toBeDisabled();
   });
 
-  it("should call onConfirm when Reject is clicked", () => {
+  it("should enable Reject button when reason is entered", () => {
+    render(<RejectCallRequestModal {...defaultProps} />);
+    fireEvent.change(screen.getByPlaceholderText(/Enter reason for rejection/i), {
+      target: { value: "Not available" },
+    });
+    const rejectButtons = screen.getAllByRole("button", { name: /^Reject$/i });
+    expect(rejectButtons.at(-1)).not.toBeDisabled();
+  });
+
+  it("should call onConfirm with trimmed reason when Reject is clicked", () => {
     const onConfirm = vi.fn();
     render(<RejectCallRequestModal {...defaultProps} onConfirm={onConfirm} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
-    expect(onConfirm).toHaveBeenCalledTimes(1);
-    expect(onConfirm).toHaveBeenCalledWith();
+    fireEvent.change(screen.getByPlaceholderText(/Enter reason for rejection/i), {
+      target: { value: "  Not available  " },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: /^Reject$/i }).at(-1)!);
+    expect(onConfirm).toHaveBeenCalledWith("Not available");
   });
 
   it("should call onClose when Go Back is clicked", () => {
@@ -73,7 +84,7 @@ describe("RejectCallRequestModal", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("should disable Reject and Go Back buttons when isRejecting is true", () => {
+  it("should disable all buttons when isRejecting is true", () => {
     render(<RejectCallRequestModal {...defaultProps} isRejecting />);
     expect(screen.getByRole("button", { name: /Rejecting.../i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Go Back/i })).toBeDisabled();

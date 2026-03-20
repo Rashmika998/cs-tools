@@ -22,10 +22,11 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  TextField,
   Typography,
 } from "@wso2/oxygen-ui";
 import { X } from "@wso2/oxygen-ui-icons-react";
-import { useCallback, type JSX } from "react";
+import { useCallback, useState, type ChangeEvent, type JSX } from "react";
 import type { CallRequest } from "@models/responses";
 import { formatUtcToLocal } from "@utils/support";
 
@@ -33,7 +34,7 @@ export interface RejectCallRequestModalProps {
   open: boolean;
   call: CallRequest | null;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (reason: string) => void;
   isRejecting?: boolean;
   userTimeZone?: string;
 }
@@ -41,8 +42,9 @@ export interface RejectCallRequestModalProps {
 /**
  * Confirmation modal for rejecting a "Pending on Customer" call request.
  * Implemented as PATCH with the Customer Rejected state key.
+ * User must enter a mandatory reason before confirming.
  *
- * @param {RejectCallRequestModalProps} props - open, call, onClose, onConfirm, isRejecting.
+ * @param {RejectCallRequestModalProps} props - open, call, onClose, onConfirm, isRejecting, userTimeZone.
  * @returns {JSX.Element} The reject call request modal.
  */
 export default function RejectCallRequestModal({
@@ -53,23 +55,36 @@ export default function RejectCallRequestModal({
   isRejecting = false,
   userTimeZone,
 }: RejectCallRequestModalProps): JSX.Element {
-  const handleDialogClose = useCallback(
-    (_event: object, _reason: string) => {
-      if (isRejecting) return;
-      onClose();
-    },
-    [isRejecting, onClose],
-  );
+  const [reason, setReason] = useState("");
+
+  const resetAndClose = useCallback(() => {
+    setReason("");
+    onClose();
+  }, [onClose]);
+
+  const handleDialogClose = useCallback(() => {
+    if (isRejecting) return;
+    resetAndClose();
+  }, [isRejecting, resetAndClose]);
 
   const handleClose = useCallback(() => {
     if (isRejecting) return;
-    onClose();
-  }, [isRejecting, onClose]);
+    resetAndClose();
+  }, [isRejecting, resetAndClose]);
+
+  const handleReasonChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setReason(event.target.value);
+    },
+    [],
+  );
 
   const handleConfirm = useCallback(() => {
-    if (isRejecting) return;
-    onConfirm();
-  }, [isRejecting, onConfirm]);
+    if (reason.trim() === "" || isRejecting) return;
+    onConfirm(reason.trim());
+  }, [reason, isRejecting, onConfirm]);
+
+  const canConfirm = reason.trim() !== "";
 
   return (
     <Dialog
@@ -111,6 +126,20 @@ export default function RejectCallRequestModal({
             ? `Are you sure you want to reject the call request${call.scheduleTime ? ` scheduled for ${formatUtcToLocal(call.scheduleTime, "short", true, userTimeZone)}` : ""}?`
             : "Are you sure you want to reject this call request?"}
         </Typography>
+        <TextField
+          id="reject-call-reason"
+          label="Reason *"
+          placeholder="Enter reason for rejection..."
+          value={reason}
+          onChange={handleReasonChange}
+          fullWidth
+          size="small"
+          multiline
+          rows={3}
+          sx={{ mt: 2 }}
+          disabled={isRejecting}
+          required
+        />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button variant="outlined" onClick={handleClose} disabled={isRejecting}>
@@ -120,7 +149,7 @@ export default function RejectCallRequestModal({
           variant="contained"
           color="error"
           onClick={handleConfirm}
-          disabled={isRejecting}
+          disabled={isRejecting || !canConfirm}
           startIcon={
             isRejecting ? (
               <CircularProgress size={16} color="inherit" />
