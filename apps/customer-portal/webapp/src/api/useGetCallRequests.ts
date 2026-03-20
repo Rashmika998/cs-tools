@@ -33,11 +33,13 @@ const LIMIT = 10;
  *
  * @param {string} projectId - The ID of the project (used for query key only).
  * @param {string} caseId - The ID of the case.
+ * @param {number[]} [stateKeys] - When provided, filters results to only these call request state IDs.
  * @returns {UseInfiniteQueryResult<InfiniteData<CallRequestsResponse>, Error>} Infinite query result.
  */
 export function useGetCallRequests(
   projectId: string,
   caseId: string,
+  stateKeys?: number[],
 ): UseInfiniteQueryResult<InfiniteData<CallRequestsResponse>, Error> {
   const logger = useLogger();
   const { isSignedIn, isLoading: isAuthLoading } = useAsgardeo();
@@ -50,7 +52,7 @@ export function useGetCallRequests(
     readonly (string | number)[],
     number
   >({
-    queryKey: [ApiQueryKeys.CASE_CALL_REQUESTS, projectId, caseId],
+    queryKey: [ApiQueryKeys.CASE_CALL_REQUESTS, projectId, caseId, JSON.stringify(stateKeys ?? [])],
     queryFn: async ({ pageParam }): Promise<CallRequestsResponse> => {
       logger.debug(
         `[useGetCallRequests] Fetching call requests for case: ${caseId}, offset: ${pageParam}`,
@@ -67,9 +69,13 @@ export function useGetCallRequests(
         }
 
         const requestUrl = `${baseUrl}/cases/${caseId}/call-requests/search`;
-        const body = JSON.stringify({
+        const bodyObj: Record<string, unknown> = {
           pagination: { limit: LIMIT, offset: pageParam },
-        });
+        };
+        if (stateKeys && stateKeys.length > 0) {
+          bodyObj.filters = { stateKeys };
+        }
+        const body = JSON.stringify(bodyObj);
 
         const response = await authFetch(requestUrl, {
           method: "POST",

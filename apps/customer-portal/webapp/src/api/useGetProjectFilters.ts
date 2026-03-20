@@ -19,6 +19,7 @@ import { useAsgardeo } from "@asgardeo/react";
 import { useAuthApiClient } from "@api/useAuthApiClient";
 import { useLogger } from "@hooks/useLogger";
 import { ApiQueryKeys } from "@constants/apiConstants";
+import { CALL_REQUEST_STATE_CANCELLED } from "@constants/supportConstants";
 import type { CaseMetadataResponse } from "@models/responses";
 
 /**
@@ -60,6 +61,14 @@ export default function useGetProjectFilters(
 
         const data: CaseMetadataResponse = await response.json();
         logger.debug("[useGetProjectFilters] Data received:", data);
+
+        // Exclude "Canceled" from call request state filters (MetadataItem.id is string, compare numerically)
+        if (data.callRequestStates) {
+          data.callRequestStates = data.callRequestStates.filter(
+            (s) => Number(s.id) !== CALL_REQUEST_STATE_CANCELLED,
+          );
+        }
+
         return data;
       } catch (error) {
         logger.error("[useGetProjectFilters] Error:", error);

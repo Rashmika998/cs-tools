@@ -31,6 +31,12 @@ vi.mock("@/hooks/useLogger", () => ({
   useLogger: () => mockLogger,
 }));
 
+// Mock useAuthApiClient so tests don't need to stub global fetch
+const mockAuthFetch = vi.fn();
+vi.mock("@api/useAuthApiClient", () => ({
+  useAuthApiClient: () => mockAuthFetch,
+}));
+
 let mockIsSignedIn = true;
 let mockIsAuthLoading = false;
 vi.mock("@asgardeo/react", () => ({
@@ -61,6 +67,7 @@ describe("useGetCallRequests", () => {
     });
     mockIsSignedIn = true;
     mockIsAuthLoading = false;
+    mockAuthFetch.mockReset();
     vi.clearAllMocks();
     vi.stubGlobal("config", {
       CUSTOMER_PORTAL_BACKEND_BASE_URL: "https://api.test",
@@ -72,27 +79,50 @@ describe("useGetCallRequests", () => {
     vi.unstubAllGlobals();
   });
 
-  it("should fetch call requests from API successfully", async () => {
-    const mockResponse = mockCallRequestsResponse;
-    const mockFetch = vi.fn().mockResolvedValue({
+  it("should fetch call requests from API successfully without stateKeys", async () => {
+    mockAuthFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve(mockResponse),
+      json: () => Promise.resolve(mockCallRequestsResponse),
     } as Response);
-    vi.stubGlobal("fetch", mockFetch);
 
     const { result } = renderHook(() => useGetCallRequests(projectId, caseId), {
       wrapper,
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.pages?.[0]).toEqual(mockResponse);
-    expect(mockFetch).toHaveBeenCalledWith(
+    expect(result.current.data?.pages?.[0]).toEqual(mockCallRequestsResponse);
+    expect(mockAuthFetch).toHaveBeenCalledWith(
       `https://api.test/cases/${caseId}/call-requests/search`,
       expect.objectContaining({
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pagination: { limit: 10, offset: 0 } }),
+      }),
+    );
+  });
+
+  it("should include filters.stateKeys in body when stateKeys are provided", async () => {
+    mockAuthFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockCallRequestsResponse),
+    } as Response);
+
+    const stateKeys = [1, 2, 3, 4, 5];
+    const { result } = renderHook(
+      () => useGetCallRequests(projectId, caseId, stateKeys),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockAuthFetch).toHaveBeenCalledWith(
+      `https://api.test/cases/${caseId}/call-requests/search`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          pagination: { limit: 10, offset: 0 },
+          filters: { stateKeys },
+        }),
       }),
     );
   });
@@ -110,13 +140,12 @@ describe("useGetCallRequests", () => {
   });
 
   it("should handle API errors", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
+    mockAuthFetch.mockResolvedValue({
       ok: false,
       status: 500,
       statusText: "Internal Server Error",
       text: () => Promise.resolve("Error message"),
     } as Response);
-    vi.stubGlobal("fetch", mockFetch);
 
     const { result } = renderHook(() => useGetCallRequests(projectId, caseId), {
       wrapper,
@@ -130,8 +159,6 @@ describe("useGetCallRequests", () => {
 
   it("should error when CUSTOMER_PORTAL_BACKEND_BASE_URL is not configured", async () => {
     vi.stubGlobal("config", {});
-    const mockFetch = vi.fn();
-    vi.stubGlobal("fetch", mockFetch);
 
     const { result } = renderHook(() => useGetCallRequests(projectId, caseId), {
       wrapper,
@@ -141,7 +168,7 @@ describe("useGetCallRequests", () => {
     expect(result.current.error?.message).toBe(
       "CUSTOMER_PORTAL_BACKEND_BASE_URL is not configured",
     );
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockAuthFetch).not.toHaveBeenCalled();
   });
 
   it("should not fetch when user is not signed in", async () => {
