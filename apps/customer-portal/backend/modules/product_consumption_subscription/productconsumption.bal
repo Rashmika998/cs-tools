@@ -85,12 +85,11 @@ public isolated function downloadLicense(LicenseDownloadPayload payload) returns
     if status == 4 {
         SecretKeysResponse keys = check productConsumptionClient->/generate\-secret\-keys.post({});
 
-        Result _ = check productConsumptionClient->/projects/[payload.projectId]
-            .patch({
-                status: 5,
-                primarySecretKey: keys.primarySecretKey,
-                secondarySecretKey: keys.secondarySecretKey
-            });
+        Result _ = check productConsumptionClient->/projects/[payload.projectId].patch({
+            status: 5,
+            primarySecretKey: keys.primarySecretKey,
+            secondarySecretKey: keys.secondarySecretKey
+        });
 
         status = 5;
     }
