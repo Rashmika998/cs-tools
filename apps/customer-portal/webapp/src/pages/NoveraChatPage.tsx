@@ -45,7 +45,7 @@ import ChatHeader from "@components/support/novera-ai-assistant/novera-chat-page
 import ChatInput from "@components/support/novera-ai-assistant/novera-chat-page/ChatInput";
 import ChatMessageList from "@components/support/novera-ai-assistant/novera-chat-page/ChatMessageList";
 import ChatSkeleton from "@components/support/novera-ai-assistant/novera-chat-page/ChatSkeleton";
-import { navigateToPreviousPage } from "@/constants/commonConstants";
+import { ROUTE_PREVIOUS_PAGE } from "@/constants/commonConstants";
 
 export interface Recommendation {
   title: string;
@@ -85,7 +85,7 @@ export default function NoveraChatPage(): JSX.Element {
     if (projectId) {
       navigate(`/projects/${projectId}/support`);
     } else {
-      navigate(navigateToPreviousPage);
+      navigate(ROUTE_PREVIOUS_PAGE);
     }
   };
 
@@ -181,19 +181,19 @@ export default function NoveraChatPage(): JSX.Element {
           return aT - bT;
         })
         .map((msg, index) => {
-        // Determine if message is from bot (same logic as ConversationDetailsPage)
-        const isBot =
-          msg.type?.toLowerCase() === "bot" ||
-          msg.createdBy?.toLowerCase() === "novera";
+          // Determine if message is from bot (same logic as ConversationDetailsPage)
+          const isBot =
+            msg.type?.toLowerCase() === "bot" ||
+            msg.createdBy?.toLowerCase() === "novera";
 
-        return {
-          id: msg.id || `msg-${index}`,
-          text: msg.content || "",
-          sender: isBot ? "bot" : "user",
-          timestamp: msg.createdOn ? new Date(msg.createdOn) : new Date(),
-          showCreateCaseAction: false,
-        };
-      });
+          return {
+            id: msg.id || `msg-${index}`,
+            text: msg.content || "",
+            sender: isBot ? "bot" : "user",
+            timestamp: msg.createdOn ? new Date(msg.createdOn) : new Date(),
+            showCreateCaseAction: false,
+          };
+        });
 
       setMessages(convertedMessages);
     }
@@ -348,9 +348,12 @@ export default function NoveraChatPage(): JSX.Element {
         setConversationId(response.conversationId);
         // Update URL with conversationId so it persists on refresh
         if (!urlConversationId && projectId) {
-          navigate(`/projects/${projectId}/support/chat/${response.conversationId}`, {
-            replace: true,
-          });
+          navigate(
+            `/projects/${projectId}/support/chat/${response.conversationId}`,
+            {
+              replace: true,
+            },
+          );
         }
       }
       setMessages((prev) =>

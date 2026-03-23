@@ -14,4 +14,4 @@
 // specific language governing permissions and limitations
 // under the License.
 
-export const navigateToPreviousPage = -1;
+export const ROUTE_PREVIOUS_PAGE = -1;

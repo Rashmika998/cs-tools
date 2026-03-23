@@ -21,7 +21,7 @@ import { useCallback, useMemo, type JSX } from "react";
 import { usePostUpdateLevelsSearch } from "@api/usePostUpdateLevelsSearch";
 import { PendingUpdatesList } from "@components/updates/pending-updates/PendingUpdatesList";
 import PendingUpdatesListSkeleton from "@components/updates/pending-updates/PendingUpdatesListSkeleton";
-import { navigateToPreviousPage } from "@/constants/commonConstants";
+import { ROUTE_PREVIOUS_PAGE } from "@/constants/commonConstants";
 
 /**
  * PendingUpdatesPage displays pending update level descriptions for a product.
@@ -78,7 +78,9 @@ export default function PendingUpdatesPage(): JSX.Element {
 
   const levelRange = useMemo(() => {
     if (!data) return null;
-    const levels = Object.keys(data).map(Number).sort((a, b) => a - b);
+    const levels = Object.keys(data)
+      .map(Number)
+      .sort((a, b) => a - b);
     if (levels.length === 0) return null;
     return levels.length === 1
       ? `Update level ${levels[0]}`
@@ -89,7 +91,7 @@ export default function PendingUpdatesPage(): JSX.Element {
     if (projectId) {
       navigate(`/projects/${projectId}/updates`);
     } else {
-      navigate(navigateToPreviousPage);
+      navigate(ROUTE_PREVIOUS_PAGE);
     }
   };
 
@@ -102,9 +104,18 @@ export default function PendingUpdatesPage(): JSX.Element {
         startingUpdateLevel: String(startingUpdateLevel),
         endingUpdateLevel: String(endingUpdateLevel),
       });
-      navigate(`/projects/${projectId}/updates/pending/level/${levelKey}?${params}`);
+      navigate(
+        `/projects/${projectId}/updates/pending/level/${levelKey}?${params}`,
+      );
     },
-    [navigate, projectId, productName, productBaseVersion, startingUpdateLevel, endingUpdateLevel],
+    [
+      navigate,
+      projectId,
+      productName,
+      productBaseVersion,
+      startingUpdateLevel,
+      endingUpdateLevel,
+    ],
   );
 
   if (!productName || !productBaseVersion) {
@@ -116,7 +127,8 @@ export default function PendingUpdatesPage(): JSX.Element {
           </IconButton>
         </Stack>
         <Typography variant="body1" color="text.secondary">
-          Missing product parameters. Use the Updates page to open pending updates.
+          Missing product parameters. Use the Updates page to open pending
+          updates.
         </Typography>
       </Box>
     );
