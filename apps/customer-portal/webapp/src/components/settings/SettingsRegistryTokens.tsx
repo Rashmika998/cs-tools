@@ -19,7 +19,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
   Chip,
   Grid,
   IconButton,
@@ -30,6 +29,7 @@ import {
   MenuItem,
   Paper,
   Skeleton,
+  StatCard,
   Table,
   TableBody,
   TableCell,
@@ -38,7 +38,6 @@ import {
   TableRow,
   TextField,
   Typography,
-  alpha,
   useTheme,
 } from "@wso2/oxygen-ui";
 import {
@@ -119,6 +118,25 @@ function formatDate(iso?: string): string {
   });
 }
 
+/** Parses the backend metadata description into a human-readable string. */
+function formatTokenDescription(rawDesc?: string): string {
+  if (!rawDesc) return DASH;
+
+  if (rawDesc.includes("##")) {
+    const parts = rawDesc.split("##");
+
+    if (parts.length >= 5) {
+      const tokenType = parts[2];
+      const createdFor = parts[3];
+      return `${tokenType} token for ${createdFor}`;
+    }
+
+    return "System generated token";
+  }
+
+  return rawDesc;
+}
+
 /** Check if a token expires within the next N days. */
 function expiresWithinDays(token: RegistryToken, days: number): boolean {
   if (!token.expiresAt || token.expiresAt <= 0) return false;
@@ -153,9 +171,10 @@ export default function SettingsRegistryTokens({
   const {
     data: allTokens = [],
     isLoading,
+    isFetching,
     error,
   } = useSearchRegistryTokens(projectId);
-
+  const isTableLoading = isLoading || isFetching;
   const userTokens = useMemo(
     () => allTokens.filter((t) => t.tokenType === "User"),
     [allTokens],
@@ -222,27 +241,19 @@ export default function SettingsRegistryTokens({
       value: stats.total,
       label: "Total Tokens",
       icon: KeyRound,
-      color: theme.palette.warning.main,
-      bgColor: alpha(theme.palette.warning.main, 0.08),
-      borderColor: alpha(theme.palette.warning.main, 0.25),
+      iconColor: "warning",
     },
     {
       value: stats.active,
       label: "Active Tokens",
-      subLabel: `${stats.revokedOrExpired} revoked/expired`,
       icon: CheckCircle,
-      color: theme.palette.success.main,
-      bgColor: alpha(theme.palette.success.main, 0.08),
-      borderColor: alpha(theme.palette.success.main, 0.25),
+      iconColor: "success",
     },
     {
       value: stats.expiringSoon,
       label: "Expiring Soon",
-      subLabel: "Next 7 days",
       icon: AlertCircle,
-      color: theme.palette.error.main,
-      bgColor: alpha(theme.palette.error.main, 0.08),
-      borderColor: alpha(theme.palette.error.main, 0.25),
+      iconColor: "error",
     },
   ];
 
@@ -280,73 +291,23 @@ export default function SettingsRegistryTokens({
           const Icon = card.icon;
           return (
             <Grid key={card.label} size={{ xs: 12, sm: 4 }}>
-              <Card
-                sx={{
-                  p: 2,
-                  height: "100%",
-                  border: "1px solid",
-                  borderColor: card.borderColor,
-                  bgcolor: card.bgColor,
-                }}
-              >
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1.5,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: "50%",
-                      bgcolor: alpha(card.color, 0.15),
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: card.color,
-                    }}
-                  >
-                    {isLoading ? (
-                      <Skeleton variant="circular" width={22} height={22} />
-                    ) : (
-                      <Icon size={22} />
-                    )}
-                  </Box>
-                  <Box>
-                    <Typography variant="h4" sx={{ lineHeight: 1.2 }}>
-                      {isLoading ? (
-                        <Skeleton variant="text" width={28} height={32} />
-                      ) : error ? (
-                        DASH
-                      ) : (
-                        card.value
-                      )}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {isLoading ? (
-                        <Skeleton variant="text" width={80} height={16} />
-                      ) : (
-                        card.label
-                      )}
-                    </Typography>
-                    {card.subLabel && (
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: "block" }}
-                      >
-                        {isLoading ? (
-                          <Skeleton variant="text" width={100} height={14} />
-                        ) : (
-                          card.subLabel
-                        )}
-                      </Typography>
-                    )}
-                  </Box>
-                </Box>
-              </Card>
+              {isTableLoading ? (
+                <Skeleton variant="rectangular" height={100} sx={{ borderRadius: 1 }} />
+              ) : error ? (
+                <StatCard
+                  label={card.label}
+                  value={DASH}
+                  icon={<Icon />}
+                  iconColor={card.iconColor as any}
+                />
+              ) : (
+                <StatCard
+                  label={card.label}
+                  value={card.value.toString()}
+                  icon={<Icon />}
+                  iconColor={card.iconColor as any}
+                />
+              )}
             </Grid>
           );
         })}
@@ -435,7 +396,7 @@ export default function SettingsRegistryTokens({
               </TableRow>
             </TableHead>
             <TableBody>
-              {isLoading ? (
+              {isTableLoading ? (
                 skeletonRows(8)
               ) : error ? (
                 <TableRow>
@@ -536,7 +497,7 @@ export default function SettingsRegistryTokens({
               </TableRow>
             </TableHead>
             <TableBody>
-              {isLoading ? (
+              {isTableLoading ? (
                 skeletonRows(8)
               ) : error ? (
                 <TableRow>
@@ -567,7 +528,7 @@ export default function SettingsRegistryTokens({
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {token.description ?? DASH}
+                          {formatTokenDescription(token.description)}
                         </Typography>
                       </TableCell>
                       <TableCell>
