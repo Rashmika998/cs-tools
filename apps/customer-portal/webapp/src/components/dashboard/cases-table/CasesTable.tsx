@@ -64,7 +64,9 @@ const CasesTable = ({
   const { data: deploymentsData } = useGetDeployments(projectId);
 
   const dynamicFilterFields: FilterField[] = useMemo(() => {
-    return ALL_CASES_FILTER_DEFINITIONS.map((def) => {
+    return ALL_CASES_FILTER_DEFINITIONS
+      .filter((def) => def.id !== "caseType")
+      .map((def) => {
       const { label } = deriveFilterLabels(def.id);
 
       const isDeploymentFilter = def.id === "deployment";
@@ -94,13 +96,13 @@ const CasesTable = ({
             }));
           })();
 
-      return {
-        id: def.filterKey,
-        label,
-        type: "select" as const,
-        options,
-      };
-    });
+        return {
+          id: def.filterKey,
+          label,
+          type: "select" as const,
+          options,
+        };
+      });
   }, [filtersMetadata, deploymentsData, excludeS0]);
 
   const caseSearchRequest = useMemo(
@@ -117,7 +119,7 @@ const CasesTable = ({
             : defaultStatusIds.length > 0 
               ? defaultStatusIds 
               : [...OUTSTANDING_STATUS_IDS],
-          caseTypes: filters.caseTypeId ? [filters.caseTypeId] : [CaseType.DEFAULT_CASE],
+          caseTypes: [CaseType.DEFAULT_CASE],
           severityId: filters.severityId ? Number(filters.severityId) : undefined,
           issueId: filters.issueTypes ? Number(filters.issueTypes) : undefined,
           deploymentId: filters.deploymentId || undefined,
