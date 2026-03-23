@@ -55,7 +55,7 @@ export default function AnnouncementList({
     return (
       <Box sx={{ textAlign: "center", py: 6 }}>
         <Typography variant="body1" color="text.secondary">
-          No announcements found.
+          No announcements found, Try adjusting your filters or search query.
         </Typography>
       </Box>
     );
