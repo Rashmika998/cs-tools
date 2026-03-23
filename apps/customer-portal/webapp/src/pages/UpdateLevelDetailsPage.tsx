@@ -38,6 +38,7 @@ import type { SecurityAdvisory, UpdateDescriptionLevel } from "@models/responses
 import PendingUpdatesListSkeleton from "@components/updates/pending-updates/PendingUpdatesListSkeleton";
 import EmptyState from "@components/common/empty-state/EmptyState";
 import ErrorStateIcon from "@components/common/error-state/ErrorStateIcon";
+import { navigateToPreviousPage } from "@/constants/commonConstants";
 
 type FilterType = "all" | "security" | "regular";
 
@@ -360,7 +361,7 @@ export default function UpdateLevelDetailsPage(): JSX.Element {
       });
       navigate(`/projects/${projectId}/updates/pending?${params}`);
     } else {
-      navigate(-1);
+      navigate(navigateToPreviousPage);
     }
   };
 

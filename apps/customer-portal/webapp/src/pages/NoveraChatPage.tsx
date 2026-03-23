@@ -45,6 +45,7 @@ import ChatHeader from "@components/support/novera-ai-assistant/novera-chat-page
 import ChatInput from "@components/support/novera-ai-assistant/novera-chat-page/ChatInput";
 import ChatMessageList from "@components/support/novera-ai-assistant/novera-chat-page/ChatMessageList";
 import ChatSkeleton from "@components/support/novera-ai-assistant/novera-chat-page/ChatSkeleton";
+import { navigateToPreviousPage } from "@/constants/commonConstants";
 
 export interface Recommendation {
   title: string;
@@ -84,7 +85,7 @@ export default function NoveraChatPage(): JSX.Element {
     if (projectId) {
       navigate(`/projects/${projectId}/support`);
     } else {
-      navigate(-1);
+      navigate(navigateToPreviousPage);
     }
   };
 

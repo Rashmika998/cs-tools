@@ -21,6 +21,7 @@ import { useCallback, useMemo, type JSX } from "react";
 import { usePostUpdateLevelsSearch } from "@api/usePostUpdateLevelsSearch";
 import { PendingUpdatesList } from "@components/updates/pending-updates/PendingUpdatesList";
 import PendingUpdatesListSkeleton from "@components/updates/pending-updates/PendingUpdatesListSkeleton";
+import { navigateToPreviousPage } from "@/constants/commonConstants";
 
 /**
  * PendingUpdatesPage displays pending update level descriptions for a product.
@@ -88,7 +89,7 @@ export default function PendingUpdatesPage(): JSX.Element {
     if (projectId) {
       navigate(`/projects/${projectId}/updates`);
     } else {
-      navigate(-1);
+      navigate(navigateToPreviousPage);
     }
   };
 
