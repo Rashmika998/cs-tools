@@ -19,7 +19,7 @@ public type TokenValidatorConfig record {|
     # Issuer
     string issuer;
     # Audience  
-    string[] audience;
+    string audience;
     # JWKS EndPoint 
     string jwksEndPoint;
     # Clock skew

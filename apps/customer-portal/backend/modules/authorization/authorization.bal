@@ -19,6 +19,7 @@ import ballerina/log;
 
 public configurable AppRoles authorizedRoles = ?;
 configurable TokenValidatorConfig tokenValidatorConfig = ?;
+configurable boolean isDebugEnabled = false;
 
 final jwt:ValidatorConfig & readonly jwtConfig = {
     issuer: tokenValidatorConfig.issuer,
@@ -42,7 +43,6 @@ public isolated function getUserInfoFromRequest(http:Request req) returns UserIn
         return error(errorMsg);
     }
 
-    // TODO: Remove this if the token issuer issue get resolved.
     string|error userIdToken = req.getHeader(USER_ID_TOKEN_HEADER);
     if userIdToken is error {
         string errorMsg = "Missing user id token info header!";
@@ -50,14 +50,35 @@ public isolated function getUserInfoFromRequest(http:Request req) returns UserIn
         return error(errorMsg);
     }
 
-    // Validate JWT token
+    if isDebugEnabled {
+        [jwt:Header, jwt:Payload]|jwt:Error result = jwt:decode(idToken);
+        if result is jwt:Error {
+            string errorMsg = "Error while reading the Invoker info!";
+            log:printError(errorMsg, result);
+            return error(errorMsg);
+        }
+
+        CustomJwtPayload|error payloadData = result[1].cloneWithType(CustomJwtPayload);
+        if payloadData is error {
+            string errorMsg = "Malformed JWT payload!";
+            log:printError(errorMsg, payloadData);
+            return error(errorMsg);
+        }
+
+        return {
+            email: payloadData.email,
+            groups: payloadData.groups,
+            userId: payloadData.userid,
+            idToken: userIdToken
+        };
+    }
+
     jwt:Payload|error payload = jwt:validate(idToken, jwtConfig.cloneReadOnly());
     if payload is error {
         string errorMsg = "Invalid or expired token!";
         log:printError(errorMsg, payload);
         return error(errorMsg);
     }
-
     CustomJwtPayload|error payloadData = payload.cloneWithType(CustomJwtPayload);
     if payloadData is error {
         string errorMsg = "Malformed JWT payload!";
