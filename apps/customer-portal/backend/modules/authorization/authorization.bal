@@ -123,6 +123,27 @@ public isolated function getUserInfoFromTokens(string jwtAssertion, string userI
             idToken: userIdToken
         };
     }
+
+    jwt:Payload|error payload = jwt:validate(jwtAssertion, jwtConfig.cloneReadOnly());
+    if payload is error {
+        string errorMsg = "Invalid or expired token!";
+        log:printError(errorMsg, payload);
+        return error(errorMsg);
+    }
+
+    CustomJwtPayload|error payloadData = payload.cloneWithType(CustomJwtPayload);
+    if payloadData is error {
+        string errorMsg = "Malformed JWT payload!";
+        log:printError(errorMsg, payloadData);
+        return error(errorMsg);
+    }
+
+    return {
+        email: payloadData.email,
+        groups: payloadData.groups,
+        userId: payloadData.userid,
+        idToken: userIdToken
+    };
 }
 
 # To handle authorization for each resource function invocation.
