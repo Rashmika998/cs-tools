@@ -61,6 +61,9 @@ export function usePatchCallRequest(
       if (rest.reason != null) {
         body.reason = rest.reason;
       }
+      if (rest.cancellationReason != null) {
+        body.cancellationReason = rest.cancellationReason;
+      }
       if (rest.utcTimes != null && rest.utcTimes.length > 0) {
         body.utcTimes = rest.utcTimes;
       }
