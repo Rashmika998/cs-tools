@@ -18,6 +18,7 @@ import { type JSX, useEffect } from "react";
 import { useAsgardeo } from "@asgardeo/react";
 import { useLocation, useNavigate } from "react-router";
 import AppLayout from "@layouts/AppLayout";
+import { getLastSelectedProjectId } from "@utils/settingsStorage";
 
 const POST_LOGIN_REDIRECT_KEY = "post_login_redirect";
 
@@ -52,9 +53,21 @@ export default function AuthGuard(): JSX.Element {
       if (redirect) {
         sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
         void navigate(redirect, { replace: true });
+        return;
+      }
+      const lastProjectId = getLastSelectedProjectId();
+      const fromHeader = (location.state as { fromHeader?: boolean })?.fromHeader;
+      if (
+        lastProjectId &&
+        location.pathname === "/" &&
+        !fromHeader
+      ) {
+        void navigate(`/projects/${lastProjectId}/dashboard`, {
+          replace: true,
+        });
       }
     }
-  }, [isSignedIn, navigate]);
+  }, [isSignedIn, navigate, location.pathname]);
 
   return <AppLayout />;
 }
