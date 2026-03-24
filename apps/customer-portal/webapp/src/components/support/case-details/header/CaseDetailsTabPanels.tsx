@@ -110,6 +110,7 @@ export default function CaseDetailsTabPanels({
           isCaseClosed={
             !!data?.closedOn || data?.status?.label === "Closed"
           }
+          caseStatusLabel={data?.status?.label}
         />
       );
     }
