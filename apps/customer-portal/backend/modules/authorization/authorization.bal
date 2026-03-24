@@ -98,7 +98,7 @@ public isolated function getUserInfoFromTokens(string jwtAssertion, string userI
         email: payloadData.email,
         groups: payloadData.groups,
         userId: payloadData.userid,
-        idToken: jwtAssertion
+        idToken: userIdToken
     };
 }
 
