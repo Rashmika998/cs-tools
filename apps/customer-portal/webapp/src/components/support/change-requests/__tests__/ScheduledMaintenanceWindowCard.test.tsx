@@ -14,8 +14,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { ThemeProvider, createTheme } from "@wso2/oxygen-ui";
 import ScheduledMaintenanceWindowCard from "../ScheduledMaintenanceWindowCard";
 import type { ChangeRequestDetails } from "@models/responses";
@@ -54,14 +54,6 @@ const mockChangeRequest: ChangeRequestDetails = {
   approvedOn: null,
 };
 
-vi.mock("@api/usePatchChangeRequest", () => ({
-  usePatchChangeRequest: () => ({ mutate: vi.fn(), isPending: false }),
-}));
-
-vi.mock("@context/error-banner/ErrorBannerContext", () => ({
-  useErrorBanner: () => ({ showError: vi.fn() }),
-}));
-
 describe("ScheduledMaintenanceWindowCard", () => {
   it("renders card with title and maintenance window fields", () => {
     render(
@@ -78,32 +70,15 @@ describe("ScheduledMaintenanceWindowCard", () => {
     expect(screen.getByText("Duration")).toBeInTheDocument();
   });
 
-  it("shows edit button near planned start", () => {
+  it("does not render an inline edit/propose control", () => {
     render(
       <ThemeProvider theme={createTheme()}>
         <ScheduledMaintenanceWindowCard changeRequest={mockChangeRequest} />
       </ThemeProvider>,
     );
 
-    const editButton = screen.getByRole("button", {
-      name: /edit planned start/i,
-    });
-    expect(editButton).toBeInTheDocument();
-  });
-
-  it("opens edit mode when edit button is clicked", () => {
-    render(
-      <ThemeProvider theme={createTheme()}>
-        <ScheduledMaintenanceWindowCard changeRequest={mockChangeRequest} />
-      </ThemeProvider>,
-    );
-
-    const editButton = screen.getByRole("button", {
-      name: /edit planned start/i,
-    });
-    fireEvent.click(editButton);
-
-    expect(screen.getByRole("button", { name: /^Update$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Cancel$/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /propose new implementation time/i }),
+    ).not.toBeInTheDocument();
   });
 });
