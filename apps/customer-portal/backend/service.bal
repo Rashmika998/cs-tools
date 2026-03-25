@@ -4534,27 +4534,37 @@ isolated service / on new websocket:Listener(wsPort) {
     # + sessionId - Account/project ID passed as a query parameter
     # + return - WebSocket service or upgrade error
     isolated resource function get ws(http:Request req, string sessionId) returns websocket:Service|websocket:UpgradeError {
-        // Fallback: extract tokens from Sec-WebSocket-Protocol header.
-        // Format: "WSO2 Developer Platform-oauth2-token, <accessToken>, <userIdToken>"
-        string|error protocolHeader = req.getHeader("Sec-WebSocket-Protocol");
-        if protocolHeader is error {
-            log:printError(string `No Sec-WebSocket-Protocol header found for project: ${sessionId}`);
-            return error websocket:UpgradeError(ERR_MSG_USER_INFO_HEADER_NOT_FOUND);
+        log:printInfo(string `WebSocket upgrade request received for project: ${sessionId}`);
+        // Try standard header first (e.g., when Choreo gateway injects it).
+        string userIdToken;
+        string|error headerToken = req.getHeader(authorization:USER_ID_TOKEN_HEADER);
+        if headerToken is string {
+            log:printInfo(string `Using x-user-id-token from standard header for project: ${sessionId}`);
+            userIdToken = headerToken;
+        } else {
+            // Fallback: extract x-user-id-token from Sec-WebSocket-Protocol header.
+            // When routed through Choreo, the gateway consumes the auth token and forwards
+            // only the remaining subprotocol value (the x-user-id-token) as the header.
+            string|error protocolHeader = req.getHeader("Sec-WebSocket-Protocol");
+            if protocolHeader is error {
+                log:printError(string `No auth headers found for project: ${sessionId}`);
+                return error websocket:UpgradeError(ERR_MSG_USER_INFO_HEADER_NOT_FOUND);
+            }
+            // Choreo forwards only the x-user-id-token as the raw header value.
+            // For direct connections (e.g., Postman), the format may be comma-separated:
+            // "choreo-oauth2-token, <accessToken>, <x-user-id-token>"
+            string[] parts = re `,`.split(protocolHeader);
+            userIdToken = parts[parts.length() - 1].trim();
+            log:printInfo(string `Extracted x-user-id-token from Sec-WebSocket-Protocol for project: ${sessionId}`);
         }
-        log:printInfo(string `Raw Sec-WebSocket-Protocol header: ${protocolHeader}`);
-        string[] parts = re `,`.split(protocolHeader);
-        log:printInfo(string `Sec-WebSocket-Protocol parts count: ${parts.length()}`);
-        if parts.length() < 3 {
-            return error websocket:UpgradeError("Invalid Sec-WebSocket-Protocol format. Expected: WSO2 Developer Platform-oauth2-token, <accessToken>, <userIdToken>");
-        }
-        string accessToken = parts[1].trim();
-        string userIdToken = parts[2].trim();
-        authorization:UserInfoPayload|error wsUserInfo = authorization:getUserInfoFromTokens(accessToken, userIdToken);
-        if wsUserInfo is error {
+        // Decode the user ID token to extract user info (email, userId)
+        authorization:UserInfoPayload|error userInfo = authorization:getUserInfoFromTokens(userIdToken, userIdToken);
+        if userInfo is error {
+            log:printError(string `WebSocket auth failed for project: ${sessionId}`, userInfo);
             return error websocket:UpgradeError(ERR_MSG_UNAUTHORIZED_ACCESS);
         }
-        log:printInfo(string `WebSocket upgrade via Sec-WebSocket-Protocol for project: ${sessionId}`);
-        return new WsProxyService(sessionId, wsUserInfo);
+        log:printInfo(string `WebSocket upgrade successful for project: ${sessionId}, user: ${userInfo.email}`);
+        return new WsProxyService(sessionId, userInfo);
     }
 }
 
