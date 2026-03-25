@@ -4554,7 +4554,7 @@ isolated service / on new websocket:Listener(wsPort) {
             }
             string[] parts = re `,`.split(protocolHeader);
             userIdToken = parts[parts.length() - 1].trim();
-            log:printInfo(string `Extracted x-user-id-token from Sec-WebSocket-Protocol for project: ${sessionId}, parts count: ${parts.length()}`);
+            log:printInfo(string `Extracted x-user-id-token from Sec-WebSocket-Protocol for project: ${sessionId}`);
         }
         // Decode the user ID token to extract user info (email, userId)
         authorization:UserInfoPayload|error userInfo = authorization:getUserInfoFromTokens(userIdToken);
@@ -4562,7 +4562,7 @@ isolated service / on new websocket:Listener(wsPort) {
             log:printError(string `WebSocket auth failed for project: ${sessionId}`, userInfo);
             return error websocket:UpgradeError(ERR_MSG_UNAUTHORIZED_ACCESS);
         }
-        log:printInfo(string `WebSocket upgrade successful for project: ${sessionId}, user: ${userInfo.email}`);
+        log:printInfo(string `WebSocket upgrade successful for project: ${sessionId}`);
         return new WsProxyService(sessionId, userInfo);
     }
 }
