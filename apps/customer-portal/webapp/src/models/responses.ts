@@ -898,7 +898,6 @@ export interface CaseAttachment {
   size?: number;
   sizeBytes?: string;
   content?: string | null;
-  downloadUrl: string;
   downloadUrl?: string | null;
   createdOn: string;
   createdBy: string;
