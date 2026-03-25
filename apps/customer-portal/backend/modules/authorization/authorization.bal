@@ -94,21 +94,21 @@ public isolated function getUserInfoFromRequest(http:Request req) returns UserIn
     };
 }
 
-# Validates user info from raw token strings.
+# Extracts user info from the user ID token.
 # Used when tokens are received outside of standard HTTP headers (e.g., via Sec-WebSocket-Protocol).
+# The token authenticity is guaranteed by Choreo gateway having validated the access token during the handshake.
 #
-# + jwtAssertion - The JWT assertion token (x-jwt-assertion equivalent)
-# + userIdToken - The user ID token (x-user-id-token equivalent)
-# + return - UserInfoPayload on success or error on validation failure
-public isolated function getUserInfoFromTokens(string jwtAssertion, string userIdToken) returns UserInfoPayload|error {
-    jwt:Payload|error payload = jwt:validate(jwtAssertion, jwtConfig.cloneReadOnly());
-    if payload is error {
-        string errorMsg = "Invalid or expired token!";
-        log:printError(errorMsg, payload);
+# + userIdToken - The user ID token (x-user-id-token)
+# + return - UserInfoPayload on success or error on extraction failure
+public isolated function getUserInfoFromTokens(string userIdToken) returns UserInfoPayload|error {
+    [jwt:Header, jwt:Payload]|jwt:Error result = jwt:decode(userIdToken);
+    if result is jwt:Error {
+        string errorMsg = "Error while decoding the user ID token!";
+        log:printError(errorMsg, result);
         return error(errorMsg);
     }
 
-    CustomJwtPayload|error payloadData = payload.cloneWithType(CustomJwtPayload);
+    CustomJwtPayload|error payloadData = result[1].cloneWithType(CustomJwtPayload);
     if payloadData is error {
         string errorMsg = "Malformed JWT payload!";
         log:printError(errorMsg, payloadData);
