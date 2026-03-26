@@ -19,7 +19,7 @@ import ballerina/log;
 
 public configurable AppRoles authorizedRoles = ?;
 configurable TokenValidatorConfig tokenValidatorConfig = ?;
-configurable boolean isTokenValidatorEnabled = false;
+configurable boolean isTokenValidatorEnabled = true;
 
 final jwt:ValidatorConfig & readonly jwtConfig = {
     issuer: tokenValidatorConfig.issuer,
@@ -50,7 +50,7 @@ public isolated function getUserInfoFromRequest(http:Request req) returns UserIn
         return error(errorMsg);
     }
 
-    if isTokenValidatorEnabled {
+    if !isTokenValidatorEnabled {
         [jwt:Header, jwt:Payload]|jwt:Error result = jwt:decode(idToken);
         if result is jwt:Error {
             string errorMsg = "Error while reading the Invoker info!";
