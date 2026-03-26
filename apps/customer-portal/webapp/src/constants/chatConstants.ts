@@ -14,5 +14,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/** Color for user and bot avatar icons in chat bubbles. */
-export const AVATAR_ICON_COLOR = "#C2410C";
+export const CHAT_SENDER_USER = "user";
+export const CHAT_SENDER_BOT = "bot";
+
+export const NOVERA_DISPLAY_NAME = "Novera";
+export const NOVERA_ANALYZING_PLACEHOLDER_TEXT =
+  "Novera is analyzing your request...";
+export const NOVERA_INITIAL_WELCOME_TEXT =
+  "Hi! I'm Novera, your AI support assistant. I'm here to help you resolve your issue quickly. Can you describe the problem you're experiencing?";
+
+export const CHAT_TYPING_INTERVAL_MS = 165;
+export const CHAT_TYPING_CHARS_PER_TICK = 6;

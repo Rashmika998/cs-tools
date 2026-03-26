@@ -23,13 +23,13 @@ import {
   useMemo,
   type JSX,
 } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate, useParams, useLocation } from "react-router";
 import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
 import { useGetConversationMessages } from "@api/useGetConversationMessages";
 import { usePostCaseClassifications } from "@api/usePostCaseClassifications";
-import { usePostConversations } from "@api/usePostConversations";
-import { usePostConversationMessages } from "@api/usePostConversationMessages";
-import type { ChatNavState } from "@models/chatNavState";
+import { useChatWebSocket } from "@api/useChatWebSocket";
+import useGetProjectDetails from "@api/useGetProjectDetails";
 import type { SlotState } from "@models/responses";
 import { useAllDeploymentProducts } from "@hooks/useAllDeploymentProducts";
 import {
@@ -37,33 +37,25 @@ import {
   DEFAULT_CONVERSATION_TIER,
 } from "@constants/conversationConstants";
 import {
+  CHAT_SENDER_BOT,
+  CHAT_SENDER_USER,
+  CHAT_TYPING_CHARS_PER_TICK,
+  CHAT_TYPING_INTERVAL_MS,
+  NOVERA_ANALYZING_PLACEHOLDER_TEXT,
+  NOVERA_INITIAL_WELCOME_TEXT,
+} from "@constants/chatConstants";
+import {
   formatChatHistoryForClassification,
   buildEnvProducts,
 } from "@utils/caseCreation";
 import { htmlToPlainText } from "@utils/richTextEditor";
+import type { ChatNavState, Message } from "@models/chatTypes";
 import ChatHeader from "@components/support/novera-ai-assistant/novera-chat-page/ChatHeader";
 import ChatInput from "@components/support/novera-ai-assistant/novera-chat-page/ChatInput";
 import ChatMessageList from "@components/support/novera-ai-assistant/novera-chat-page/ChatMessageList";
 import ChatSkeleton from "@components/support/novera-ai-assistant/novera-chat-page/ChatSkeleton";
 import { ROUTE_PREVIOUS_PAGE } from "@/constants/commonConstants";
-
-export interface Recommendation {
-  title: string;
-  articleId: string;
-  score: number;
-}
-
-export interface Message {
-  id: string;
-  text: string;
-  sender: "user" | "bot";
-  timestamp: Date;
-  showCreateCaseAction?: boolean;
-  isLoading?: boolean;
-  isError?: boolean;
-  slotState?: SlotState;
-  recommendations?: Recommendation[];
-}
+import { displayTextFromConversationContent, getFinalMessageFromPayload, sanitizeStreamToken, splitTokenForTyping } from "@/utils/chat";
 
 /**
  * NoveraChatPage component to provide AI-powered support assistance.
@@ -80,6 +72,7 @@ export default function NoveraChatPage(): JSX.Element {
   const navState = location.state as ChatNavState | null;
   const initialUserMessage = navState?.initialUserMessage;
   const conversationResponse = navState?.conversationResponse;
+  const navAccountId = navState?.accountId;
 
   const handleBack = () => {
     if (projectId) {
@@ -92,6 +85,7 @@ export default function NoveraChatPage(): JSX.Element {
   const { data: projectDeployments } = useGetProjectDeployments(
     projectId || "",
   );
+  const { data: projectDetails } = useGetProjectDetails(projectId || "");
   const { productsByDeploymentId, isLoading: isAllProductsLoading } =
     useAllDeploymentProducts(projectDeployments);
   const envProducts = useMemo(
@@ -99,9 +93,8 @@ export default function NoveraChatPage(): JSX.Element {
     [productsByDeploymentId, projectDeployments],
   );
   const { mutateAsync: classifyCase } = usePostCaseClassifications();
-  const { mutateAsync: postConversation } = usePostConversations();
-  const { mutateAsync: postConversationMessages } =
-    usePostConversationMessages();
+  const accountId =
+    navAccountId || projectDetails?.account?.id || projectId || "";
   const [conversationId, setConversationId] = useState<string | null>(
     () => urlConversationId ?? conversationResponse?.conversationId ?? null,
   );
@@ -123,18 +116,18 @@ export default function NoveraChatPage(): JSX.Element {
 
     const botWelcome: Message = {
       id: "1",
-      text: "Hi! I'm Novera, your AI support assistant. I'm here to help you resolve your issue quickly. Can you describe the problem you're experiencing?",
-      sender: "bot",
+      text: NOVERA_INITIAL_WELCOME_TEXT,
+      sender: CHAT_SENDER_BOT,
       timestamp: new Date(),
     };
-    // Coming from describe-issue with API response: show only user message + bot response (no welcome).
+
     if (conversationResponse?.message) {
       const userMsg = initialUserMessage?.trim();
       const msgs: Message[] = [
         {
           id: "3",
           text: conversationResponse.message,
-          sender: "bot",
+          sender: CHAT_SENDER_BOT,
           timestamp: new Date(),
           showCreateCaseAction: conversationResponse.actions != null,
           slotState: conversationResponse.slotState,
@@ -146,58 +139,47 @@ export default function NoveraChatPage(): JSX.Element {
         msgs.unshift({
           id: "2",
           text: userMsg,
-          sender: "user",
+          sender: CHAT_SENDER_USER,
           timestamp: new Date(),
         });
       }
       return msgs;
-    }
-    if (initialUserMessage?.trim()) {
-      return [
-        botWelcome,
-        {
-          id: "2",
-          text: initialUserMessage.trim(),
-          sender: "user",
-          timestamp: new Date(),
-        },
-      ];
     }
     return [botWelcome];
   });
 
   // Load and convert conversation history when resuming
   useEffect(() => {
-    if (urlConversationId && conversationHistory?.pages) {
-      const allMessages = conversationHistory.pages.flatMap(
-        (page) => page.comments,
-      );
+    if (!urlConversationId || !conversationHistory?.pages) return;
+    if (messages.length > 0) return;
 
-      const convertedMessages: Message[] = allMessages
-        .slice()
-        .sort((a, b) => {
-          const aT = a.createdOn ? new Date(a.createdOn).getTime() : 0;
-          const bT = b.createdOn ? new Date(b.createdOn).getTime() : 0;
-          return aT - bT;
-        })
-        .map((msg, index) => {
-          // Determine if message is from bot (same logic as ConversationDetailsPage)
-          const isBot =
-            msg.type?.toLowerCase() === "bot" ||
-            msg.createdBy?.toLowerCase() === "novera";
+    const allMessages = conversationHistory.pages.flatMap(
+      (page) => page.comments,
+    );
 
-          return {
-            id: msg.id || `msg-${index}`,
-            text: msg.content || "",
-            sender: isBot ? "bot" : "user",
-            timestamp: msg.createdOn ? new Date(msg.createdOn) : new Date(),
-            showCreateCaseAction: false,
-          };
-        });
+    const convertedMessages: Message[] = allMessages
+      .slice()
+      .sort((a, b) => {
+        const aT = a.createdOn ? new Date(a.createdOn).getTime() : 0;
+        const bT = b.createdOn ? new Date(b.createdOn).getTime() : 0;
+        return aT - bT;
+      })
+      .map((msg, index) => {
+        const isBot =
+          msg.type?.toLowerCase() === "bot" ||
+          msg.createdBy?.toLowerCase() === "novera";
 
-      setMessages(convertedMessages);
-    }
-  }, [urlConversationId, conversationHistory]);
+        return {
+          id: msg.id || `msg-${index}`,
+          text: displayTextFromConversationContent(msg.content || "", isBot),
+          sender: isBot ? CHAT_SENDER_BOT : CHAT_SENDER_USER,
+          timestamp: msg.createdOn ? new Date(msg.createdOn) : new Date(),
+          showCreateCaseAction: false,
+        };
+      });
+
+    setMessages(convertedMessages);
+  }, [urlConversationId, conversationHistory, messages.length]);
 
   // Update URL with conversationId from describe-issue flow
   useEffect(() => {
@@ -280,6 +262,222 @@ export default function NoveraChatPage(): JSX.Element {
   const [resetTrigger, setResetTrigger] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeBotMessageIdRef = useRef<string | null>(null);
+  const initialMessageSentRef = useRef(false);
+  const tokenQueueRef = useRef<string[]>([]);
+  const pendingFinalRef = useRef<{
+    payload: Record<string, unknown>;
+    finalMessage: string;
+  } | null>(null);
+  const TYPING_INTERVAL_MS = CHAT_TYPING_INTERVAL_MS;
+  const TYPING_CHARS_PER_TICK = CHAT_TYPING_CHARS_PER_TICK;
+
+  const upsertActiveBotMessage = useCallback(
+    (updater: (message: Message) => Message, fallback?: () => Message) => {
+      setMessages((prev) => {
+        const activeId = activeBotMessageIdRef.current;
+        if (!activeId) return prev;
+        let found = false;
+        const next = prev.map((msg) => {
+          if (msg.id !== activeId) return msg;
+          found = true;
+          return updater(msg);
+        });
+        if (!found && fallback) {
+          next.push(fallback());
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const flushPendingFinalIfReady = useCallback(() => {
+    if (tokenQueueRef.current.length > 0) return;
+    const pending = pendingFinalRef.current;
+    if (!pending) return;
+    const activeId = activeBotMessageIdRef.current;
+    if (!activeId) return;
+
+    let appliedFinal = false;
+    flushSync(() => {
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === activeId);
+        if (idx === -1) {
+          return prev;
+        }
+        pendingFinalRef.current = null;
+        const { finalMessage, payload } = pending;
+        const msg = prev[idx];
+        const next = [...prev];
+        next[idx] = {
+          ...msg,
+          isLoading: false,
+          isError: false,
+          text: finalMessage || msg.text,
+          showCreateCaseAction: payload.actions != null,
+          slotState: payload.slotState as SlotState | undefined,
+          thinkingSteps: [],
+          thinkingLabel: null,
+          isStreaming: false,
+        };
+        appliedFinal = true;
+        return next;
+      });
+    });
+    if (appliedFinal) {
+      setIsSending(false);
+    }
+  }, []);
+
+  const dequeueOneTypedToken = useCallback(() => {
+    const token = tokenQueueRef.current.shift();
+    if (token === undefined) return;
+    upsertActiveBotMessage((msg) => {
+      const isPlaceholder =
+        msg.text === NOVERA_ANALYZING_PLACEHOLDER_TEXT || msg.text === "";
+      return {
+        ...msg,
+        isLoading: false,
+        text: isPlaceholder ? token : `${msg.text}${token}`,
+        isStreaming: true,
+      };
+    });
+  }, [upsertActiveBotMessage]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (tokenQueueRef.current.length > 0) {
+        dequeueOneTypedToken();
+      }
+      flushPendingFinalIfReady();
+    }, TYPING_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [dequeueOneTypedToken, flushPendingFinalIfReady, TYPING_INTERVAL_MS]);
+
+  const { connect, sendUserMessage } = useChatWebSocket({
+    onEvent: (event) => {
+      if (event.type === "conversation_created") {
+        const nextConversationId = String(event.conversationId ?? "");
+        if (nextConversationId) {
+          setConversationId(nextConversationId);
+          if (!urlConversationId && projectId) {
+            navigate(
+              `/projects/${projectId}/support/chat/${nextConversationId}`,
+              {
+                replace: true,
+              },
+            );
+          }
+        }
+        return;
+      }
+
+      if (event.type === "thinking_start") {
+        upsertActiveBotMessage(
+          (msg) => ({
+            ...msg,
+            isLoading: false,
+            text: NOVERA_ANALYZING_PLACEHOLDER_TEXT,
+            thinkingSteps: [],
+            thinkingLabel: null,
+            isStreaming: false,
+          }),
+          () => ({
+            id: `bot-${Date.now()}`,
+            sender: CHAT_SENDER_BOT,
+            timestamp: new Date(),
+            text: NOVERA_ANALYZING_PLACEHOLDER_TEXT,
+            thinkingSteps: [],
+            thinkingLabel: null,
+            isStreaming: false,
+          }),
+        );
+        return;
+      }
+
+      if (event.type === "thinking_step") {
+        const label = String(event.label ?? event.step ?? "Working...");
+        upsertActiveBotMessage((msg) => ({
+          ...msg,
+          isLoading: false,
+          thinkingSteps: [...(msg.thinkingSteps ?? []), label],
+          thinkingLabel: label,
+        }));
+        return;
+      }
+
+      if (event.type === "thinking_end") {
+        upsertActiveBotMessage((msg) => ({
+          ...msg,
+          isLoading: false,
+          thinkingLabel: msg.thinkingLabel,
+        }));
+        return;
+      }
+
+      if (event.type === "token") {
+        const token = String(event.content ?? "");
+        const cleaned = sanitizeStreamToken(token);
+        if (cleaned.length > 0) {
+          for (const part of splitTokenForTyping(
+            cleaned,
+            TYPING_CHARS_PER_TICK,
+          )) {
+            tokenQueueRef.current.push(part);
+          }
+        }
+        return;
+      }
+
+      if (event.type === "final") {
+        const payload = (event.payload ?? {}) as Record<string, unknown>;
+        const finalMessage = getFinalMessageFromPayload(payload);
+        const nextConversationId = String(payload.conversationId ?? "");
+        if (nextConversationId) {
+          setConversationId(nextConversationId);
+          if (!urlConversationId && projectId) {
+            navigate(
+              `/projects/${projectId}/support/chat/${nextConversationId}`,
+              {
+                replace: true,
+              },
+            );
+          }
+        }
+        pendingFinalRef.current = { payload, finalMessage };
+        flushPendingFinalIfReady();
+        return;
+      }
+
+      if (event.type === "error") {
+        pendingFinalRef.current = null;
+        tokenQueueRef.current = [];
+        upsertActiveBotMessage((msg) => ({
+          ...msg,
+          isLoading: false,
+          isError: true,
+          text: String(event.message ?? "Something went wrong"),
+          thinkingSteps: [],
+          isStreaming: false,
+        }));
+        setIsSending(false);
+      }
+    },
+    onError: () => {
+      pendingFinalRef.current = null;
+      tokenQueueRef.current = [];
+      upsertActiveBotMessage((msg) => ({
+        ...msg,
+        isLoading: false,
+        isError: true,
+        text: "WebSocket connection error.",
+        thinkingSteps: [],
+        isStreaming: false,
+      }));
+      setIsSending(false);
+    },
+  });
 
   const setInputValueAndRef = useCallback((v: string) => {
     inputValueRef.current = v;
@@ -290,113 +488,86 @@ export default function NoveraChatPage(): JSX.Element {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendToApi = useCallback(
-    async (userText: string) => {
-      if (!projectId) return null;
+  const sendViaWebSocket = useCallback(
+    async (text: string): Promise<boolean> => {
+      if (!projectId || !accountId) return false;
       const hasEnvProducts = Object.keys(envProducts).length > 0;
-      const payload = {
-        projectId,
-        message: userText,
-        envProducts: hasEnvProducts ? envProducts : {},
-        region: DEFAULT_CONVERSATION_REGION,
-        tier: DEFAULT_CONVERSATION_TIER,
-      };
-      if (conversationId) {
-        return postConversationMessages({
-          ...payload,
-          conversationId,
+      const botMessageId = `bot-${Date.now()}`;
+      activeBotMessageIdRef.current = botMessageId;
+      pendingFinalRef.current = null;
+      tokenQueueRef.current = [];
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `user-${Date.now()}`,
+          text,
+          sender: CHAT_SENDER_USER,
+          timestamp: new Date(),
+        },
+        {
+          id: botMessageId,
+          text: "",
+          sender: CHAT_SENDER_BOT,
+          timestamp: new Date(),
+          isLoading: true,
+        },
+      ]);
+      setIsSending(true);
+
+      try {
+        await connect(projectId);
+        await sendUserMessage({
+          type: "user_message",
+          accountId,
+          conversationId: conversationId ?? "",
+          message: text,
+          envProducts: hasEnvProducts ? envProducts : {},
         });
+        return true;
+      } catch {
+        tokenQueueRef.current = [];
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === botMessageId
+              ? {
+                  ...m,
+                  isLoading: false,
+                  isError: true,
+                  text: "Could not connect to chatbot stream.",
+                }
+              : m,
+          ),
+        );
+        setIsSending(false);
+        return false;
       }
-      return postConversation(payload);
     },
     [
-      projectId,
+      accountId,
+      connect,
       conversationId,
       envProducts,
-      postConversation,
-      postConversationMessages,
+      projectId,
+      sendUserMessage,
     ],
   );
 
   const handleSendMessage = useCallback(async (): Promise<boolean> => {
     const text = htmlToPlainText(inputValueRef.current).trim();
     if (!text || isSending || !projectId) return false;
-
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      text,
-      sender: "user",
-      timestamp: new Date(),
-    };
-    const botMessageId = `bot-${Date.now()}`;
-    const loadingBot: Message = {
-      id: botMessageId,
-      text: "",
-      sender: "bot",
-      timestamp: new Date(),
-      isLoading: true,
-    };
-
-    setMessages((prev) => [...prev, userMessage, loadingBot]);
     setInputValueAndRef("");
     setResetTrigger((prev) => prev + 1);
-    setIsSending(true);
+    return sendViaWebSocket(text);
+  }, [isSending, projectId, sendViaWebSocket, setInputValueAndRef]);
 
-    try {
-      const response = await sendToApi(text);
-      if (response?.conversationId) {
-        setConversationId(response.conversationId);
-        // Update URL with conversationId so it persists on refresh
-        if (!urlConversationId && projectId) {
-          navigate(
-            `/projects/${projectId}/support/chat/${response.conversationId}`,
-            {
-              replace: true,
-            },
-          );
-        }
-      }
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === botMessageId
-            ? {
-                ...m,
-                text: response?.message ?? "",
-                isLoading: false,
-                isError: false,
-                showCreateCaseAction: response?.actions != null,
-                slotState: response?.slotState,
-                recommendations: response?.recommendations?.recommendations,
-              }
-            : m,
-        ),
-      );
-      return true;
-    } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === botMessageId
-            ? {
-                ...m,
-                text: "",
-                isLoading: false,
-                isError: true,
-              }
-            : m,
-        ),
-      );
-      return false;
-    } finally {
-      setIsSending(false);
-    }
-  }, [
-    isSending,
-    projectId,
-    sendToApi,
-    setInputValueAndRef,
-    urlConversationId,
-    navigate,
-  ]);
+  useEffect(() => {
+    if (!initialUserMessage?.trim()) return;
+    if (urlConversationId) return;
+    if (initialMessageSentRef.current) return;
+    initialMessageSentRef.current = true;
+    void sendViaWebSocket(initialUserMessage.trim());
+  }, [initialUserMessage, sendViaWebSocket, urlConversationId]);
 
   return (
     <Box
@@ -431,7 +602,7 @@ export default function NoveraChatPage(): JSX.Element {
             overflow: "hidden",
           }}
         >
-          {isLoadingHistory && urlConversationId ? (
+          {isLoadingHistory && urlConversationId && messages.length === 0 ? (
             <ChatSkeleton />
           ) : (
             <ChatMessageList
@@ -455,7 +626,7 @@ export default function NoveraChatPage(): JSX.Element {
             setInputValue={setInputValueAndRef}
             onCreateCase={handleCreateCase}
             isCreateCaseLoading={isCreateCaseLoading}
-            isSending={isSending || isLoadingHistory}
+            isSending={isSending}
             resetTrigger={resetTrigger}
           />
         </Paper>

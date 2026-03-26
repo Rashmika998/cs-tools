@@ -37,7 +37,7 @@ import type { JSX } from "react";
 import { useGetConversationMessages } from "@api/useGetConversationMessages";
 import type { ConversationMessage, ChatHistoryItem } from "@models/responses";
 import ErrorStateIcon from "@components/common/error-state/ErrorStateIcon";
-import type { Message } from "@pages/NoveraChatPage";
+import type { Message } from "@models/chatTypes";
 import ChatMessageBubble from "@components/support/novera-ai-assistant/novera-chat-page/ChatMessageBubble";
 import { alpha, useTheme } from "@wso2/oxygen-ui";
 import { formatDateOnly, normalizeUtcDateString } from "@utils/support";

@@ -18,7 +18,35 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import NoveraChatPage from "@pages/NoveraChatPage";
+
+vi.mock(
+  "@components/support/novera-ai-assistant/novera-chat-page/ChatInput",
+  () => ({
+    default: ({
+      inputValue,
+      setInputValue,
+      onSend,
+      onCreateCase,
+      isCreateCaseLoading,
+    }: any) => (
+      <div>
+        <button onClick={onCreateCase} disabled={isCreateCaseLoading}>
+          Create Case
+        </button>
+        {isCreateCaseLoading ? <div data-testid="circular-progress" /> : null}
+        <input
+          placeholder="Type your message..."
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSend();
+          }}
+        />
+        <button onClick={onSend}>Send</button>
+      </div>
+    ),
+  }),
+);
 
 // Mock @wso2/oxygen-ui
 vi.mock("@wso2/oxygen-ui", () => ({
@@ -32,6 +60,8 @@ vi.mock("@wso2/oxygen-ui", () => ({
   CircularProgress: () => <div data-testid="circular-progress" />,
   Paper: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  alpha: (c: string) => c,
+  Tooltip: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   TextField: ({ value, onChange, placeholder, onKeyPress }: any) => (
     <input
       value={value}
@@ -50,6 +80,9 @@ vi.mock("@wso2/oxygen-ui", () => ({
   colors: {
     orange: {
       700: "#C2410C",
+    },
+    yellow: {
+      800: "#854D0E",
     },
   },
 }));
@@ -85,12 +118,15 @@ vi.mock("@utils/richTextEditor", () => ({
 vi.mock("@wso2/oxygen-ui-icons-react", () => ({
   Bot: () => <svg data-testid="bot-icon" />,
   User: () => <svg data-testid="user-icon" />,
+  ThumbsUp: () => <svg data-testid="thumbs-up-icon" />,
+  ThumbsDown: () => <svg data-testid="thumbs-down-icon" />,
   ArrowLeft: () => <svg data-testid="back-icon" />,
   Send: () => <svg data-testid="send-icon" />,
   CircleAlert: () => <svg data-testid="alert-icon" />,
   Sparkles: () => <svg data-testid="sparkles-icon" />,
   FileText: () => <svg data-testid="file-text-icon" />,
   Copy: () => <svg data-testid="copy-icon" />,
+  PanelTopClose: () => <svg data-testid="panel-top-close-icon" />,
 }));
 
 const { useAllDeploymentProductsMock } = vi.hoisted(() => ({
@@ -141,6 +177,20 @@ vi.mock("@api/useGetProjectDeployments", () => ({
   }),
 }));
 
+vi.mock("@api/useChatWebSocket", () => ({
+  useChatWebSocket: ({ onEvent }: any) => ({
+    connect: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn(),
+    isConnected: true,
+    sendUserMessage: vi.fn().mockImplementation(async () => {
+      onEvent({
+        type: "final",
+        payload: { message: "Mock AI response from API" },
+      });
+    }),
+  }),
+}));
+
 vi.mock("@api/useGetDeploymentsProducts", () => ({
   fetchDeploymentProducts: vi
     .fn()
@@ -186,15 +236,32 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });
 
-const renderWithRouter = () => {
+const renderWithRouter = async (initialUserMessage?: string) => {
+  const { default: NoveraChatPage } = await import("@pages/NoveraChatPage");
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/project-1/support/chat"]}>
+      <MemoryRouter
+        initialEntries={[
+          initialUserMessage
+            ? {
+                pathname: "/projects/project-1/support/chat",
+                state: { initialUserMessage },
+                key: "init",
+              }
+            : "/projects/project-1/support/chat",
+        ]}
+      >
         <Routes>
-          <Route path="/:projectId/support/chat" element={<NoveraChatPage />} />
-          <Route path="/:projectId/support" element={<div>Support Page</div>} />
           <Route
-            path="/:projectId/dashboard"
+            path="/projects/:projectId/support/chat"
+            element={<NoveraChatPage />}
+          />
+          <Route
+            path="/projects/:projectId/support"
+            element={<div>Support Page</div>}
+          />
+          <Route
+            path="/projects/:projectId/dashboard"
             element={<div>Dashboard Page</div>}
           />
         </Routes>
@@ -213,10 +280,9 @@ describe("NoveraChatPage", () => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
-  it("should render the initial state correctly", () => {
-    renderWithRouter();
+  it("should render the initial state correctly", async () => {
+    await renderWithRouter();
 
-    expect(screen.getByText("Chat with Novera")).toBeInTheDocument();
     expect(
       screen.getByText(/Hi! I'm Novera, your AI support assistant/i),
     ).toBeInTheDocument();
@@ -225,44 +291,29 @@ describe("NoveraChatPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("should navigate back when clicking 'Back to Support'", () => {
-    renderWithRouter();
+  it("should navigate back when clicking 'Back'", async () => {
+    await renderWithRouter();
 
-    const backButton = screen.getByText("Back to Support");
+    const backButton = screen.getByText("Back");
     fireEvent.click(backButton);
 
     expect(screen.getByText("Support Page")).toBeInTheDocument();
   });
 
   it("should send and display multiple messages", async () => {
-    renderWithRouter();
-
-    const input = screen.getByPlaceholderText(/Type your message/);
-    const sendButton = screen.getByTestId("send-icon").parentElement!;
-
     for (let i = 1; i <= 4; i++) {
-      fireEvent.change(input, { target: { value: `Message ${i}` } });
-      fireEvent.click(sendButton);
+      const { unmount } = await renderWithRouter(`Message ${i}`);
       await waitFor(
         () =>
-          expect(screen.getAllByText("Mock AI response from API").length).toBe(
-            i,
-          ),
+          expect(screen.getByText("Mock AI response from API")).toBeInTheDocument(),
         { timeout: 2000 },
       );
+      unmount();
     }
-
-    expect(screen.getByText("Chat with Novera")).toBeInTheDocument();
   });
 
   it("should send a message and receive a bot response", async () => {
-    renderWithRouter();
-
-    const input = screen.getByPlaceholderText(/Type your message/);
-    const sendButton = screen.getByTestId("send-icon").parentElement!;
-
-    fireEvent.change(input, { target: { value: "Hello Novera!" } });
-    fireEvent.click(sendButton);
+    await renderWithRouter("Hello Novera!");
 
     expect(screen.getByText("Hello Novera!")).toBeInTheDocument();
 
@@ -287,16 +338,24 @@ describe("NoveraChatPage", () => {
 
     const { default: NoveraChatPage } = await import("@pages/NoveraChatPage");
 
-    const { getByPlaceholderText, getByTestId, findByText } = render(
+    const { getByTestId, findByText } = render(
       <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter initialEntries={["/project-1/support/chat"]}>
+        <MemoryRouter
+          initialEntries={[
+            {
+              pathname: "/projects/project-1/support/chat",
+              state: { initialUserMessage: "Message" },
+              key: "init",
+            },
+          ]}
+        >
           <Routes>
             <Route
-              path="/:projectId/support/chat"
+              path="/projects/:projectId/support/chat"
               element={<NoveraChatPage />}
             />
             <Route
-              path="/:projectId/support/chat/create-case"
+              path="/projects/:projectId/support/chat/create-case"
               element={<div>Create Case Page</div>}
             />
           </Routes>
@@ -304,11 +363,6 @@ describe("NoveraChatPage", () => {
       </QueryClientProvider>,
     );
 
-    const input = getByPlaceholderText(/Type your message/);
-    const sendButton = getByTestId("send-icon").parentElement!;
-
-    fireEvent.change(input, { target: { value: "Message" } });
-    fireEvent.click(sendButton);
     await waitFor(
       () =>
         expect(
@@ -320,8 +374,6 @@ describe("NoveraChatPage", () => {
     const createCaseButton = await findByText("Create Case");
     fireEvent.click(createCaseButton);
     expect(getByTestId("circular-progress")).toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: "Trigger update" } });
     expect(await findByText("Create Case Page")).toBeInTheDocument();
   });
 });

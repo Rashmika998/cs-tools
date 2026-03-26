@@ -42,6 +42,8 @@ vi.mock("@wso2/oxygen-ui", () => ({
 vi.mock("@wso2/oxygen-ui-icons-react", () => ({
   Bot: () => <svg data-testid="icon-bot" />,
   User: () => <svg data-testid="icon-user" />,
+  ThumbsUp: () => <svg data-testid="icon-thumbs-up" />,
+  ThumbsDown: () => <svg data-testid="icon-thumbs-down" />,
   FileText: () => <svg data-testid="icon-filetext" />,
   Copy: () => <svg data-testid="icon-copy" />,
 }));
@@ -64,7 +66,6 @@ describe("ChatMessageBubble", () => {
     expect(screen.getByText("Hello Bot")).toBeInTheDocument();
     expect(screen.getByTestId("icon-user")).toBeInTheDocument();
     expect(screen.queryByTestId("icon-bot")).not.toBeInTheDocument();
-    expect(screen.getByTestId("icon-button")).toBeInTheDocument();
   });
 
   it("should render bot message with avatar correctly", () => {
@@ -78,7 +79,7 @@ describe("ChatMessageBubble", () => {
 
     expect(screen.getByText("Hello User")).toBeInTheDocument();
     expect(screen.getByTestId("icon-bot")).toBeInTheDocument();
-    expect(screen.getByTestId("icon-button")).toBeInTheDocument();
+    expect(screen.getAllByTestId("icon-button").length).toBeGreaterThanOrEqual(1);
   });
 
   it("should render error state", () => {

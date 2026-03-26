@@ -65,3 +65,8 @@ export const ApiMutationKeys = {
   POST_COMMENT: ["postComment"],
   POST_CHANGE_REQUEST_COMMENT: ["postChangeRequestComment"],
 } as const;
+
+// Constants for WebSocket communication.
+export const WS_CHOREO_OAUTH2_TOKEN = "choreo-oauth2-token";
+export const WS_CUSTOMER_PORTAL = "cs-customer-portal";
+export const CONNECT_HANDSHAKE_TIMEOUT_MS = 25_000;

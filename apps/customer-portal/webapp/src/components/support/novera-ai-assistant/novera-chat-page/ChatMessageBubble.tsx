@@ -14,12 +14,48 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, Paper, Typography, IconButton } from "@wso2/oxygen-ui";
+import { Box, Paper, Typography, IconButton, alpha } from "@wso2/oxygen-ui";
 import { Bot, User, ThumbsUp, ThumbsDown } from "@wso2/oxygen-ui-icons-react";
 import ReactMarkdown from "react-markdown";
-import { type JSX, useState } from "react";
-import type { Message } from "@pages/NoveraChatPage";
+import { type JSX, useEffect, useRef, useState } from "react";
+import type { Message } from "@models/chatTypes";
+import {
+  NOVERA_ANALYZING_PLACEHOLDER_TEXT,
+  NOVERA_DISPLAY_NAME,
+} from "@constants/chatConstants";
 import RecommendationsCard from "@components/support/novera-ai-assistant/novera-chat-page/RecommendationsCard";
+
+/** Tighter line breaks while tokens stream (model often sends blank lines). */
+function collapseStreamLineBreaks(s: string): string {
+  return s.replace(/\n{2,}/g, "\n");
+}
+
+const thinkingLegendDotsSx = {
+  display: "inline-block",
+  ml: 0.25,
+  animation: "noveraThinkingDots 1s ease-in-out infinite",
+  "@keyframes noveraThinkingDots": {
+    "0%, 100%": { opacity: 0.2 },
+    "50%": { opacity: 1 },
+  },
+} as const;
+
+const STREAM_LINE_HEIGHT = 1.35;
+const STREAM_VISIBLE_LINE_COUNT = 3;
+const STREAM_MAX_HEIGHT_EM = STREAM_LINE_HEIGHT * STREAM_VISIBLE_LINE_COUNT;
+
+const primaryWaveTextSx = {
+  display: "inline-block",
+  backgroundSize: "220% 100%",
+  WebkitBackgroundClip: "text",
+  backgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+  animation: "noveraWaveText 1.8s linear infinite",
+  "@keyframes noveraWaveText": {
+    "0%": { backgroundPosition: "220% 0" },
+    "100%": { backgroundPosition: "-220% 0" },
+  },
+} as const;
 
 /** Safe URL protocols for markdown links. Blocks javascript:, data:, etc. */
 const SAFE_PROTOCOLS = ["http:", "https:"];
@@ -140,6 +176,31 @@ export default function ChatMessageBubble({
 
   const displayText = message.isError ? "Something went wrong" : message.text;
 
+  /** Until the final assistant message, hide thumbs and timestamp only (header stays). */
+  const hideFeedbackRow =
+    !message.isError &&
+    (message.isStreaming ||
+      !!message.thinkingLabel ||
+      message.text === NOVERA_ANALYZING_PLACEHOLDER_TEXT);
+
+  /** Faded frame wraps analyzing, live thinking steps, and streamed tokens. */
+  const showThinkingStreamFrame = hideFeedbackRow;
+
+  const streamBodyText = collapseStreamLineBreaks(displayText);
+  const analyzingLeadText = "Novera is analyzing your request...";
+  const showLiveThinkingStatus =
+    !!message.thinkingLabel ||
+    (!message.isStreaming &&
+      message.text === NOVERA_ANALYZING_PLACEHOLDER_TEXT);
+  const liveThinkingStatus = message.thinkingLabel ?? analyzingLeadText;
+  const streamContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!message.isStreaming) return;
+    if (!streamContainerRef.current) return;
+    streamContainerRef.current.scrollTop = streamContainerRef.current.scrollHeight;
+  }, [message.isStreaming, streamBodyText]);
+
   // Safely format timestamp with fallback for invalid dates
   let formattedTime = "--";
   try {
@@ -211,8 +272,7 @@ export default function ChatMessageBubble({
   return (
     <Box sx={{ maxWidth: "80%" }}>
       <Box sx={{ mb: 3 }}>
-        {/* Header with icon and Novera label */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
           <Box
             sx={{
               width: 24,
@@ -231,7 +291,7 @@ export default function ChatMessageBubble({
             variant="body2"
             sx={{ fontWeight: 600, color: "text.primary" }}
           >
-            Novera
+            {NOVERA_DISPLAY_NAME}
           </Typography>
         </Box>
 
@@ -240,6 +300,73 @@ export default function ChatMessageBubble({
           <Typography variant="body2" color="error.main">
             {displayText}
           </Typography>
+        ) : showThinkingStreamFrame ? (
+          <Paper
+            sx={(theme) => ({
+              position: "relative",
+              mt: 2.5,
+              bgcolor: alpha(theme.palette.text.primary, 0.03),
+              px: 2,
+              py: 2,
+              pt: 2.25,
+            })}
+            aria-busy={message.isStreaming ? true : undefined}
+          >
+            <Typography
+              component="span"
+              variant="caption"
+              sx={{
+                position: "absolute",
+                top: -10,
+                px: 1,
+                lineHeight: 1.2,
+                fontWeight: 600,
+                color: "text.primary",
+                bgcolor: "background.paper",
+                borderRadius: 1,
+              }}
+            >
+              Thinking
+              <Box component="span" aria-hidden sx={thinkingLegendDotsSx}>
+                ...
+              </Box>
+            </Typography>
+            <Box aria-live="polite">
+              {showLiveThinkingStatus && (
+                <Typography
+                  variant="body2"
+                  sx={(theme) => ({
+                    color: "primary.main",
+                    whiteSpace: "pre-wrap",
+                    lineHeight: STREAM_LINE_HEIGHT,
+                    mb: 0.5,
+                    backgroundImage: `linear-gradient(90deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 30%, ${theme.palette.primary.light} 55%, ${theme.palette.primary.main} 80%, ${theme.palette.primary.dark} 100%)`,
+                    ...primaryWaveTextSx,
+                  })}
+                >
+                  {liveThinkingStatus}
+                </Typography>
+              )}
+              {message.isStreaming && (
+                <Typography
+                  component="div"
+                  variant="body2"
+                  ref={streamContainerRef}
+                  sx={{
+                    whiteSpace: "pre-wrap",
+                    lineHeight: STREAM_LINE_HEIGHT,
+                    m: 0,
+                    mt: 0.5,
+                    color: "text.primary",
+                    maxHeight: `${STREAM_MAX_HEIGHT_EM}em`,
+                    overflowY: "auto",
+                  }}
+                >
+                  {streamBodyText}
+                </Typography>
+              )}
+            </Box>
+          </Paper>
         ) : (
           <Box
             sx={{
@@ -251,61 +378,77 @@ export default function ChatMessageBubble({
             <ReactMarkdown components={markdownComponents}>
               {displayText}
             </ReactMarkdown>
+            {message.thinkingSteps && message.thinkingSteps.length > 0 && (
+              <Box sx={{ mt: 1 }}>
+                {message.thinkingSteps.map((step, idx) => (
+                  <Typography
+                    key={`${message.id}-thinking-${idx}`}
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block" }}
+                  >
+                    {`• ${step}`}
+                  </Typography>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
 
-        {/* Thumbs up/down and time - only if no recommendations */}
-        {(!message.recommendations || message.recommendations.length === 0) && (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 3, mt: 3 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <IconButton
-                size="small"
-                onClick={() => {
-                  if (hasFeedbackSelection) return;
-                  setThumbsState("up");
-                  onThumbsUp?.(message.id);
-                }}
-                aria-pressed={thumbsState === "up"}
-                sx={{
-                  p: 0.5,
-                  color:
-                    thumbsState === "up" ? "success.main" : "text.secondary",
-                  "&:hover": {
-                    color: "success.main",
-                    bgcolor: "success.lighter",
-                  },
-                }}
-                aria-label="Like this response"
-              >
-                <ThumbsUp size={14} />
-              </IconButton>
-              <IconButton
-                size="small"
-                onClick={() => {
-                  if (hasFeedbackSelection) return;
-                  setThumbsState("down");
-                  onThumbsDown?.(message.id);
-                }}
-                aria-pressed={thumbsState === "down"}
-                sx={{
-                  p: 0.5,
-                  color:
-                    thumbsState === "down" ? "error.main" : "text.secondary",
-                  "&:hover": {
-                    color: "error.main",
-                    bgcolor: "error.lighter",
-                  },
-                }}
-                aria-label="Dislike this response"
-              >
-                <ThumbsDown size={14} />
-              </IconButton>
+        {/* Thumbs up/down and time — hide until final response */}
+        {!hideFeedbackRow &&
+          (!message.recommendations ||
+            message.recommendations.length === 0) && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 3, mt: 3 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    if (hasFeedbackSelection) return;
+                    setThumbsState("up");
+                    onThumbsUp?.(message.id);
+                  }}
+                  aria-pressed={thumbsState === "up"}
+                  sx={{
+                    p: 0.5,
+                    color:
+                      thumbsState === "up" ? "success.main" : "text.secondary",
+                    "&:hover": {
+                      color: "success.main",
+                      bgcolor: "success.lighter",
+                    },
+                  }}
+                  aria-label="Like this response"
+                >
+                  <ThumbsUp size={14} />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    if (hasFeedbackSelection) return;
+                    setThumbsState("down");
+                    onThumbsDown?.(message.id);
+                  }}
+                  aria-pressed={thumbsState === "down"}
+                  sx={{
+                    p: 0.5,
+                    color:
+                      thumbsState === "down" ? "error.main" : "text.secondary",
+                    "&:hover": {
+                      color: "error.main",
+                      bgcolor: "error.lighter",
+                    },
+                  }}
+                  aria-label="Dislike this response"
+                >
+                  <ThumbsDown size={14} />
+                </IconButton>
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                {formattedTime}
+              </Typography>
             </Box>
-            <Typography variant="caption" color="text.secondary">
-              {formattedTime}
-            </Typography>
-          </Box>
-        )}
+          )}
       </Box>
 
       {/* Recommendations - shown after message content */}
