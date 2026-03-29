@@ -22,6 +22,7 @@ import { useLogger } from "@hooks/useLogger";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
 import useInfiniteProjects, { flattenProjectPages } from "@api/useGetProjects";
+import useGetProjectDetails from "@api/useGetProjectDetails";
 import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
 import { useGetProjectChangeRequestsStats } from "@api/useGetProjectChangeRequestsStats";
 import {
@@ -55,24 +56,26 @@ export default function DashboardPage(): JSX.Element {
     isLoading: isProjectsLoading,
   } = useInfiniteProjects({ pageSize: 20, enabled: !!projectId });
   const projects = useMemo(() => flattenProjectPages(projectsData), [projectsData]);
-  const project = useMemo(
+  const projectFromList = useMemo(
     () => projects.find((p) => p.id === projectId),
     [projects, projectId],
   );
-  const projectReady = !isProjectsLoading && project !== undefined;
+  const { data: projectDetails, isFetching: isProjectDetailsFetching } =
+    useGetProjectDetails(projectId || "");
+  const resolvedProject = projectFromList ?? projectDetails ?? undefined;
+
+  const awaitingProjectContext =
+    !!projectId &&
+    resolvedProject === undefined &&
+    (isProjectsLoading || isProjectDetailsFetching);
 
   const permissions = useMemo(
-    () =>
-      projectReady
-        ? getProjectPermissions(project?.type?.label)
-        : getProjectPermissions(null),
-    [projectReady, project?.type?.label],
+    () => getProjectPermissions(resolvedProject?.type?.label),
+    [resolvedProject?.type?.label],
   );
 
-  const excludeS0 = projectReady
-    ? shouldExcludeS0(project?.type?.label)
-    : false;
-  const hasAgent = projectReady ? (project?.hasAgent ?? false) : false;
+  const excludeS0 = shouldExcludeS0(resolvedProject?.type?.label);
+  const hasAgent = resolvedProject?.hasAgent ?? false;
 
   const includeCrStats = permissions.includeChangeRequestsInDashboardTotals;
   const showOpsChart = permissions.showOutstandingOpsChart;
@@ -127,7 +130,7 @@ export default function DashboardPage(): JSX.Element {
     enabled: !!projectId && includeCrStats,
   });
 
-  const isDashboardLoading = isAuthLoading || isProjectsLoading;
+  const isDashboardLoading = isAuthLoading || awaitingProjectContext;
 
   useEffect(() => {
     if (isDashboardLoading) {
@@ -462,7 +465,7 @@ export default function DashboardPage(): JSX.Element {
         isErrorActiveCases={
           showOpsChart
             ? includeCrStats
-              ? isErrorServiceRequest && isErrorChangeRequestStats
+              ? isErrorServiceRequest || isErrorChangeRequestStats
               : isErrorServiceRequest
             : false
         }
