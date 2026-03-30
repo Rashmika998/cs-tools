@@ -298,78 +298,126 @@ export default function DashboardPage(): JSX.Element {
 
           switch (stat.id) {
             case "totalCases": {
-              const hasCombined =
-                !!combinedCasesStats && !isErrorCombinedCases;
-              const hasChange =
-                includeCrStats &&
-                !!changeRequestStats &&
-                !isErrorChangeRequestStats;
+              if (includeCrStats) {
+                const hasCombined =
+                  !!combinedCasesStats && !isErrorCombinedCases;
+                const hasChange =
+                  !!changeRequestStats && !isErrorChangeRequestStats;
 
-              const combinedTotal = hasCombined
-                ? combinedCasesStats?.totalCount ??
-                  combinedCasesStats?.totalCases ??
-                  0
-                : 0;
-              const changeTotal = hasChange
-                ? changeRequestStats?.totalCount ?? 0
-                : 0;
+                isCardLoading =
+                  !isErrorCombinedCases &&
+                  !isErrorChangeRequestStats &&
+                  ((!combinedCasesStats && isCombinedCasesLoading) ||
+                    (!changeRequestStats && isChangeRequestStatsLoading));
 
-              value = combinedTotal + changeTotal;
+                isCardError =
+                  !isCardLoading &&
+                  (isErrorCombinedCases ||
+                    isErrorChangeRequestStats ||
+                    !combinedCasesStats ||
+                    !changeRequestStats);
 
-              isCardError =
-                !hasCombined &&
-                (!includeCrStats || !hasChange) &&
-                (isErrorCombinedCases ||
-                  (includeCrStats && isErrorChangeRequestStats));
-              isCardLoading =
-                !isCardError &&
-                ((isCombinedCasesLoading && !combinedCasesStats) ||
-                  (includeCrStats &&
-                    isChangeRequestStatsLoading &&
-                    !changeRequestStats));
+                const combinedTotal = hasCombined
+                  ? combinedCasesStats?.totalCount ??
+                    combinedCasesStats?.totalCases ??
+                    0
+                  : 0;
+                const changeTotal = hasChange
+                  ? changeRequestStats?.totalCount ?? 0
+                  : 0;
+
+                value =
+                  !isCardError && hasCombined && hasChange
+                    ? combinedTotal + changeTotal
+                    : 0;
+              } else {
+                const hasCombined =
+                  !!combinedCasesStats && !isErrorCombinedCases;
+
+                isCardLoading =
+                  !isErrorCombinedCases &&
+                  isCombinedCasesLoading &&
+                  !combinedCasesStats;
+
+                isCardError =
+                  !isCardLoading &&
+                  (isErrorCombinedCases || !combinedCasesStats);
+
+                value = hasCombined
+                  ? combinedCasesStats?.totalCount ??
+                    combinedCasesStats?.totalCases ??
+                    0
+                  : 0;
+              }
               break;
             }
             case "openCases": {
-              const hasCombined =
-                !!combinedCasesStats && !isErrorCombinedCases;
-              const hasChange =
-                includeCrStats &&
-                !!changeRequestStats &&
-                !isErrorChangeRequestStats;
+              if (includeCrStats) {
+                const hasCombined =
+                  !!combinedCasesStats && !isErrorCombinedCases;
+                const hasChange =
+                  !!changeRequestStats && !isErrorChangeRequestStats;
 
-              const combinedActive = hasCombined
-                ? combinedCasesStats?.activeCount ??
-                  combinedCasesStats?.stateCount
-                    ?.filter((state) => state.label !== "Closed")
-                    .reduce((sum, state) => sum + state.count, 0) ??
-                  0
-                : 0;
+                isCardLoading =
+                  !isErrorCombinedCases &&
+                  !isErrorChangeRequestStats &&
+                  ((!combinedCasesStats && isCombinedCasesLoading) ||
+                    (!changeRequestStats && isChangeRequestStatsLoading));
 
-              const changeActive = hasChange
-                ? changeRequestStats?.activeCount ??
-                  changeRequestStats?.stateCount
-                    ?.filter(
-                      (state) =>
-                        state.label !== "Closed" &&
-                        state.label !== "Canceled",
-                    )
-                    .reduce((sum, state) => sum + state.count, 0) ??
-                  0
-                : 0;
+                isCardError =
+                  !isCardLoading &&
+                  (isErrorCombinedCases ||
+                    isErrorChangeRequestStats ||
+                    !combinedCasesStats ||
+                    !changeRequestStats);
 
-              value = combinedActive + changeActive;
+                const combinedActive = hasCombined
+                  ? combinedCasesStats?.activeCount ??
+                    combinedCasesStats?.stateCount
+                      ?.filter((state) => state.label !== "Closed")
+                      .reduce((sum, state) => sum + state.count, 0) ??
+                    0
+                  : 0;
 
-              isCardError =
-                !hasCombined &&
-                (!includeCrStats || !hasChange) &&
-                (isErrorCombinedCases ||
-                  (includeCrStats && isErrorChangeRequestStats));
-              isCardLoading =
-                !isCardError &&
-                ((isCombinedCasesLoading && !combinedCasesStats) ||
-                  (includeCrStats &&
-                    isChangeRequestStatsLoading &&
-                    !changeRequestStats));
+                const changeActive = hasChange
+                  ? changeRequestStats?.activeCount ??
+                    changeRequestStats?.stateCount
+                      ?.filter(
+                        (state) =>
+                          state.label !== "Closed" &&
+                          state.label !== "Canceled",
+                      )
+                      .reduce((sum, state) => sum + state.count, 0) ??
+                    0
+                  : 0;
+
+                value =
+                  !isCardError && hasCombined && hasChange
+                    ? combinedActive + changeActive
+                    : 0;
+              } else {
+                const hasCombined =
+                  !!combinedCasesStats && !isErrorCombinedCases;
+
+                isCardLoading =
+                  !isErrorCombinedCases &&
+                  isCombinedCasesLoading &&
+                  !combinedCasesStats;
+
+                isCardError =
+                  !isCardLoading &&
+                  (isErrorCombinedCases || !combinedCasesStats);
+
+                const combinedActive = hasCombined
+                  ? combinedCasesStats?.activeCount ??
+                    combinedCasesStats?.stateCount
+                      ?.filter((state) => state.label !== "Closed")
+                      .reduce((sum, state) => sum + state.count, 0) ??
+                    0
+                  : 0;
+
+                value = combinedActive;
+              }
               break;
             }
             case "resolvedCases": {
