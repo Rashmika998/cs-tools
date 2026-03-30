@@ -1429,12 +1429,14 @@ export function estimateLineCount(html: string): number {
  */
 export function hasListSearchOrFilters(
   searchTerm: string,
-  filters: Record<string, string | number | undefined | null>,
+  filters: object,
 ): boolean {
   if (searchTerm.trim().length > 0) {
     return true;
   }
-  return Object.values(filters).some(
+  return Object.values(
+    filters as Record<string, string | number | undefined | null>,
+  ).some(
     (v) => v !== undefined && v !== null && String(v).trim() !== "",
   );
 }
