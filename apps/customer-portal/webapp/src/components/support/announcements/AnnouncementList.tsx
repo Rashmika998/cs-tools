@@ -56,49 +56,27 @@ export default function AnnouncementList({
   }
 
   if (cases.length === 0) {
-    if (hasListRefinement) {
-      return (
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            py: 6,
-          }}
-        >
-          <SearchNoResultsIcon
-            style={{
-              width: 200,
-              maxWidth: "100%",
-              height: "auto",
-              marginBottom: 16,
-            }}
-          />
-          <Typography variant="body1" color="text.secondary">
-            No announcements found. Try adjusting your filters or search query.
-          </Typography>
-        </Box>
-      );
-    }
+    const containerSx = {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      py: 6,
+    } as const;
+    const iconStyle = {
+      width: 200,
+      maxWidth: "100%",
+      height: "auto",
+      marginBottom: 16,
+    };
+    const EmptyStateIcon = hasListRefinement ? SearchNoResultsIcon : EmptyIcon;
+    const emptyMessage = hasListRefinement
+      ? "No announcements found. Try adjusting your filters or search query."
+      : "No announcements yet.";
     return (
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          py: 6,
-        }}
-      >
-        <EmptyIcon
-          style={{
-            width: 200,
-            maxWidth: "100%",
-            height: "auto",
-            marginBottom: 16,
-          }}
-        />
+      <Box sx={containerSx}>
+        <EmptyStateIcon style={iconStyle} />
         <Typography variant="body1" color="text.secondary">
-          No announcements yet.
+          {emptyMessage}
         </Typography>
       </Box>
     );
