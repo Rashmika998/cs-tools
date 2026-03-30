@@ -101,7 +101,7 @@ export default function AllConversationsList({
             }}
           />
           <Typography variant="body1" color="text.secondary">
-            No conversations found, Try adjusting your filters or search query.
+            No conversations found. Try adjusting your filters or search query.
           </Typography>
         </Box>
       );
