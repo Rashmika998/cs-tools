@@ -26,4 +26,3 @@ export interface ChangeRequestWorkflowStage {
   current: boolean;
   disabled: boolean;
 }
-
