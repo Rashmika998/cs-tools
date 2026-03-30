@@ -4533,6 +4533,59 @@ service http:InterceptableService / on new http:Listener(9090, listenerConf) {
         return licenseResponse;
     }
 
+    # Get usage stats for a specific project.
+    # 
+    # + id - ID of the project
+    # + return - Project stats response or error
+    resource function get projects/[entity:IdString id]/stats/usage(http:RequestContext ctx)
+        returns types:UsageStats|http:InternalServerError|http:Unauthorized|http:Forbidden|http:NotFound {
+
+        authorization:UserInfoPayload|error userInfo = ctx.getWithType(authorization:HEADER_USER_INFO);
+        if userInfo is error {
+            return <http:InternalServerError>{
+                body: {
+                    message: ERR_MSG_USER_INFO_HEADER_NOT_FOUND
+                }
+            };
+        }
+
+        entity:ProjectStatsResponse|error statsResponse = entity:getProjectActivityStats(userInfo.idToken, id);
+        if statsResponse is error {
+            if getStatusCode(statsResponse) == http:STATUS_UNAUTHORIZED {
+                log:printWarn(string `User: ${userInfo.userId} is not authorized to access the customer portal!`);
+                return <http:Unauthorized>{
+                    body: {
+                        message: ERR_MSG_UNAUTHORIZED_ACCESS
+                    }
+                };
+            }
+            if getStatusCode(statsResponse) == http:STATUS_FORBIDDEN {
+                logForbiddenProjectAccess(id, userInfo.userId);
+                return <http:Forbidden>{
+                    body: {
+                        message: ERR_MSG_PROJECT_ACCESS_FORBIDDEN
+                    }
+                };
+            }
+            if getStatusCode(statsResponse) == http:STATUS_NOT_FOUND {
+                log:printWarn(string `Project with ID: ${id} not found for user: ${userInfo.userId}`);
+                return <http:NotFound>{
+                    body: {
+                        message: "The requested project does not exist or you don't have access to it."
+                    }
+                };
+            }
+
+            string customError = "Failed to retrieve project stats.";
+            log:printError(customError, statsResponse);
+            return <http:InternalServerError>{
+                body: {
+                    message: customError
+                }
+            };
+        }
+        return mapUsageStats(statsResponse);
+    }
 }
 
 # WebSocket service to proxy messages between the browser and the upstream Python AI chat agent for real-time communication in chat sessions.

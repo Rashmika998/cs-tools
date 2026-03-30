@@ -897,3 +897,16 @@ public isolated function mapMetadataResponse(entity:MetadataResponse response) r
         select {id: item.id, label: item.name};
     return {timeZones, projectTypes, featureFlags};
 }
+
+# Map usage stats response to the desired structure.
+#
+# + response - Usage stats response from the entity service
+# + return - Mapped usage stats response
+public isolated function mapUsageStats(entity:ProjectStatsResponse response) returns types:UsageStats {
+    // TODO: Add more stats
+    return {
+        deploymentCount: response.deploymentCount,
+        deployedProductCount: response.deployedProductCount,
+        instanceCount: response.instanceCount
+    };
+}

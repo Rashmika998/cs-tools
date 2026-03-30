@@ -584,6 +584,12 @@ public type ProjectStatsResponse record {|
     decimal billableHours?;
     # SLA status
     string slaStatus?;
+    # Deployment count associated with the project
+    int deploymentCount;
+    # Deployed product count associated with the project
+    int deployedProductCount;
+    # Instance count associated with the project
+    int instanceCount;
     json...;
 |};
 

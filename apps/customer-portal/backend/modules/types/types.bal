@@ -1383,3 +1383,13 @@ public type RegistryTokenCreatePayload record {|
     # Created for user email
     string createdFor?;
 |};
+
+# Usage and metrics statistics for a project.
+public type UsageStats record {|
+    # Deployment count associated with the project
+    int deploymentCount;
+    # Deployed product count associated with the project
+    int deployedProductCount;
+    # Instance count associated with the project
+    int instanceCount;
+|};
