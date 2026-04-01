@@ -64,8 +64,7 @@ export default function GetHelpDropdown(): JSX.Element {
     [projectsData],
   );
   const isProjectsListBusy =
-    isProjectsLoading ||
-    (isProjectsFetching && projects.length === 0);
+    isProjectsLoading || (isProjectsFetching && projects.length === 0);
 
   const selectedProject = useMemo(
     () => projects.find((p) => p.id === projectId),
@@ -73,9 +72,7 @@ export default function GetHelpDropdown(): JSX.Element {
   );
 
   const projectTypeLabel = selectedProject?.type?.label;
-  const isServiceRequestVisible = getProjectPermissions(
-    projectTypeLabel,
-  ).hasSR;
+  const isServiceRequestVisible = getProjectPermissions(projectTypeLabel).hasSR;
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
@@ -112,9 +109,7 @@ export default function GetHelpDropdown(): JSX.Element {
   const handleSecurityReport = () => {
     handleClose();
     if (projectId) {
-      navigate(
-        `/projects/${projectId}/support/security-report/create`,
-      );
+      navigate(`/projects/${projectId}/support/security-report/create`);
     }
   };
 
@@ -155,7 +150,7 @@ export default function GetHelpDropdown(): JSX.Element {
         aria-expanded={open ? "true" : undefined}
         onClick={handleClick}
         variant="contained"
-        color="warning"
+        color="primary"
         startIcon={<CircleQuestionMark size={16} />}
         endIcon={<ChevronDown size={16} />}
         sx={{ px: 2 }}
