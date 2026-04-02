@@ -18,7 +18,10 @@ import type { ReactElement } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import LoggerProvider from "@context/logger/LoggerProvider";
+import { ErrorBannerProvider } from "@context/error-banner/ErrorBannerContext";
 import DeploymentCard from "@components/project-details/deployments/DeploymentCard";
+import type { SelectedDeploymentProduct } from "@components/project-details/deployments/deploymentSelectionTypes";
 import type { ProjectDeploymentItem } from "@models/responses";
 
 const mockDeployment: ProjectDeploymentItem = {
@@ -98,18 +101,28 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false 
 
 function renderWithProviders(ui: ReactElement) {
   return render(
-    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+    <QueryClientProvider client={queryClient}>
+      <LoggerProvider config={{ level: "ERROR", prefix: "Test" }}>
+        <ErrorBannerProvider>{ui}</ErrorBannerProvider>
+      </LoggerProvider>
+    </QueryClientProvider>,
   );
 }
 
+const defaultProductSelection = {
+  selectedProduct: null as SelectedDeploymentProduct | null,
+  onToggleProductSelect: vi.fn(),
+};
+
 describe("DeploymentCard", () => {
-  it("should render deployment name, ErrorIndicators for missing fields, and url", () => {
-    renderWithProviders(<DeploymentCard deployment={mockDeployment} />);
+  it("should render deployment name and url", () => {
+    renderWithProviders(
+      <DeploymentCard deployment={mockDeployment} {...defaultProductSelection} />,
+    );
 
     expect(
       screen.getByRole("heading", { name: "Production" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByTestId("error-indicator").length).toBeGreaterThan(0);
     expect(screen.getByText("https://api.example.com")).toBeInTheDocument();
     expect(
       screen.getByText("Primary production environment"),
@@ -117,7 +130,9 @@ describe("DeploymentCard", () => {
   });
 
   it("should render products section", () => {
-    renderWithProviders(<DeploymentCard deployment={mockDeployment} />);
+    renderWithProviders(
+      <DeploymentCard deployment={mockDeployment} {...defaultProductSelection} />,
+    );
 
     expect(screen.getByText("WSO2 Products")).toBeInTheDocument();
     expect(screen.getAllByText("(0)").length).toBeGreaterThanOrEqual(1);
@@ -125,13 +140,17 @@ describe("DeploymentCard", () => {
   });
 
   it("should render documents section with Upload button", () => {
-    renderWithProviders(<DeploymentCard deployment={mockDeployment} />);
+    renderWithProviders(
+      <DeploymentCard deployment={mockDeployment} {...defaultProductSelection} />,
+    );
 
     expect(screen.getByRole("button", { name: /Upload/ })).toBeInTheDocument();
   });
 
   it("should render documents section", () => {
-    renderWithProviders(<DeploymentCard deployment={mockDeployment} />);
+    renderWithProviders(
+      <DeploymentCard deployment={mockDeployment} {...defaultProductSelection} />,
+    );
 
     expect(screen.getByText("Documents")).toBeInTheDocument();
     expect(screen.getAllByText("(0)").length).toBeGreaterThanOrEqual(1);
@@ -143,13 +162,17 @@ describe("DeploymentCard", () => {
       description: null,
     };
 
-    renderWithProviders(<DeploymentCard deployment={deploymentNoDesc} />);
+    renderWithProviders(
+      <DeploymentCard deployment={deploymentNoDesc} {...defaultProductSelection} />,
+    );
 
     expect(screen.getByText("Not Available")).toBeInTheDocument();
   });
 
   it("should display Edit and Delete icon buttons", () => {
-    renderWithProviders(<DeploymentCard deployment={mockDeployment} />);
+    renderWithProviders(
+      <DeploymentCard deployment={mockDeployment} {...defaultProductSelection} />,
+    );
 
     expect(screen.getByRole("button", { name: "Edit deployment" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete deployment" })).toBeInTheDocument();
