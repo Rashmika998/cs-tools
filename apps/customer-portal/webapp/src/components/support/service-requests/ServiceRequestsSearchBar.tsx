@@ -23,7 +23,13 @@ import {
 } from "@wso2/oxygen-ui";
 import { RotateCcw, Search } from "@wso2/oxygen-ui-icons-react";
 import type { JSX, ChangeEvent } from "react";
-import type { ServiceRequestStatusFilter } from "@pages/ServiceRequestsPage";
+
+/** Status bucket filter for the legacy Service Requests search bar (tabs). */
+export type ServiceRequestStatusFilter =
+  | "all"
+  | "pending"
+  | "in_progress"
+  | "completed";
 
 export interface ServiceRequestStats {
   pending: number;
