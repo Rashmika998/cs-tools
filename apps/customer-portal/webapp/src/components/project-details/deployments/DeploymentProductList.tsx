@@ -14,6 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import type { SelectedDeploymentProduct } from "@components/project-details/deployments/deploymentSelectionTypes";
 import { type DeploymentProductItem } from "@models/responses";
 import { displayValue, formatProjectDate } from "@utils/projectDetails";
 import {
@@ -28,12 +29,12 @@ import {
 } from "@wso2/oxygen-ui";
 import {
   Calendar,
+  Check,
   CircleAlert,
   Cpu,
   Package,
   PencilLine,
   Plus,
-  Server,
   Trash2,
   Zap,
 } from "@wso2/oxygen-ui-icons-react";
@@ -51,6 +52,8 @@ import DeleteProductModal from "@components/project-details/deployments/DeletePr
 interface DeploymentProductListProps {
   deploymentId: string;
   projectId: string;
+  selectedProduct: SelectedDeploymentProduct | null;
+  onToggleProductSelect: (deploymentId: string, productItemId: string) => void;
 }
 
 function ProductsSkeleton(): JSX.Element {
@@ -143,6 +146,8 @@ function ProductsSkeleton(): JSX.Element {
 export default function DeploymentProductList({
   deploymentId,
   projectId,
+  selectedProduct,
+  onToggleProductSelect,
 }: DeploymentProductListProps): JSX.Element {
   const queryClient = useQueryClient();
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
@@ -251,6 +256,13 @@ export default function DeploymentProductList({
                 key={item.id}
                 item={item}
                 deploymentId={deploymentId}
+                isSelected={
+                  selectedProduct?.deploymentId === deploymentId &&
+                  selectedProduct.productItemId === item.id
+                }
+                onToggleSelect={() =>
+                  onToggleProductSelect(deploymentId, item.id)
+                }
                 onEdit={() => setEditingProduct(item)}
                 onDelete={() => handleDeleteClick(item)}
                 isDeleting={deletingProductId === item.id}
@@ -303,6 +315,8 @@ export default function DeploymentProductList({
 interface ProductItemRowProps {
   item: DeploymentProductItem;
   deploymentId: string;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onEdit: () => void;
   onDelete: (item: DeploymentProductItem) => void;
   isDeleting: boolean;
@@ -310,13 +324,21 @@ interface ProductItemRowProps {
 
 function ProductItemRow({
   item,
+  isSelected,
+  onToggleSelect,
   onEdit,
   onDelete,
   isDeleting,
 }: ProductItemRowProps): JSX.Element {
   const emptyVal = "Not Available";
   const name = displayValue(item.product?.label, emptyVal);
-  const version = displayValue(item.version, emptyVal);
+  const versionLabel =
+    typeof item.version === "object" && item.version?.label
+      ? item.version.label
+      : typeof item.version === "string"
+        ? item.version
+        : "";
+  const version = displayValue(versionLabel, emptyVal);
   const description = displayValue(item.description, emptyVal);
   const coresStr =
     typeof item.cores === "number"
@@ -362,10 +384,38 @@ function ProductItemRow({
             alignItems: "flex-start",
             gap: 1.5,
             flex: 1,
+            minWidth: 0,
           }}
         >
-          <Server size={20} style={{ marginTop: 2, flexShrink: 0 }} />
-          <Box sx={{ flex: 1 }}>
+          <Box
+            component="button"
+            type="button"
+            role="checkbox"
+            aria-checked={isSelected}
+            aria-label={`Select ${name} for service request`}
+            onClick={(e) => {
+              e.preventDefault();
+              onToggleSelect();
+            }}
+            sx={{
+              width: 16,
+              height: 16,
+              flexShrink: 0,
+              mt: 0.25,
+              border: "1px solid",
+              borderColor: "divider",
+              bgcolor: isSelected ? "primary.main" : "background.paper",
+              color: isSelected ? "primary.contrastText" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              p: 0,
+            }}
+          >
+            {isSelected ? <Check size={12} strokeWidth={3} aria-hidden /> : null}
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
             <Box
               sx={{
                 display: "flex",
