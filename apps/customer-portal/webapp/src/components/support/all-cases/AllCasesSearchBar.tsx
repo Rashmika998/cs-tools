@@ -36,6 +36,7 @@ import type {
   ProjectDeploymentItem,
 } from "@models/responses";
 import AllCasesFilters from "@components/support/all-cases/AllCasesFilters";
+import { countListSearchAndFilters } from "@utils/support";
 
 export interface AllCasesSearchBarProps {
   searchTerm: string;
@@ -79,9 +80,8 @@ export default function AllCasesSearchBar({
     onSearchChange(event.target.value);
   };
 
-  const hasActiveFilters =
-    searchTerm.trim().length > 0 ||
-    Object.values(filters).some((value) => !!value);
+  const activeFiltersCount = countListSearchAndFilters(searchTerm, filters);
+  const hasActiveFilters = activeFiltersCount > 0;
 
   if (isProjectContextLoading) {
     return (
@@ -131,7 +131,9 @@ export default function AllCasesSearchBar({
             ))
           }
         >
-          {hasActiveFilters ? "Clear Filters" : "Filters"}
+          {hasActiveFilters
+            ? `Clear Filters (${activeFiltersCount})`
+            : "Filters"}
         </Button>
       </Box>
 

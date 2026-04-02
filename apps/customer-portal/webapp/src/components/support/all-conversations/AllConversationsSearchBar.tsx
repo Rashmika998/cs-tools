@@ -30,6 +30,7 @@ import {
   X,
 } from "@wso2/oxygen-ui-icons-react";
 import type { JSX, ChangeEvent } from "react";
+import { countListSearchAndFilters } from "@utils/support";
 import type { CaseMetadataResponse } from "@models/responses";
 import type { AllConversationsFilterValues } from "@models/responses";
 import AllConversationsFilters from "./AllConversationsFilters";
@@ -65,9 +66,8 @@ export default function AllConversationsSearchBar({
     onSearchChange(event.target.value);
   };
 
-  const hasActiveFilters =
-    searchTerm.trim().length > 0 ||
-    Object.values(filters).some((value) => !!value);
+  const activeFiltersCount = countListSearchAndFilters(searchTerm, filters);
+  const hasActiveFilters = activeFiltersCount > 0;
 
   return (
     <Paper sx={{ p: 3, mb: 3 }}>
@@ -106,7 +106,9 @@ export default function AllConversationsSearchBar({
             ))
           }
         >
-          {hasActiveFilters ? "Clear Filters" : "Filters"}
+          {hasActiveFilters
+            ? `Clear Filters (${activeFiltersCount})`
+            : "Filters"}
         </Button>
       </Box>
 

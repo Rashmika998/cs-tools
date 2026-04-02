@@ -15,7 +15,13 @@
 // under the License.
 
 import { Box, Typography, Button } from "@wso2/oxygen-ui";
-import { ListFilter, RotateCcw, ChevronDown, ChevronUp, Plus } from "@wso2/oxygen-ui-icons-react";
+import {
+  ListFilter,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  X,
+} from "@wso2/oxygen-ui-icons-react";
 import { type JSX, useCallback } from "react";
 import { useNavigate, useParams } from "react-router";
 
@@ -73,7 +79,7 @@ const CasesTableHeader = ({
             color="warning"
             size="small"
             onClick={onFilterToggle}
-            startIcon={hasActiveFilters ? <RotateCcw size={16} /> : <ListFilter size={16} />}
+            startIcon={hasActiveFilters ? <X size={16} /> : <ListFilter size={16} />}
             endIcon={
               !hasActiveFilters &&
               (isFiltersOpen ? (
@@ -83,7 +89,9 @@ const CasesTableHeader = ({
               ))
             }
           >
-            {hasActiveFilters ? "Reset Filters" : "Filters"}
+            {hasActiveFilters
+              ? `Clear Filters (${activeFiltersCount})`
+              : "Filters"}
           </Button>
           <Button
             variant="contained"

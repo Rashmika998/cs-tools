@@ -26,7 +26,7 @@ import {
   ListFilter,
   ChevronDown,
   ChevronUp,
-  RotateCcw,
+  X,
 } from "@wso2/oxygen-ui-icons-react";
 import { type JSX, type ChangeEvent } from "react";
 
@@ -64,10 +64,17 @@ const ProductVulnerabilitiesTableHeader = ({
           alignItems: "flex-start",
           mb: 3,
           flexWrap: "wrap",
-          gap: 2,
+          rowGap: 2,
+          columnGap: { xs: 3, sm: 4, md: 6, lg: 8 },
         }}
       >
-        <Box>
+        <Box
+          sx={{
+            minWidth: 0,
+            flex: { xs: "1 1 100%", lg: "0 1 auto" },
+            pr: { lg: 1 },
+          }}
+        >
           <Typography variant="h6">Component Analysis</Typography>
           <Typography variant="body2" color="text.secondary">
             Third-party components with known vulnerabilities and remediation
@@ -77,12 +84,15 @@ const ProductVulnerabilitiesTableHeader = ({
         <Box
           sx={{
             display: "flex",
-            gap: 2,
+            gap: 1,
             alignItems: "center",
             width: { xs: "100%", lg: "auto" },
+            flex: { xs: "1 1 100%", lg: "1 1 auto" },
+            minWidth: 0,
+            pl: { xs: 0, lg: 0.5 },
           }}
         >
-          <Box sx={{ width: "100%", flexGrow: 1 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
             <TextField
               value={searchValue}
               onChange={handleSearchChange}
@@ -112,7 +122,7 @@ const ProductVulnerabilitiesTableHeader = ({
             }}
             startIcon={
               hasActiveFilters ? (
-                <RotateCcw size={16} />
+                <X size={16} />
               ) : (
                 <ListFilter size={16} />
               )
@@ -126,7 +136,9 @@ const ProductVulnerabilitiesTableHeader = ({
               ))
             }
           >
-            {hasActiveFilters ? "Reset Filters" : "Filters"}
+            {hasActiveFilters
+              ? `Clear Filters (${activeFiltersCount})`
+              : "Filters"}
           </Button>
         </Box>
       </Box>

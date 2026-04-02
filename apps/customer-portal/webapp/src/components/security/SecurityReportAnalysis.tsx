@@ -68,6 +68,7 @@ import {
   mapSeverityToDisplay,
   getAssignedEngineerLabel,
   stripHtml,
+  countListSearchAndFilters,
 } from "@utils/support";
 
 /**
@@ -193,10 +194,8 @@ const SecurityReportAnalysis = (): JSX.Element => {
     setPage(value);
   };
 
-  const hasActiveFilters =
-    searchTerm.trim().length > 0 ||
-    !!filters.statusId ||
-    !!filters.deploymentId;
+  const activeFiltersCount = countListSearchAndFilters(searchTerm, filters);
+  const hasActiveFilters = activeFiltersCount > 0;
 
   const reportViewTabs = useMemo(
     () => [
@@ -312,7 +311,9 @@ const SecurityReportAnalysis = (): JSX.Element => {
               ))
             }
           >
-            {hasActiveFilters ? "Clear Filters" : "Filters"}
+            {hasActiveFilters
+              ? `Clear Filters (${activeFiltersCount})`
+              : "Filters"}
           </Button>
         </Box>
 

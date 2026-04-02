@@ -30,6 +30,7 @@ import {
   X,
 } from "@wso2/oxygen-ui-icons-react";
 import type { JSX, ChangeEvent } from "react";
+import { countListSearchAndFilters } from "@utils/support";
 import type { CaseMetadataResponse, ChangeRequestFilterValues } from "@models/responses";
 import ChangeRequestsFilters from "@components/support/change-requests/ChangeRequestsFilters";
 
@@ -64,9 +65,8 @@ export default function ChangeRequestsSearchBar({
     onSearchChange(event.target.value);
   };
 
-  const hasActiveFilters =
-    searchTerm.trim().length > 0 ||
-    Object.values(filters).some((value) => !!value);
+  const activeFiltersCount = countListSearchAndFilters(searchTerm, filters);
+  const hasActiveFilters = activeFiltersCount > 0;
 
   return (
     <Paper sx={{ p: 3, mb: 3 }}>
@@ -105,7 +105,9 @@ export default function ChangeRequestsSearchBar({
             ))
           }
         >
-          {hasActiveFilters ? "Clear Filters" : "Filters"}
+          {hasActiveFilters
+            ? `Clear Filters (${activeFiltersCount})`
+            : "Filters"}
         </Button>
       </Box>
 

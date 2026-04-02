@@ -33,14 +33,18 @@ import {
   CircleAlert,
   Clock,
 } from "@wso2/oxygen-ui-icons-react";
-import type { JSX } from "react";
+import { useMemo, type JSX } from "react";
 import { useGetConversationMessages } from "@api/useGetConversationMessages";
 import type { ConversationMessage, ChatHistoryItem } from "@models/responses";
 import ErrorStateIcon from "@components/common/error-state/ErrorStateIcon";
 import type { Message } from "@models/chatTypes";
 import ChatMessageBubble from "@components/support/novera-ai-assistant/novera-chat-page/ChatMessageBubble";
 import { alpha, useTheme } from "@wso2/oxygen-ui";
-import { formatDateOnly, normalizeUtcDateString } from "@utils/support";
+import {
+  compareByCreatedOnThenId,
+  dateFromApiCreatedOn,
+  formatDateOnly,
+} from "@utils/support";
 import { ROUTE_PREVIOUS_PAGE } from "@/constants/commonConstants";
 
 /**
@@ -70,23 +74,28 @@ export default function ConversationDetailsPage(): JSX.Element {
     isFetchingNextPage,
   } = useGetConversationMessages(conversationId || "", { pageSize: 10 });
 
-  const messages: ConversationMessage[] =
-    data?.pages?.flatMap((p) => p.comments) ?? [];
+  const messages: ConversationMessage[] = useMemo(() => {
+    const raw = data?.pages?.flatMap((p) => p.comments) ?? [];
+    return [...raw].sort(compareByCreatedOnThenId);
+  }, [data]);
 
   const theme = useTheme();
 
-  const chatMessages: Message[] = messages.map((msg) => {
-    const isBot =
-      msg.type?.toLowerCase() === "bot" ||
-      msg.createdBy?.toLowerCase() === "novera";
-    const normalizedDate = normalizeUtcDateString(msg.createdOn);
-    return {
-      id: msg.id,
-      text: msg.content,
-      sender: isBot ? "bot" : "user",
-      timestamp: new Date(normalizedDate),
-    };
-  });
+  const chatMessages: Message[] = useMemo(
+    () =>
+      messages.map((msg) => {
+        const isBot =
+          msg.type?.toLowerCase() === "bot" ||
+          msg.createdBy?.toLowerCase() === "novera";
+        return {
+          id: msg.id,
+          text: msg.content,
+          sender: isBot ? "bot" : "user",
+          timestamp: dateFromApiCreatedOn(msg.createdOn),
+        };
+      }),
+    [messages],
+  );
 
   const conversationStatus = summary?.status ?? "Open";
   const initialMessage = summary?.title ?? "";

@@ -92,14 +92,18 @@ export default function ChatMessageCard({
         gap: 1,
         p: 1.25,
         width: "100%",
+        maxWidth: "100%",
         minHeight: "auto",
         bgcolor: isCurrentUser ? primaryBg : "background.paper",
+        minWidth: 0,
       }}
     >
       <Box
         sx={{
           fontSize: "0.875rem",
           lineHeight: 1.5,
+          overflowX: "auto",
+          maxWidth: "100%",
           "& p": {
             margin: "0 0 0.25em 0",
             whiteSpace: "pre-wrap",
@@ -122,6 +126,13 @@ export default function ChatMessageCard({
             backgroundColor: "action.hover",
             px: 0.5,
             py: 0.25,
+            whiteSpace: "pre",
+            wordBreak: "normal",
+          },
+          "& pre": {
+            overflowX: "auto",
+            maxWidth: "100%",
+            whiteSpace: "pre",
           },
         }}
         ref={contentRef}
