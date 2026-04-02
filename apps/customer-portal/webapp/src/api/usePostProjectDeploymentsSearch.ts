@@ -15,6 +15,7 @@
 // under the License.
 
 import {
+  type InfiniteData,
   useInfiniteQuery,
   useQuery,
   type UseInfiniteQueryResult,
@@ -86,12 +87,12 @@ export interface UsePostProjectDeploymentsSearchInfiniteOptions {
  *
  * @param {string} projectId - Project ID.
  * @param {UsePostProjectDeploymentsSearchInfiniteOptions} [options] - request/pageSize/enabled.
- * @returns {UseInfiniteQueryResult<ProjectDeploymentsListResponse, Error>} Infinite query result.
+ * @returns {UseInfiniteQueryResult<InfiniteData<ProjectDeploymentsListResponse>, Error>} Infinite query result.
  */
 export function usePostProjectDeploymentsSearchInfinite(
   projectId: string,
   options?: UsePostProjectDeploymentsSearchInfiniteOptions,
-): UseInfiniteQueryResult<ProjectDeploymentsListResponse, Error> {
+): UseInfiniteQueryResult<InfiniteData<ProjectDeploymentsListResponse>, Error> {
   const logger = useLogger();
   const { isSignedIn, isLoading: isAuthLoading } = useAsgardeo();
   const authFetch = useAuthApiClient();
