@@ -23,7 +23,8 @@ import CaseDetailsDetailsPanel from "@case-details-details/CaseDetailsDetailsPan
 import CallsPanel from "@case-details-calls/CallsPanel";
 
 export interface CaseDetailsTabPanelsProps {
-  activeTab: number;
+  /** Resolved panel index (Activity=0 … Knowledge Base=4); accounts for hidden Calls tab. */
+  panelIndex: number;
   caseId: string;
   data?: CaseDetails;
   isError?: boolean;
@@ -39,7 +40,7 @@ export interface CaseDetailsTabPanelsProps {
  * @returns {JSX.Element | null} The panel content.
  */
 export default function CaseDetailsTabPanels({
-  activeTab,
+  panelIndex,
   caseId,
   data,
   isError = false,
@@ -47,7 +48,7 @@ export default function CaseDetailsTabPanels({
   focusMode = false,
   isEngagement = false,
 }: CaseDetailsTabPanelsProps): JSX.Element | null {
-  switch (activeTab) {
+  switch (panelIndex) {
     case 0: {
       const resolvedProjectId = data?.project?.id ?? projectId;
       if (!resolvedProjectId) {
@@ -111,6 +112,7 @@ export default function CaseDetailsTabPanels({
             !!data?.closedOn || data?.status?.label === "Closed"
           }
           caseStatusLabel={data?.status?.label}
+          caseSeverityId={data?.severity?.id}
         />
       );
     }
