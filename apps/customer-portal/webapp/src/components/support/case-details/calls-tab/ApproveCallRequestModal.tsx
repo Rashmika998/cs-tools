@@ -95,11 +95,11 @@ export default function ApproveCallRequestModal({
 
   useEffect(() => {
     if (!open) {
-      setPreferredDateTimes([""]);
+      queueMicrotask(() => setPreferredDateTimes([""]));
       return;
     }
     if (!call) {
-      setPreferredDateTimes([""]);
+      queueMicrotask(() => setPreferredDateTimes([""]));
       return;
     }
     const rawPreferred =
@@ -109,14 +109,21 @@ export default function ApproveCallRequestModal({
           ? [call.scheduleTime]
           : [""];
     const sorted = sortCallRequestPreferredTimeStringsAsc(rawPreferred);
-    setPreferredDateTimes(
-      sorted.map((t) => callRequestApiPreferredTimeToDatetimeLocal(t)),
-    );
-    setModalError(null);
-  }, [open, call]);
+    queueMicrotask(() => {
+      setPreferredDateTimes(
+        sorted.map((t) =>
+          callRequestApiPreferredTimeToDatetimeLocal(t, userTimeZone),
+        ),
+      );
+      setModalError(null);
+    });
+  }, [open, call, userTimeZone]);
 
   const minDatetimeLocal = useMemo(
-    () => computeMinScheduleDatetimeLocalForTimeZone(null, userTimeZone),
+    () => {
+      void minTick;
+      return computeMinScheduleDatetimeLocalForTimeZone(null, userTimeZone);
+    },
     [userTimeZone, minTick],
   );
   const isValid =
@@ -171,7 +178,10 @@ export default function ApproveCallRequestModal({
     const minKey = normalizeDatetimeLocalForCompare(minDatetimeLocal);
     const utcTimes: string[] = [];
     for (const localTime of preferredDateTimes) {
-      const iso = callRequestPreferredTimeFromDatetimeLocal(localTime);
+      const iso = callRequestPreferredTimeFromDatetimeLocal(
+        localTime,
+        userTimeZone,
+      );
       if (!iso) {
         setModalError("Please enter a valid preferred time.");
         return;
@@ -216,6 +226,7 @@ export default function ApproveCallRequestModal({
     onSuccess,
     onError,
     minDatetimeLocal,
+    userTimeZone,
   ]);
 
   return (
