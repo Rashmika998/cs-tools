@@ -40,7 +40,7 @@ import {
 } from "@wso2/oxygen-ui-icons-react";
 import { useState, type JSX } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetDeploymentsProducts } from "@api/useGetDeploymentsProducts";
+import { usePostDeploymentProductsSearchAll } from "@api/usePostDeploymentProductsSearch";
 import { usePatchDeploymentProduct } from "@api/usePatchDeploymentProduct";
 import { ApiQueryKeys } from "@constants/apiConstants";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
@@ -160,12 +160,13 @@ export default function DeploymentProductList({
   const [productToDelete, setProductToDelete] =
     useState<DeploymentProductItem | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const {
-    data: products = [],
-    isLoading,
-    isFetching,
-    isError,
-  } = useGetDeploymentsProducts(deploymentId);
+  const productsQuery = usePostDeploymentProductsSearchAll(deploymentId, {
+    enabled: !!deploymentId,
+  });
+  const products = productsQuery.data ?? [];
+  const isLoading = productsQuery.isLoading;
+  const isFetching = productsQuery.isFetching;
+  const isError = productsQuery.isError;
   const patchProduct = usePatchDeploymentProduct();
 
   const handleDeleteClick = (item: DeploymentProductItem) => {
