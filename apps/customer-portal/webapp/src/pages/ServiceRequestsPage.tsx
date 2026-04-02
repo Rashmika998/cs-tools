@@ -217,6 +217,12 @@ export default function ServiceRequestsPage(): JSX.Element {
     setPage(1);
   };
 
+  const handleClearRefinements = () => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setPage(1);
+  };
+
   const handleNewServiceRequest = () => {
     navigate(`/projects/${projectId}/${basePath}/service-requests/create`);
   };
@@ -292,6 +298,7 @@ export default function ServiceRequestsPage(): JSX.Element {
         statusFilter={statusFilter}
         onStatusFilterChange={handleStatusFilterChange}
         stats={srStats}
+        onClearRefinements={handleClearRefinements}
       />
 
       <Box
