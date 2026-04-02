@@ -33,7 +33,7 @@ import {
 import { X } from "@wso2/oxygen-ui-icons-react";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import type { SelectChangeEvent } from "@wso2/oxygen-ui";
-import { useState, useEffect, type JSX, type ChangeEvent } from "react";
+import { useMemo, useState, type JSX, type ChangeEvent, type UIEvent } from "react";
 
 export interface FilterField {
   id: string;
@@ -41,9 +41,12 @@ export interface FilterField {
   type: "select" | "text";
   options?: string[] | { value: string; label: string }[];
   placeholder?: string;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isFetchingMore?: boolean;
 }
 
-interface FilterPopoverProps<T> {
+interface FilterPopoverProps<T extends Record<string, unknown>> {
   open: boolean;
   onClose: () => void;
   onSearch: (filters: T) => void;
@@ -54,7 +57,7 @@ interface FilterPopoverProps<T> {
   isError?: boolean;
 }
 
-const FilterPopover = <T extends Record<string, any>>({
+const FilterPopover = <T extends Record<string, unknown>>({
   open,
   onClose,
   onSearch,
@@ -64,20 +67,15 @@ const FilterPopover = <T extends Record<string, any>>({
   isLoading = false,
   isError = false,
 }: FilterPopoverProps<T>): JSX.Element => {
-  const [tempFilters, setTempFilters] = useState<T>(initialFilters);
-
-  useEffect(() => {
-    if (open) {
-      setTempFilters(initialFilters);
-    }
-  }, [open, initialFilters]);
+  const initialTempFilters = useMemo(() => initialFilters, [initialFilters]);
+  const [tempFilters, setTempFilters] = useState<T>(() => initialTempFilters);
 
   const handleSelectChange =
     (field: string) => (event: SelectChangeEvent<string>) => {
       setTempFilters((prev) => ({
         ...prev,
         [field]: event.target.value,
-      }));
+      }) as T);
     };
 
   const handleTextChange =
@@ -85,14 +83,13 @@ const FilterPopover = <T extends Record<string, any>>({
       setTempFilters((prev) => ({
         ...prev,
         [field]: event.target.value,
-      }));
+      }) as T);
     };
 
   const handleReset = () => {
-    const resetState = fields.reduce((acc, field) => {
-      acc[field.id] = "";
-      return acc;
-    }, {} as any);
+    const resetState = Object.fromEntries(
+      fields.map((field) => [field.id, ""]),
+    ) as unknown as T;
     setTempFilters(resetState);
   };
 
@@ -102,7 +99,13 @@ const FilterPopover = <T extends Record<string, any>>({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog
+      key={open ? "open" : "closed"}
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="sm"
+    >
       {/* filter popover title */}
       <DialogTitle
         sx={{
@@ -179,6 +182,25 @@ const FilterPopover = <T extends Record<string, any>>({
                     value={tempFilters[field.id] || ""}
                     label={field.label}
                     onChange={handleSelectChange(field.id)}
+                    MenuProps={{
+                      PaperProps: {
+                        onScroll: (e: UIEvent<HTMLElement>) => {
+                          if (
+                            !field.onLoadMore ||
+                            !field.hasMore ||
+                            field.isFetchingMore
+                          ) {
+                            return;
+                          }
+                          const el = e.currentTarget;
+                          const threshold = 24;
+                          const isNearBottom =
+                            el.scrollHeight - el.scrollTop - el.clientHeight <
+                            threshold;
+                          if (isNearBottom) field.onLoadMore();
+                        },
+                      },
+                    }}
                   >
                     {/* filter popover select menu item */}
                     <MenuItem value="">

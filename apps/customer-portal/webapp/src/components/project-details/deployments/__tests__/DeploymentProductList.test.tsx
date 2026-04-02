@@ -19,14 +19,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DeploymentProductList from "@components/project-details/deployments/DeploymentProductList";
-import { useGetDeploymentsProducts } from "@api/useGetDeploymentsProducts";
+import { usePostDeploymentProductsSearchAll } from "@api/usePostDeploymentProductsSearch";
 import { useGetProducts } from "@api/useGetProducts";
 import { useSearchProductVersions } from "@api/useSearchProductVersions";
 import { usePostDeploymentProduct } from "@api/usePostDeploymentProduct";
 import { usePatchDeploymentProduct } from "@api/usePatchDeploymentProduct";
 import type { DeploymentProductItem } from "@models/responses";
 
-vi.mock("@api/useGetDeploymentsProducts");
+vi.mock("@api/usePostDeploymentProductsSearch");
 vi.mock("@api/useGetProducts");
 vi.mock("@api/useSearchProductVersions");
 vi.mock("@api/usePostDeploymentProduct");
@@ -87,11 +87,11 @@ describe("DeploymentProductList", () => {
   });
 
   it("should render products count and Add Product button", () => {
-    vi.mocked(useGetDeploymentsProducts).mockReturnValue({
+    vi.mocked(usePostDeploymentProductsSearchAll).mockReturnValue({
       data: mockProducts,
       isLoading: false,
       isError: false,
-    } as unknown as ReturnType<typeof useGetDeploymentsProducts>);
+    } as unknown as ReturnType<typeof usePostDeploymentProductsSearchAll>);
 
     renderWithProviders(
       <DeploymentProductList
@@ -109,11 +109,11 @@ describe("DeploymentProductList", () => {
   });
 
   it("should render product labels and descriptions", () => {
-    vi.mocked(useGetDeploymentsProducts).mockReturnValue({
+    vi.mocked(usePostDeploymentProductsSearchAll).mockReturnValue({
       data: mockProducts,
       isLoading: false,
       isError: false,
-    } as unknown as ReturnType<typeof useGetDeploymentsProducts>);
+    } as unknown as ReturnType<typeof usePostDeploymentProductsSearchAll>);
 
     renderWithProviders(
       <DeploymentProductList
@@ -130,11 +130,11 @@ describe("DeploymentProductList", () => {
   });
 
   it("should display No products added yet when products array is empty", () => {
-    vi.mocked(useGetDeploymentsProducts).mockReturnValue({
+    vi.mocked(usePostDeploymentProductsSearchAll).mockReturnValue({
       data: [],
       isLoading: false,
       isError: false,
-    } as unknown as ReturnType<typeof useGetDeploymentsProducts>);
+    } as unknown as ReturnType<typeof usePostDeploymentProductsSearchAll>);
 
     renderWithProviders(
       <DeploymentProductList
@@ -150,7 +150,7 @@ describe("DeploymentProductList", () => {
   });
 
   it("should display Not Available for null product label", () => {
-    vi.mocked(useGetDeploymentsProducts).mockReturnValue({
+    vi.mocked(usePostDeploymentProductsSearchAll).mockReturnValue({
       data: [
         {
           id: "p1",
@@ -163,7 +163,7 @@ describe("DeploymentProductList", () => {
       ],
       isLoading: false,
       isError: false,
-    } as unknown as ReturnType<typeof useGetDeploymentsProducts>);
+    } as unknown as ReturnType<typeof usePostDeploymentProductsSearchAll>);
 
     renderWithProviders(
       <DeploymentProductList
@@ -177,11 +177,11 @@ describe("DeploymentProductList", () => {
   });
 
   it("should show loading state", () => {
-    vi.mocked(useGetDeploymentsProducts).mockReturnValue({
+    vi.mocked(usePostDeploymentProductsSearchAll).mockReturnValue({
       data: undefined,
       isLoading: true,
       isError: false,
-    } as unknown as ReturnType<typeof useGetDeploymentsProducts>);
+    } as unknown as ReturnType<typeof usePostDeploymentProductsSearchAll>);
 
     renderWithProviders(
       <DeploymentProductList
@@ -196,11 +196,11 @@ describe("DeploymentProductList", () => {
   });
 
   it("should show error state when products fetch fails", () => {
-    vi.mocked(useGetDeploymentsProducts).mockReturnValue({
+    vi.mocked(usePostDeploymentProductsSearchAll).mockReturnValue({
       data: undefined,
       isLoading: false,
       isError: true,
-    } as unknown as ReturnType<typeof useGetDeploymentsProducts>);
+    } as unknown as ReturnType<typeof usePostDeploymentProductsSearchAll>);
 
     renderWithProviders(
       <DeploymentProductList
@@ -214,11 +214,11 @@ describe("DeploymentProductList", () => {
   });
 
   it("should open Add Product modal when button is clicked", () => {
-    vi.mocked(useGetDeploymentsProducts).mockReturnValue({
+    vi.mocked(usePostDeploymentProductsSearchAll).mockReturnValue({
       data: mockProducts,
       isLoading: false,
       isError: false,
-    } as unknown as ReturnType<typeof useGetDeploymentsProducts>);
+    } as unknown as ReturnType<typeof usePostDeploymentProductsSearchAll>);
 
     renderWithProviders(
       <DeploymentProductList

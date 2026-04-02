@@ -35,8 +35,8 @@ const mockDeployment: ProjectDeploymentItem = {
   type: { id: "3", label: "Staging" },
 };
 
-vi.mock("@api/useGetDeploymentsProducts", () => ({
-  useGetDeploymentsProducts: () => ({
+vi.mock("@api/usePostDeploymentProductsSearch", () => ({
+  usePostDeploymentProductsSearchAll: () => ({
     data: [],
     isLoading: false,
     isError: false,

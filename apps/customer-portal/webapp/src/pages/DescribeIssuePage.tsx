@@ -26,7 +26,7 @@ import { ArrowLeft, Send } from "@wso2/oxygen-ui-icons-react";
 import { useState, useRef, useCallback, useMemo, type JSX } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import Editor from "@components/common/rich-text-editor/Editor";
-import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
+import { usePostProjectDeploymentsSearchAll } from "@api/usePostProjectDeploymentsSearch";
 import useGetProjectDetails from "@api/useGetProjectDetails";
 import { useAllDeploymentProducts } from "@hooks/useAllDeploymentProducts";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
@@ -52,7 +52,7 @@ export default function DescribeIssuePage(): JSX.Element {
   const [value, setValue] = useState("");
   const [isLoadingAfterClick, setIsLoadingAfterClick] = useState(false);
 
-  const { data: projectDeployments } = useGetProjectDeployments(
+  const { data: projectDeployments } = usePostProjectDeploymentsSearchAll(
     projectId || "",
   );
   const { productsByDeploymentId } =

@@ -77,14 +77,18 @@ vi.mock("@wso2/oxygen-ui", () => ({
   ),
   Divider: () => <hr />,
   Stack: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  colors: {
-    orange: {
-      700: "#C2410C",
+  colors: new Proxy(
+    {},
+    {
+      get: () =>
+        new Proxy(
+          {},
+          {
+            get: () => "#000000",
+          },
+        ),
     },
-    yellow: {
-      800: "#854D0E",
-    },
-  },
+  ),
 }));
 
 vi.mock("@components/common/rich-text-editor/Editor", () => ({
@@ -114,20 +118,24 @@ vi.mock("@utils/richTextEditor", () => ({
     (html || "").replace(/<[^>]*>/g, "").trim() || html || "",
 }));
 
-// Mock icons
-vi.mock("@wso2/oxygen-ui-icons-react", () => ({
-  Bot: () => <svg data-testid="bot-icon" />,
-  User: () => <svg data-testid="user-icon" />,
-  ThumbsUp: () => <svg data-testid="thumbs-up-icon" />,
-  ThumbsDown: () => <svg data-testid="thumbs-down-icon" />,
-  ArrowLeft: () => <svg data-testid="back-icon" />,
-  Send: () => <svg data-testid="send-icon" />,
-  CircleAlert: () => <svg data-testid="alert-icon" />,
-  Sparkles: () => <svg data-testid="sparkles-icon" />,
-  FileText: () => <svg data-testid="file-text-icon" />,
-  Copy: () => <svg data-testid="copy-icon" />,
-  PanelTopClose: () => <svg data-testid="panel-top-close-icon" />,
-}));
+// Mock only the icons we assert on; keep rest real.
+vi.mock("@wso2/oxygen-ui-icons-react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@wso2/oxygen-ui-icons-react")>();
+  return {
+    ...actual,
+    Bot: () => <svg data-testid="bot-icon" />,
+    User: () => <svg data-testid="user-icon" />,
+    ThumbsUp: () => <svg data-testid="thumbs-up-icon" />,
+    ThumbsDown: () => <svg data-testid="thumbs-down-icon" />,
+    ArrowLeft: () => <svg data-testid="back-icon" />,
+    Send: () => <svg data-testid="send-icon" />,
+    CircleAlert: () => <svg data-testid="alert-icon" />,
+    Sparkles: () => <svg data-testid="sparkles-icon" />,
+    FileText: () => <svg data-testid="file-text-icon" />,
+    Copy: () => <svg data-testid="copy-icon" />,
+    PanelTopClose: () => <svg data-testid="panel-top-close-icon" />,
+  };
+});
 
 const { useAllDeploymentProductsMock } = vi.hoisted(() => ({
   useAllDeploymentProductsMock: vi.fn(),
@@ -162,14 +170,8 @@ vi.mock("@api/usePostConversationMessages", () => ({
   }),
 }));
 
-vi.mock("@api/useGetDeployments", () => ({
-  useGetDeployments: () => ({
-    data: { deployments: [] },
-  }),
-}));
-
-vi.mock("@api/useGetProjectDeployments", () => ({
-  useGetProjectDeployments: () => ({
+vi.mock("@api/usePostProjectDeploymentsSearch", () => ({
+  usePostProjectDeploymentsSearchAll: () => ({
     data: [
       { id: "dep-1", type: { label: "Staging" } },
       { id: "dep-2", type: { label: "QA" } },
@@ -191,8 +193,8 @@ vi.mock("@api/useChatWebSocket", () => ({
   }),
 }));
 
-vi.mock("@api/useGetDeploymentsProducts", () => ({
-  fetchDeploymentProducts: vi
+vi.mock("@api/usePostDeploymentProductsSearch", () => ({
+  fetchDeploymentProductsAll: vi
     .fn()
     .mockResolvedValue([{ product: { label: "WSO2 API Manager 3.2.0" } }]),
 }));

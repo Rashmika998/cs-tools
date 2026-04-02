@@ -30,8 +30,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectDetails from "@api/useGetProjectDetails";
 import { useAuthApiClient } from "@api/useAuthApiClient";
-import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
-import { useGetDeploymentsProducts } from "@api/useGetDeploymentsProducts";
+import {
+  usePostProjectDeploymentsSearchInfinite,
+} from "@api/usePostProjectDeploymentsSearch";
+import {
+  extractDeploymentProducts,
+  usePostDeploymentProductsSearchInfinite,
+} from "@api/usePostDeploymentProductsSearch";
 import { usePostCase } from "@api/usePostCase";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
@@ -154,24 +159,33 @@ export default function CreateCasePage(): JSX.Element {
   const attachmentIdCounterRef = useRef(0);
   const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
   const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
-  const { data: projectDeployments, isLoading: isDeploymentsLoading } =
-    useGetProjectDeployments(projectId || "");
+  const deploymentsQuery = usePostProjectDeploymentsSearchInfinite(projectId || "", {
+    pageSize: 10,
+    enabled: !!projectId,
+  });
+  const projectDeployments = useMemo(
+    () => deploymentsQuery.data?.pages.flatMap((p) => p.deployments ?? []) ?? [],
+    [deploymentsQuery.data],
+  );
+  const isDeploymentsLoading = deploymentsQuery.isLoading;
   const baseDeploymentOptions = getBaseDeploymentOptions(projectDeployments);
   const selectedDeploymentMatch = useMemo(
     () => resolveDeploymentMatch(deployment, projectDeployments, undefined),
     [deployment, projectDeployments],
   );
   const selectedDeploymentId = selectedDeploymentMatch?.id ?? "";
-  const {
-    data: deploymentProductsData,
-    isLoading: deploymentProductsLoading,
-    isError: deploymentProductsError,
-  } = useGetDeploymentsProducts(selectedDeploymentId);
+  const deploymentProductsQuery = usePostDeploymentProductsSearchInfinite(
+    selectedDeploymentId,
+    { pageSize: 10, enabled: !!selectedDeploymentId },
+  );
+  const deploymentProductsLoading = deploymentProductsQuery.isLoading;
+  const deploymentProductsError = deploymentProductsQuery.isError;
   const allDeploymentProducts = useMemo(() => {
-    if (!deploymentProductsData) return [];
-
-    return deploymentProductsData.filter((item) => item.product?.label?.trim());
-  }, [deploymentProductsData]);
+    const items = deploymentProductsQuery.data?.pages.flatMap((page) =>
+      extractDeploymentProducts(page),
+    ) ?? [];
+    return items.filter((item) => item.product?.label?.trim());
+  }, [deploymentProductsQuery.data]);
   const baseProductOptions = getBaseProductOptions(allDeploymentProducts);
 
   // Sort product options in ascending order by label
@@ -831,6 +845,23 @@ export default function CreateCasePage(): JSX.Element {
             isRelatedCaseMode={noAiMode}
             extraProductOptions={extraProductOptions}
             isDeploymentDisabled={!!relatedCase}
+            onLoadMoreDeployments={() => {
+              if (deploymentsQuery.hasNextPage && !deploymentsQuery.isFetchingNextPage) {
+                void deploymentsQuery.fetchNextPage();
+              }
+            }}
+            hasMoreDeployments={!!deploymentsQuery.hasNextPage}
+            isFetchingMoreDeployments={deploymentsQuery.isFetchingNextPage}
+            onLoadMoreProducts={() => {
+              if (
+                deploymentProductsQuery.hasNextPage &&
+                !deploymentProductsQuery.isFetchingNextPage
+              ) {
+                void deploymentProductsQuery.fetchNextPage();
+              }
+            }}
+            hasMoreProducts={!!deploymentProductsQuery.hasNextPage}
+            isFetchingMoreProducts={deploymentProductsQuery.isFetchingNextPage}
           />
 
           <CaseDetailsSection

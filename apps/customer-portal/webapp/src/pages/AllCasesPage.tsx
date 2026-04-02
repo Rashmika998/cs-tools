@@ -39,7 +39,7 @@ import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
 import useGetProjectDetails from "@api/useGetProjectDetails";
 import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectCases from "@api/useGetProjectCases";
-import { useGetDeployments } from "@api/useGetDeployments";
+import { usePostProjectDeploymentsSearchInfinite } from "@api/usePostProjectDeploymentsSearch";
 import { hasListSearchOrFilters, isS0Case } from "@utils/support";
 import { CaseType } from "@constants/supportConstants";
 import {
@@ -94,8 +94,13 @@ export default function AllCasesPage(): JSX.Element {
   // Fetch filter metadata first to get Incident and Query IDs for stats API
   const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
-  // Fetch deployments for the deployment filter
-  const { data: deploymentsData } = useGetDeployments(projectId || "");
+  // Fetch deployments for the deployment filter (10 at a time)
+  const deploymentsQuery = usePostProjectDeploymentsSearchInfinite(projectId || "", {
+    pageSize: 10,
+    enabled: !!projectId,
+  });
+  const deploymentsList =
+    deploymentsQuery.data?.pages.flatMap((p) => p.deployments ?? []) ?? [];
 
   const {
     data: stats,
@@ -113,7 +118,8 @@ export default function AllCasesPage(): JSX.Element {
         statusIds: filters.statusId ? [Number(filters.statusId)] : undefined,
         severityId: filters.severityId ? Number(filters.severityId) : undefined,
         issueId: filters.issueTypes ? Number(filters.issueTypes) : undefined,
-        deploymentId: filters.deploymentId || undefined,
+        deploymentId:
+          permissions.hasDeployments ? filters.deploymentId || undefined : undefined,
         searchQuery: searchTerm.trim() || undefined,
         createdByMe: createdByMe || undefined,
       },
@@ -122,7 +128,7 @@ export default function AllCasesPage(): JSX.Element {
         order: sortOrder,
       },
     }),
-    [filters, searchTerm, sortField, sortOrder, createdByMe],
+    [filters, searchTerm, sortField, sortOrder, createdByMe, permissions.hasDeployments],
   );
 
   // Fetch all cases using infinite query (runs in parallel with stats when projectId and auth are ready)
@@ -231,18 +237,7 @@ export default function AllCasesPage(): JSX.Element {
     setPage(1);
   };
 
-  useEffect(() => {
-    if (!projectDetailsReady) {
-      return;
-    }
-    if (
-      projectDetailsReady &&
-      !permissions.hasDeployments &&
-      filters.deploymentId
-    ) {
-      setFilters((prev) => ({ ...prev, deploymentId: undefined }));
-    }
-  }, [projectDetailsReady, permissions.hasDeployments, filters.deploymentId]);
+  // Note: deploymentId is ignored in API request when user lacks permissions.
 
   const listHasRefinement = hasListSearchOrFilters(searchTerm, filters);
 
@@ -286,9 +281,19 @@ export default function AllCasesPage(): JSX.Element {
         filterMetadata={filterMetadata}
         deployments={
           projectDetailsReady && permissions.hasDeployments
-            ? (deploymentsData?.deployments ?? [])
+            ? deploymentsList
             : []
         }
+        onLoadMoreDeployments={() => {
+          if (
+            deploymentsQuery.hasNextPage &&
+            !deploymentsQuery.isFetchingNextPage
+          ) {
+            void deploymentsQuery.fetchNextPage();
+          }
+        }}
+        hasMoreDeployments={!!deploymentsQuery.hasNextPage}
+        isFetchingMoreDeployments={deploymentsQuery.isFetchingNextPage}
         onFilterChange={handleFilterChange}
         onClearFilters={handleClearFilters}
         excludeS0={excludeS0}

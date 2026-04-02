@@ -16,22 +16,28 @@
 
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
+import { usePostProjectDeploymentsSearchAll } from "@api/usePostProjectDeploymentsSearch";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { useAuthApiClient } from "@api/useAuthApiClient";
 
-const mockProjectDeploymentsResponse = [
-  {
-    id: "1",
-    name: "Prod",
-    createdOn: "2026-02-06",
-    updatedOn: "2026-02-06",
-    description: null,
-    url: null,
-    project: { id: "p1", label: "My Project" },
-    type: { id: "6", label: "Primary Production" },
-  },
-];
+const mockProjectDeploymentsResponse = {
+  deployments: [
+    {
+      id: "1",
+      name: "Prod",
+      createdOn: "2026-02-06",
+      updatedOn: "2026-02-06",
+      description: null,
+      url: null,
+      project: { id: "p1", label: "My Project" },
+      type: { id: "6", label: "Primary Production" },
+    },
+  ],
+  totalRecords: 1,
+  offset: 0,
+  limit: 10,
+};
 
 const mockAuthFetch = vi.fn().mockResolvedValue({
   ok: true,
@@ -55,7 +61,11 @@ vi.mock("@asgardeo/react", () => ({
   }),
 }));
 
-describe("useGetProjectDeployments", () => {
+vi.mock("@api/useAuthApiClient", () => ({
+  useAuthApiClient: vi.fn(),
+}));
+
+describe("usePostProjectDeploymentsSearchAll", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
@@ -67,6 +77,7 @@ describe("useGetProjectDeployments", () => {
       json: () => Promise.resolve(mockProjectDeploymentsResponse),
       status: 200,
     } as Response);
+    vi.mocked(useAuthApiClient).mockReturnValue(mockAuthFetch);
     (
       window as unknown as {
         config?: { CUSTOMER_PORTAL_BACKEND_BASE_URL?: string };
@@ -87,22 +98,22 @@ describe("useGetProjectDeployments", () => {
 
   it("should return deployments from API", async () => {
     const { result } = renderHook(
-      () => useGetProjectDeployments("project-123"),
+      () => usePostProjectDeploymentsSearchAll("project-123"),
       { wrapper },
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockAuthFetch).toHaveBeenCalledWith(
-      "https://api.test/projects/project-123/deployments",
-      expect.objectContaining({ method: "GET" }),
+      "https://api.test/projects/project-123/deployments/search",
+      expect.objectContaining({ method: "POST" }),
     );
-    expect(result.current.data).toEqual(mockProjectDeploymentsResponse);
+    expect(result.current.data).toEqual(mockProjectDeploymentsResponse.deployments);
     expect(result.current.data?.[0].type.label).toBe("Primary Production");
   });
 
   it("should be disabled when projectId is empty", () => {
-    const { result } = renderHook(() => useGetProjectDeployments(""), {
+    const { result } = renderHook(() => usePostProjectDeploymentsSearchAll(""), {
       wrapper,
     });
 

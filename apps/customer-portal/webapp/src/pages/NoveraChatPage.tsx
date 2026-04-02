@@ -25,7 +25,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate, useParams, useLocation } from "react-router";
-import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
+import { usePostProjectDeploymentsSearchAll } from "@api/usePostProjectDeploymentsSearch";
 import { useGetConversationMessages } from "@api/useGetConversationMessages";
 import { usePostCaseClassifications } from "@api/usePostCaseClassifications";
 import { useChatWebSocket } from "@api/useChatWebSocket";
@@ -84,7 +84,7 @@ export default function NoveraChatPage(): JSX.Element {
     }
   };
 
-  const { data: projectDeployments } = useGetProjectDeployments(
+  const { data: projectDeployments } = usePostProjectDeploymentsSearchAll(
     projectId || "",
   );
   const { data: projectDetails } = useGetProjectDetails(projectId || "");

@@ -838,6 +838,8 @@ export interface ProjectDeploymentItem {
   url: string | null;
   project: { id: string; label: string };
   type: { id: string; label: string };
+  deployedProductCount?: number;
+  instanceCount?: number;
 }
 
 // Response for GET /deployments/:deploymentId/products (paginated).
@@ -883,6 +885,18 @@ export interface DeploymentProductItem {
   releasedOn?: string | null;
   endOfLifeOn?: string | null;
   updates?: ProductUpdate[] | null;
+  instanceCount?: number;
+  instances?: Array<{
+    id: string;
+    instance: string;
+    coreUsageCount?: number | null;
+    updates?: number | null;
+    jdkVersion?: string | null;
+    createdOn?: string | null;
+    updatedOn?: string | null;
+    customCreatedOn?: string | null;
+    customUpdatedOn?: string | null;
+  }> | null;
 }
 
 // GET /attachments/:id — full payload with base64 or data URL in `content`.

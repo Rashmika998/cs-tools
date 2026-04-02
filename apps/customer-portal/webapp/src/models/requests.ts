@@ -265,6 +265,34 @@ export interface TimeCardSearchRequest {
   };
 }
 
+export interface ConsumptionFilter {
+  include?: boolean;
+  startDate?: string;
+  endDate?: string;
+}
+
+// Request payload for searching deployments (POST /projects/:projectId/deployments/search).
+export interface DeploymentSearchRequest {
+  filters?: {
+    consumption?: ConsumptionFilter;
+  };
+  pagination?: {
+    limit?: number;
+    offset?: number;
+  };
+}
+
+// Request payload for searching deployed products (POST /deployments/:deploymentId/products/search).
+export interface DeployedProductSearchRequest {
+  filters?: {
+    consumption?: ConsumptionFilter;
+  };
+  pagination?: {
+    limit?: number;
+    offset?: number;
+  };
+}
+
 // Request body for validating a project contact (POST /projects/:projectId/contacts/validate).
 export interface ValidateContactRequest {
   contactEmail: string;

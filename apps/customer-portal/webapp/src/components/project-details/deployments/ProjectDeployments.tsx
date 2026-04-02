@@ -13,7 +13,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useGetDeployments } from "@api/useGetDeployments";
+import { usePostProjectDeploymentsSearchInfinite } from "@api/usePostProjectDeploymentsSearch";
 import EmptyState from "@components/common/empty-state/EmptyState";
 import ErrorStateIcon from "@components/common/error-state/ErrorStateIcon";
 import ErrorBanner from "@components/common/error-banner/ErrorBanner";
@@ -26,12 +26,13 @@ import {
   Box,
   Button,
   Grid,
+  Pagination,
   Skeleton,
   Typography,
 } from "@wso2/oxygen-ui";
 import type { SelectedDeploymentProduct } from "@components/project-details/deployments/deploymentSelectionTypes";
 import { Plus, Server } from "@wso2/oxygen-ui-icons-react";
-import { useCallback, useState, type JSX } from "react";
+import { useCallback, useEffect, useState, type JSX } from "react";
 import { useNavigate } from "react-router";
 
 export interface ProjectDeploymentsProps {
@@ -48,8 +49,26 @@ export default function ProjectDeployments({
   projectId,
 }: ProjectDeploymentsProps): JSX.Element {
   const navigate = useNavigate();
-  const { data, isLoading, isPending, isError } = useGetDeployments(projectId);
-  const showLoading = isLoading || isPending;
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+
+  const deploymentsQuery = usePostProjectDeploymentsSearchInfinite(projectId, {
+    pageSize: PAGE_SIZE,
+    enabled: !!projectId,
+  });
+  const showLoading = deploymentsQuery.isLoading || deploymentsQuery.isPending;
+  const isError = deploymentsQuery.isError;
+
+  const totalRecords =
+    deploymentsQuery.data?.pages?.[0]?.totalRecords ?? undefined;
+  const totalPages =
+    totalRecords != null ? Math.ceil(totalRecords / PAGE_SIZE) : 0;
+
+  const clampedPage =
+    totalPages > 0 ? Math.min(Math.max(page, 1), totalPages) : 1;
+  const currentPageIndex = Math.max(0, clampedPage - 1);
+  const currentDeployments =
+    deploymentsQuery.data?.pages?.[currentPageIndex]?.deployments ?? [];
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -57,7 +76,23 @@ export default function ProjectDeployments({
   const [selectedProduct, setSelectedProduct] =
     useState<SelectedDeploymentProduct | null>(null);
 
-  const deployments = data?.deployments ?? [];
+  const isPageLoaded =
+    (deploymentsQuery.data?.pages?.length ?? 0) > currentPageIndex;
+  const isShowingDeployments = currentDeployments.length > 0;
+
+  useEffect(() => {
+    if (!projectId) return;
+    if (!clampedPage) return;
+    if (isPageLoaded) return;
+    if (!deploymentsQuery.hasNextPage) return;
+    if (deploymentsQuery.isFetchingNextPage) return;
+    void deploymentsQuery.fetchNextPage();
+  }, [
+    projectId,
+    clampedPage,
+    isPageLoaded,
+    deploymentsQuery,
+  ]);
 
   const handleOpenModal = () => setIsModalOpen(true);
   const handleCloseModal = () => setIsModalOpen(false);
@@ -121,7 +156,7 @@ export default function ProjectDeployments({
     </>
   );
 
-  const deploymentsToolbar = (count: number, loading: boolean) => (
+  const deploymentsToolbar = (showing: number, loading: boolean) => (
     <Box
       sx={{
         display: "flex",
@@ -136,7 +171,17 @@ export default function ProjectDeployments({
         <Skeleton variant="text" width={200} height={24} />
       ) : (
         <Typography variant="body2" color="text.secondary">
-          {count} deployment environment{count !== 1 ? "s" : ""}
+          {totalRecords != null ? (
+            <>
+              Showing {Math.min(clampedPage * PAGE_SIZE, totalRecords)} of{" "}
+              {totalRecords}{" "}
+              deployment environment{totalRecords !== 1 ? "s" : ""}
+            </>
+          ) : (
+            <>
+              {showing} deployment environment{showing !== 1 ? "s" : ""}
+            </>
+          )}
           {selectedProduct ? (
             <Typography
               component="span"
@@ -212,7 +257,7 @@ export default function ProjectDeployments({
       );
     }
 
-    if (deployments.length === 0) {
+    if (!isShowingDeployments && (totalRecords ?? 0) === 0) {
       return (
         <>
           <DeploymentHeader count={0} onAddClick={handleOpenModal} />
@@ -223,9 +268,9 @@ export default function ProjectDeployments({
 
     return (
       <>
-        {deploymentsToolbar(deployments.length, false)}
+        {deploymentsToolbar(currentDeployments.length, false)}
         <Grid container spacing={3}>
-          {deployments.map((deployment) => (
+          {currentDeployments.map((deployment) => (
             <Grid key={deployment.id} size={12}>
               <DeploymentCard
                 deployment={deployment}
@@ -235,6 +280,19 @@ export default function ProjectDeployments({
             </Grid>
           ))}
         </Grid>
+
+        {totalPages > 1 && (
+          <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 4 }}>
+            <Pagination
+              count={totalPages}
+              page={clampedPage}
+              onChange={(_, value) => setPage(value)}
+              color="primary"
+              variant="outlined"
+              shape="rounded"
+            />
+          </Box>
+        )}
       </>
     );
   };
