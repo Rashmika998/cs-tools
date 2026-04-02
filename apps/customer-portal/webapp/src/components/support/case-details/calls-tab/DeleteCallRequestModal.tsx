@@ -34,7 +34,7 @@ import {
   type JSX,
 } from "react";
 import type { CallRequest } from "@models/responses";
-import { formatUtcToLocal } from "@utils/support";
+import { formatCallRequestPromptScheduledTime } from "@utils/support";
 
 export interface DeleteCallRequestModalProps {
   open: boolean;
@@ -42,7 +42,6 @@ export interface DeleteCallRequestModalProps {
   onClose: () => void;
   onConfirm: (reason: string) => void;
   isDeleting?: boolean;
-  userTimeZone?: string;
 }
 
 /**
@@ -59,7 +58,6 @@ export default function DeleteCallRequestModal({
   onClose,
   onConfirm,
   isDeleting = false,
-  userTimeZone,
 }: DeleteCallRequestModalProps): JSX.Element {
   const [reason, setReason] = useState("");
 
@@ -95,6 +93,20 @@ export default function DeleteCallRequestModal({
 
   const canConfirm = reason.trim() !== "";
 
+  const promptWhen =
+    call != null
+      ? formatCallRequestPromptScheduledTime(
+          call.preferredTimes,
+          call.scheduleTime,
+        )
+      : "--";
+  const cancelDescription =
+    call == null
+      ? "Are you sure you want to cancel this call request? This action cannot be undone."
+      : promptWhen !== "--"
+        ? `Are you sure you want to cancel the call request scheduled for ${promptWhen}? This action cannot be undone.`
+        : "Are you sure you want to cancel this call request? This action cannot be undone.";
+
   return (
     <Dialog
       open={open}
@@ -128,9 +140,7 @@ export default function DeleteCallRequestModal({
       </DialogTitle>
       <DialogContent>
         <Typography id="delete-call-request-modal-description" color="text.secondary">
-          {call
-            ? `Are you sure you want to cancel the call request scheduled for ${formatUtcToLocal(call.scheduleTime, "short", true, userTimeZone)}? This action cannot be undone.`
-            : "Are you sure you want to cancel this call request? This action cannot be undone."}
+          {cancelDescription}
         </Typography>
         <TextField
           id="cancel-call-reason"

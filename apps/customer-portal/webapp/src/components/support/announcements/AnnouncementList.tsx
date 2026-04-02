@@ -26,10 +26,13 @@ import {
   resolveColorFromTheme,
 } from "@utils/support";
 import AllCasesListSkeleton from "@components/support/all-cases/AllCasesListSkeleton";
+import EmptyIcon from "@components/common/empty-state/EmptyIcon";
+import SearchNoResultsIcon from "@components/common/empty-state/SearchNoResultsIcon";
 
 export interface AnnouncementListProps {
   cases: CaseListItem[];
   isLoading: boolean;
+  hasListRefinement?: boolean;
   onCaseClick?: (caseItem: CaseListItem) => void;
 }
 
@@ -43,6 +46,7 @@ export interface AnnouncementListProps {
 export default function AnnouncementList({
   cases,
   isLoading,
+  hasListRefinement = false,
   onCaseClick,
 }: AnnouncementListProps): JSX.Element {
   const theme = useTheme();
@@ -52,10 +56,27 @@ export default function AnnouncementList({
   }
 
   if (cases.length === 0) {
+    const containerSx = {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      py: 6,
+    } as const;
+    const iconStyle = {
+      width: 200,
+      maxWidth: "100%",
+      height: "auto",
+      marginBottom: 16,
+    };
+    const EmptyStateIcon = hasListRefinement ? SearchNoResultsIcon : EmptyIcon;
+    const emptyMessage = hasListRefinement
+      ? "No announcements found. Try adjusting your filters or search query."
+      : "No announcements yet.";
     return (
-      <Box sx={{ textAlign: "center", py: 6 }}>
+      <Box sx={containerSx}>
+        <EmptyStateIcon style={iconStyle} />
         <Typography variant="body1" color="text.secondary">
-          No announcements found, Try adjusting your filters or search query.
+          {emptyMessage}
         </Typography>
       </Box>
     );

@@ -18,8 +18,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import CasesTableHeader from "@components/dashboard/cases-table/CasesTableHeader";
 
-const mockNavigate = vi.fn();
-const mockUseParams = vi.fn(() => ({ projectId: "project-1" }));
+const { mockNavigate, mockUseParams } = vi.hoisted(() => {
+  const navigate = vi.fn();
+  const useParams = vi.fn(() => ({ projectId: "project-1" }));
+  return { mockNavigate: navigate, mockUseParams: useParams };
+});
 
 // Mock react-router hooks
 vi.mock("react-router", () => ({
@@ -42,6 +45,9 @@ vi.mock("@wso2/oxygen-ui", () => ({
 vi.mock("@wso2/oxygen-ui-icons-react", () => ({
   ListFilter: () => <span>FilterIcon</span>,
   Plus: () => <span>PlusIcon</span>,
+  X: () => <span>XIcon</span>,
+  ChevronDown: () => <span>ChevronDown</span>,
+  ChevronUp: () => <span>ChevronUp</span>,
 }));
 
 vi.mock("@components/common/filter-panel/ActiveFilters", () => ({
@@ -76,9 +82,9 @@ describe("CasesTableHeader", () => {
     expect(mockProps.onFilterToggle).toHaveBeenCalled();
   });
 
-  it("should show Reset Filters when filters are active", () => {
+  it("should show Clear Filters when filters are active", () => {
     render(<CasesTableHeader {...mockProps} activeFiltersCount={1} />);
 
-    expect(screen.getByText("Reset Filters")).toBeInTheDocument();
+    expect(screen.getByText("Clear Filters (1)")).toBeInTheDocument();
   });
 });

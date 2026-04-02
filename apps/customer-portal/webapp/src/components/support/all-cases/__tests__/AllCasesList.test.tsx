@@ -62,8 +62,12 @@ vi.mock("@utils/casesTable", () => ({
 
 // Mock the support utils
 vi.mock("@utils/support", () => ({
+  formatDateTime: vi.fn(() => "Jan 1, 2026"),
   formatRelativeTime: vi.fn(() => "2 hours ago"),
   getStatusIcon: vi.fn(() => () => <div data-testid="status-icon" />),
+  getStatusColor: vi.fn(() => "#000000"),
+  mapSeverityToDisplay: vi.fn((l: string) => l || "—"),
+  getAssignedEngineerLabel: vi.fn(() => null),
   resolveColorFromTheme: vi.fn(() => "#000000"),
   stripHtml: vi.fn((html) => html),
 }));
@@ -91,7 +95,21 @@ describe("AllCasesList", () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByText(/No cases found/i)).toBeInTheDocument();
+    expect(screen.getByText("No cases yet.")).toBeInTheDocument();
+  });
+
+  it("should show search empty state when list is empty and refined", () => {
+    render(
+      <ThemeProvider theme={theme}>
+        <AllCasesList cases={[]} isLoading={false} hasListRefinement />
+      </ThemeProvider>,
+    );
+
+    expect(
+      screen.getByText(
+        "No cases found. Try adjusting your filters or search query.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("should render skeletons when loading", () => {

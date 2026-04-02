@@ -160,7 +160,7 @@ vi.mock("@asgardeo/react", () => ({
 }));
 
 function renderTabPanels(
-  activeTab: number,
+  panelIndex: number,
   caseId = "case-1",
   options?: { data?: CaseDetails; isError?: boolean },
 ) {
@@ -170,7 +170,7 @@ function renderTabPanels(
         <LoggerProvider>
           <ErrorBannerProvider>
             <CaseDetailsTabPanels
-              activeTab={activeTab}
+              panelIndex={panelIndex}
               caseId={caseId}
               data={options?.data ?? (mockCaseDetails as CaseDetails)}
               isError={options?.isError ?? false}

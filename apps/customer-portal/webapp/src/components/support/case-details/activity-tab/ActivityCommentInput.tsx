@@ -14,7 +14,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, CircularProgress, IconButton, colors } from "@wso2/oxygen-ui";
+import {
+  Box,
+  CircularProgress,
+  IconButton,
+  colors,
+} from "@wso2/oxygen-ui";
 import { ArrowUp } from "@wso2/oxygen-ui-icons-react";
 import { useState, useRef } from "react";
 import { usePostComment } from "@api/usePostComment";
@@ -215,7 +220,7 @@ export default function ActivityCommentInput({
             onAttachmentClick={handleAttachmentClick}
             attachments={attachments.map((a) => a.file)}
             onAttachmentRemove={handleAttachmentRemove}
-            showKeyboardHint={false}
+            showKeyboardHint={!isCaseClosed}
             maxHeight="310px"
           />
           <Box

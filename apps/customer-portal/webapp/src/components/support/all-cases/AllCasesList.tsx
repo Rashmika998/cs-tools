@@ -38,11 +38,14 @@ import {
 } from "@utils/support";
 import AllCasesListSkeleton from "@components/support/all-cases/AllCasesListSkeleton";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
+import EmptyIcon from "@components/common/empty-state/EmptyIcon";
+import SearchNoResultsIcon from "@components/common/empty-state/SearchNoResultsIcon";
 
 export interface AllCasesListProps {
   cases: CaseListItem[];
   isLoading: boolean;
   isError?: boolean;
+  hasListRefinement?: boolean;
   onCaseClick?: (caseItem: CaseListItem) => void;
 }
 
@@ -56,6 +59,7 @@ export default function AllCasesList({
   cases,
   isLoading,
   isError = false,
+  hasListRefinement = false,
   onCaseClick,
 }: AllCasesListProps): JSX.Element {
   const theme = useTheme();
@@ -76,10 +80,49 @@ export default function AllCasesList({
   }
 
   if (cases.length === 0) {
+    if (hasListRefinement) {
+      return (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            py: 6,
+          }}
+        >
+          <SearchNoResultsIcon
+            style={{
+              width: 200,
+              maxWidth: "100%",
+              height: "auto",
+              marginBottom: 16,
+            }}
+          />
+          <Typography variant="body1" color="text.secondary">
+            No cases found. Try adjusting your filters or search query.
+          </Typography>
+        </Box>
+      );
+    }
     return (
-      <Box sx={{ textAlign: "center", py: 6 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          py: 6,
+        }}
+      >
+        <EmptyIcon
+          style={{
+            width: 200,
+            maxWidth: "100%",
+            height: "auto",
+            marginBottom: 16,
+          }}
+        />
         <Typography variant="body1" color="text.secondary">
-          No cases found. Try adjusting your filters or search query.
+          No cases yet.
         </Typography>
       </Box>
     );

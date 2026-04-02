@@ -27,6 +27,7 @@ export interface AllCasesStatCardsProps {
   isLoading: boolean;
   isError?: boolean;
   stats: ProjectCasesStats | undefined;
+  statEntityName?: string;
 }
 
 /**
@@ -39,6 +40,7 @@ export default function AllCasesStatCards({
   isLoading,
   isError,
   stats,
+  statEntityName = "case",
 }: AllCasesStatCardsProps): JSX.Element {
   const flattenedStats = getAllCasesFlattenedStats(stats);
 
@@ -47,7 +49,7 @@ export default function AllCasesStatCards({
       <SupportStatGrid
         isLoading={isLoading}
         isError={isError}
-        entityName="case"
+        entityName={statEntityName}
         configs={ALL_CASES_STAT_CONFIGS}
         stats={flattenedStats}
       />

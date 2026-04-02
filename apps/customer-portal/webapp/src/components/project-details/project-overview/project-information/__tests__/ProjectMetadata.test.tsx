@@ -61,7 +61,7 @@ describe("ProjectMetadata", () => {
     expect(screen.getByText("Support Tier")).toBeInTheDocument();
     expect(screen.getByText("Enterprise")).toBeInTheDocument();
 
-    expect(screen.getByText("SLA Status")).toBeInTheDocument();
+    expect(screen.getByText("Overall Status")).toBeInTheDocument();
     expect(screen.getByText("Good")).toBeInTheDocument();
 
     expect(screen.getByText("Go Live Date")).toBeInTheDocument();

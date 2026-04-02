@@ -32,12 +32,20 @@ import { Info, Plus, Trash2, X } from "@wso2/oxygen-ui-icons-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type ChangeEvent,
   type JSX,
 } from "react";
 import { usePatchCallRequest } from "@api/usePatchCallRequest";
 import type { CallRequest } from "@models/responses";
+import {
+  callRequestApiPreferredTimeToDatetimeLocal,
+  callRequestPreferredTimeFromDatetimeLocal,
+  computeMinScheduleDatetimeLocalForTimeZone,
+  normalizeDatetimeLocalForCompare,
+  sortCallRequestPreferredTimeStringsAsc,
+} from "@utils/support";
 
 export interface ApproveCallRequestModalProps {
   open: boolean;
@@ -55,31 +63,6 @@ export interface ApproveCallRequestModalProps {
   approveStateKey?: number;
 }
 const MAX_PREFERRED_TIMES = 3;
-
-/** Returns datetime-local min string (now + 1 min) to block past times. */
-function getMinDatetimeLocal(): string {
-  const now = new Date();
-  const plusOneMin = new Date(now.getTime() + 60 * 1000);
-  const y = plusOneMin.getFullYear();
-  const m = String(plusOneMin.getMonth() + 1).padStart(2, "0");
-  const d = String(plusOneMin.getDate()).padStart(2, "0");
-  const h = String(plusOneMin.getHours()).padStart(2, "0");
-  const min = String(plusOneMin.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${d}T${h}:${min}`;
-}
-
-/**
- * Converts a local datetime-local input value to a UTC ISO string.
- *
- * @param {string} localValue - Local datetime-local input value (YYYY-MM-DDTHH:mm).
- * @returns {string} UTC ISO string.
- */
-function localToUtcIso(localValue: string): string {
-  if (!localValue) return "";
-  const date = new Date(localValue);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString();
-}
 
 /**
  * Modal for approving a "Pending on Customer" call request.
@@ -102,7 +85,7 @@ export default function ApproveCallRequestModal({
   const patchCallRequest = usePatchCallRequest(projectId, caseId);
   const [preferredDateTimes, setPreferredDateTimes] = useState<string[]>([""]);
   const [modalError, setModalError] = useState<string | null>(null);
-  const [, setMinTick] = useState(0);
+  const [minTick, setMinTick] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -110,7 +93,39 @@ export default function ApproveCallRequestModal({
     return () => clearInterval(id);
   }, [open]);
 
-  const minDatetimeLocal = getMinDatetimeLocal();
+  useEffect(() => {
+    if (!open) {
+      queueMicrotask(() => setPreferredDateTimes([""]));
+      return;
+    }
+    if (!call) {
+      queueMicrotask(() => setPreferredDateTimes([""]));
+      return;
+    }
+    const rawPreferred =
+      call.preferredTimes && call.preferredTimes.length > 0
+        ? call.preferredTimes.slice(0, MAX_PREFERRED_TIMES)
+        : call.scheduleTime
+          ? [call.scheduleTime]
+          : [""];
+    const sorted = sortCallRequestPreferredTimeStringsAsc(rawPreferred);
+    queueMicrotask(() => {
+      setPreferredDateTimes(
+        sorted.map((t) =>
+          callRequestApiPreferredTimeToDatetimeLocal(t, userTimeZone),
+        ),
+      );
+      setModalError(null);
+    });
+  }, [open, call, userTimeZone]);
+
+  const minDatetimeLocal = useMemo(
+    () => {
+      void minTick;
+      return computeMinScheduleDatetimeLocalForTimeZone(null, userTimeZone);
+    },
+    [userTimeZone, minTick],
+  );
   const isValid =
     preferredDateTimes.every((value) => value.trim() !== "") &&
     approveStateKey !== undefined;
@@ -160,21 +175,25 @@ export default function ApproveCallRequestModal({
     if (!isValid || !call || approveStateKey === undefined) return;
     setModalError(null);
 
-    const minAllowed = new Date(new Date().getTime() + 60 * 1000);
+    const minKey = normalizeDatetimeLocalForCompare(minDatetimeLocal);
     const utcTimes: string[] = [];
     for (const localTime of preferredDateTimes) {
-      const selected = new Date(localTime);
-      if (Number.isNaN(selected.getTime())) {
+      const iso = callRequestPreferredTimeFromDatetimeLocal(
+        localTime,
+        userTimeZone,
+      );
+      if (!iso) {
         setModalError("Please enter a valid preferred time.");
         return;
       }
-      if (selected < minAllowed) {
+      const selKey = normalizeDatetimeLocalForCompare(localTime);
+      if (minKey && selKey && selKey < minKey) {
         setModalError(
-          "The selected date and time cannot be in the past. Please choose a future date and time.",
+          "The selected date and time must be at least the minimum shown in the picker (including severity-based lead time).",
         );
         return;
       }
-      utcTimes.push(localToUtcIso(localTime));
+      utcTimes.push(iso);
     }
 
     patchCallRequest.mutate(
@@ -206,6 +225,8 @@ export default function ApproveCallRequestModal({
     onClose,
     onSuccess,
     onError,
+    minDatetimeLocal,
+    userTimeZone,
   ]);
 
   return (
@@ -269,8 +290,17 @@ export default function ApproveCallRequestModal({
               onChange={handleDateTimeChange(index)}
               fullWidth
               size="small"
-              slotProps={{ inputLabel: { shrink: true } }}
-              inputProps={{ min: minDatetimeLocal }}
+              slotProps={{
+                inputLabel: { shrink: true },
+                htmlInput: {
+                  min: minDatetimeLocal,
+                  step: 300,
+                },
+              }}
+              inputProps={{
+                min: minDatetimeLocal,
+                step: 300,
+              }}
               disabled={isPending}
             />
             <Box

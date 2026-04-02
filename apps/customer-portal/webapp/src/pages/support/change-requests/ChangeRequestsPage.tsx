@@ -52,6 +52,8 @@ import ChangeRequestsList from "@components/support/change-requests/ChangeReques
 import ChangeRequestsCalendarView from "@components/support/change-requests/ChangeRequestsCalendarView";
 import TabBar from "@components/common/tab-bar/TabBar";
 import { generateChangeRequestsSchedulePdf } from "@utils/changeRequestsSchedulePdf";
+import { hasListSearchOrFilters } from "@utils/support";
+import DOMPurify from "dompurify";
 
 /**
  * ChangeRequestsPage component to display all change requests with stats, filters, and search.
@@ -61,8 +63,11 @@ import { generateChangeRequestsSchedulePdf } from "@utils/changeRequestsSchedule
 export default function ChangeRequestsPage(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const { projectId } = useParams<{ projectId: string }>();
-  const basePath = location.pathname.includes("/operations/") ? "operations" : "support";
+  const basePath = location.pathname.includes("/operations/")
+    ? "operations"
+    : "support";
 
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,7 +85,9 @@ export default function ChangeRequestsPage(): JSX.Element {
     data: stats,
     isLoading: isStatsLoading,
     isError: isStatsError,
-  } = useGetProjectChangeRequestStats(projectId || "", { enabled: !!projectId });
+  } = useGetProjectChangeRequestStats(projectId || "", {
+    enabled: !!projectId,
+  });
 
   // Build API request (following cases listing pattern)
   const changeRequestSearchRequest = useMemo<
@@ -217,6 +224,7 @@ export default function ChangeRequestsPage(): JSX.Element {
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchTerm("");
     setPage(1);
   };
 
@@ -241,13 +249,15 @@ export default function ChangeRequestsPage(): JSX.Element {
     [],
   );
 
+  const listHasRefinement = hasListSearchOrFilters(searchTerm, filters);
+
   return (
     <Stack spacing={3}>
       {/* Back button and header */}
       <Box>
         <Button
           startIcon={<ArrowLeft size={16} />}
-          onClick={() => navigate("..")}
+          onClick={() => (returnTo ? navigate(returnTo) : navigate(".."))}
           sx={{ mb: 2 }}
           variant="text"
         >
@@ -264,14 +274,22 @@ export default function ChangeRequestsPage(): JSX.Element {
             <Typography variant="h4" color="text.primary" sx={{ mb: 1 }}>
               All Change Requests
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Track and manage deployment changes and updates
-            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              component="div"
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted static copy rendered as HTML by request
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(
+                  "Track and manage deployment changes and updates",
+                ),
+              }}
+            />
           </Box>
           <Button
             variant="contained"
-            color="primary"
-            size="medium"
+            color="warning"
+            size="small"
             onClick={handleExportSchedule}
             startIcon={
               isExporting ? (
@@ -281,12 +299,6 @@ export default function ChangeRequestsPage(): JSX.Element {
               )
             }
             disabled={isExporting}
-            sx={{
-              bgcolor: "#ea580c",
-              "&:hover": {
-                bgcolor: "#c2410c",
-              },
-            }}
           >
             {isExporting ? "Exporting..." : "Export Schedule"}
           </Button>
@@ -345,6 +357,7 @@ export default function ChangeRequestsPage(): JSX.Element {
             changeRequests={changeRequests}
             isLoading={isLoading}
             isError={isError}
+            hasListRefinement={listHasRefinement}
             onChangeRequestClick={handleChangeRequestClick}
           />
 

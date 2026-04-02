@@ -19,14 +19,12 @@ import { useQueries } from "@tanstack/react-query";
 import { useAsgardeo } from "@asgardeo/react";
 import { ApiQueryKeys } from "@constants/apiConstants";
 import {
-  fetchDeploymentProducts,
+  fetchDeploymentProductsAll,
   type FetchFn,
-} from "@api/useGetDeploymentsProducts";
+} from "@api/usePostDeploymentProductsSearch";
 import type {
   DeploymentProductItem,
-  DeployedProductsResponsePayload,
 } from "@models/responses";
-import { isDeployedProductsResponse } from "@models/responses";
 import { addApiHeaders } from "@utils/apiUtils";
 
 interface DeploymentForProducts {
@@ -55,12 +53,16 @@ export function useAllDeploymentProducts(
 
   const results = useQueries({
     queries: deploymentIds.map((deploymentId) => ({
-      queryKey: [ApiQueryKeys.DEPLOYMENT_PRODUCTS, deploymentId, "all"],
+      queryKey: [ApiQueryKeys.DEPLOYMENT_PRODUCTS, deploymentId, "search-all"],
       queryFn: async () => {
         const token = await getIdToken();
         const fetchFn: FetchFn = (url, init) =>
           fetch(url, { ...init, headers: addApiHeaders(token) });
-        return fetchDeploymentProducts(deploymentId, { fetchFn });
+        return fetchDeploymentProductsAll({
+          deploymentId,
+          pageSize: 10,
+          fetchFn,
+        });
       },
       enabled: !!deploymentId,
       staleTime: 5 * 60 * 1000,
@@ -70,16 +72,7 @@ export function useAllDeploymentProducts(
   const productsByDeploymentId = useMemo(() => {
     const map: Record<string, DeploymentProductItem[]> = {};
     deploymentIds.forEach((id, i) => {
-      const res = results[i];
-      const payload = res?.data as DeployedProductsResponsePayload | undefined;
-
-      if (Array.isArray(payload)) {
-        map[id] = payload;
-      } else if (isDeployedProductsResponse(payload)) {
-        map[id] = payload.deployedProducts;
-      } else {
-        map[id] = [];
-      }
+      map[id] = (results[i]?.data as DeploymentProductItem[] | undefined) ?? [];
     });
     return map;
   }, [results, deploymentIds]);

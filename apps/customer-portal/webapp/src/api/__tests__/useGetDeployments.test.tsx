@@ -16,9 +16,10 @@
 
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useGetDeployments } from "@api/useGetDeployments";
+import { usePostProjectDeploymentsSearchAll } from "@api/usePostProjectDeploymentsSearch";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { useAuthApiClient } from "@api/useAuthApiClient";
 
 const mockDeploymentsResponse = {
   deployments: [
@@ -57,7 +58,11 @@ vi.mock("@asgardeo/react", () => ({
   }),
 }));
 
-describe("useGetDeployments", () => {
+vi.mock("@api/useAuthApiClient", () => ({
+  useAuthApiClient: vi.fn(),
+}));
+
+describe("usePostProjectDeploymentsSearchAll", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
@@ -70,6 +75,7 @@ describe("useGetDeployments", () => {
       json: () => Promise.resolve(mockDeploymentsResponse),
       status: 200,
     } as Response);
+    vi.mocked(useAuthApiClient).mockReturnValue(mockAuthFetch);
     (
       window as unknown as {
         config?: { CUSTOMER_PORTAL_BACKEND_BASE_URL?: string };
@@ -88,34 +94,39 @@ describe("useGetDeployments", () => {
   );
 
   it("should return deployments from API", async () => {
-    const { result } = renderHook(() => useGetDeployments("project-123"), {
+    const { result } = renderHook(
+      () => usePostProjectDeploymentsSearchAll("project-123"),
+      {
       wrapper,
-    });
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data).toBeDefined();
-    expect(result.current.data?.deployments).toBeDefined();
-    expect(Array.isArray(result.current.data?.deployments)).toBe(true);
-    expect(result.current.data?.deployments).toHaveLength(1);
-    expect(result.current.data?.deployments[0]).toMatchObject({
+    expect(Array.isArray(result.current.data)).toBe(true);
+    expect(result.current.data).toHaveLength(1);
+    expect(result.current.data?.[0]).toMatchObject({
       id: "dep-1",
       name: "Production",
       project: { id: "proj-1", label: "Test Project" },
       type: { id: "3", label: "Staging" },
     });
     expect(mockAuthFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/projects/project-123/deployments"),
-      expect.objectContaining({ method: "GET" }),
+      expect.stringContaining("/projects/project-123/deployments/search"),
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
   it("should throw error when CUSTOMER_PORTAL_BACKEND_BASE_URL is missing", async () => {
     (window as unknown as { config?: unknown }).config = {};
 
-    const { result } = renderHook(() => useGetDeployments("project-123"), {
+    const { result } = renderHook(
+      () => usePostProjectDeploymentsSearchAll("project-123"),
+      {
       wrapper,
-    });
+      },
+    );
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error?.message).toBe(
@@ -130,18 +141,21 @@ describe("useGetDeployments", () => {
       status: 500,
     } as Response);
 
-    const { result } = renderHook(() => useGetDeployments("project-123"), {
+    const { result } = renderHook(
+      () => usePostProjectDeploymentsSearchAll("project-123"),
+      {
       wrapper,
-    });
+      },
+    );
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error?.message).toBe(
-      "Error fetching deployments: Internal Server Error",
+      "Error searching deployments: Internal Server Error",
     );
   });
 
   it("should not be enabled when projectId is empty", () => {
-    const { result } = renderHook(() => useGetDeployments(""), {
+    const { result } = renderHook(() => usePostProjectDeploymentsSearchAll(""), {
       wrapper,
     });
 

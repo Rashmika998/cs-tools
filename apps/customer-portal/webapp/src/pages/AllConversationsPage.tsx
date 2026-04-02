@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useParams, useNavigate, useSearchParams } from "react-router";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router";
 import {
   useState,
   useMemo,
@@ -46,6 +46,7 @@ import type { AllConversationsStatKey } from "@constants/supportConstants";
 import AllConversationsStatCards from "@components/support/all-conversations/AllConversationsStatCards";
 import AllConversationsSearchBar from "@components/support/all-conversations/AllConversationsSearchBar";
 import AllConversationsList from "@components/support/all-conversations/AllConversationsList";
+import { hasListSearchOrFilters } from "@utils/support";
 
 /**
  * AllConversationsPage component to display all conversations with filters, search, and pagination.
@@ -54,6 +55,8 @@ import AllConversationsList from "@components/support/all-conversations/AllConve
  */
 export default function AllConversationsPage(): JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const { projectId } = useParams<{ projectId: string }>();
   const [searchParams] = useSearchParams();
   const createdByMe = searchParams.get("createdByMe") === "true";
@@ -163,6 +166,7 @@ export default function AllConversationsPage(): JSX.Element {
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchTerm("");
     setPage(1);
   };
 
@@ -181,12 +185,14 @@ export default function AllConversationsPage(): JSX.Element {
     setPage(1);
   };
 
+  const listHasRefinement = hasListSearchOrFilters(searchTerm, filters);
+
   return (
     <Stack spacing={3}>
       <Box>
         <Button
           startIcon={<ArrowLeft size={16} />}
-          onClick={() => navigate("..")}
+          onClick={() => (returnTo ? navigate(returnTo) : navigate(".."))}
           sx={{ mb: 2 }}
           variant="text"
         >
@@ -246,29 +252,29 @@ export default function AllConversationsPage(): JSX.Element {
               }
             >
               <MenuItem value="updatedOn">
-                <Typography variant="body2">Updated date</Typography>
+                <Typography variant="body2">Updated on</Typography>
               </MenuItem>
               <MenuItem value="createdOn">
-                <Typography variant="body2">Created date</Typography>
+                <Typography variant="body2">Created on</Typography>
               </MenuItem>
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="sort-label">Order By</InputLabel>
+            <InputLabel id="conversation-order-by-label">Order by</InputLabel>
             <Select<"desc" | "asc">
-              labelId="sort-label"
-              id="sort"
+              labelId="conversation-order-by-label"
+              id="conversation-order-by"
               value={sortOrder}
-              label="Sort"
+              label="Order by"
               onChange={(e) =>
                 handleSortChange(e.target.value as "desc" | "asc")
               }
             >
               <MenuItem value="desc">
-                <Typography variant="body2">Newest First</Typography>
+                <Typography variant="body2">Newest first</Typography>
               </MenuItem>
               <MenuItem value="asc">
-                <Typography variant="body2">Oldest First</Typography>
+                <Typography variant="body2">Oldest first</Typography>
               </MenuItem>
             </Select>
           </FormControl>
@@ -279,6 +285,7 @@ export default function AllConversationsPage(): JSX.Element {
         conversations={conversations}
         isLoading={isConversationsAreaLoading}
         isError={isConversationsError}
+        hasListRefinement={listHasRefinement}
         onConversationClick={handleConversationClick}
       />
 

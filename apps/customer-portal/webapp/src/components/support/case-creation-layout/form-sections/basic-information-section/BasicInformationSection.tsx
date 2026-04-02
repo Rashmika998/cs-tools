@@ -27,7 +27,7 @@ import {
   TextField,
 } from "@wso2/oxygen-ui";
 import { Sparkles } from "@wso2/oxygen-ui-icons-react";
-import { type JSX } from "react";
+import { type JSX, type UIEvent } from "react";
 import type { ProductVersionOption } from "@utils/caseCreation";
 
 export interface BasicInformationSectionProps {
@@ -47,6 +47,12 @@ export interface BasicInformationSectionProps {
   extraProductOptions?: string[];
   isRelatedCaseMode?: boolean;
   isDeploymentDisabled?: boolean;
+  onLoadMoreDeployments?: () => void;
+  hasMoreDeployments?: boolean;
+  isFetchingMoreDeployments?: boolean;
+  onLoadMoreProducts?: () => void;
+  hasMoreProducts?: boolean;
+  isFetchingMoreProducts?: boolean;
 }
 
 /**
@@ -71,7 +77,36 @@ export function BasicInformationSection({
   extraProductOptions,
   isRelatedCaseMode = false,
   isDeploymentDisabled = false,
+  onLoadMoreDeployments,
+  hasMoreDeployments = false,
+  isFetchingMoreDeployments = false,
+  onLoadMoreProducts,
+  hasMoreProducts = false,
+  isFetchingMoreProducts = false,
 }: BasicInformationSectionProps): JSX.Element {
+  const handleDeploymentsMenuScroll = (e: UIEvent<HTMLElement>) => {
+    if (!onLoadMoreDeployments || !hasMoreDeployments || isFetchingMoreDeployments) {
+      return;
+    }
+    const el = e.currentTarget;
+    const threshold = 24;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    if (isNearBottom) {
+      onLoadMoreDeployments();
+    }
+  };
+
+  const handleProductsMenuScroll = (e: UIEvent<HTMLElement>) => {
+    if (!onLoadMoreProducts || !hasMoreProducts || isFetchingMoreProducts) {
+      return;
+    }
+    const el = e.currentTarget;
+    const threshold = 24;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    if (isNearBottom) {
+      onLoadMoreProducts();
+    }
+  };
   const deploymentOptions = Array.from(
     new Set(
       [
@@ -148,6 +183,11 @@ export function BasicInformationSection({
                 renderValue={(value) =>
                   value === "" ? "Select Deployment Type..." : value
                 }
+                MenuProps={{
+                  PaperProps: {
+                    onScroll: handleDeploymentsMenuScroll,
+                  },
+                }}
               >
                 <MenuItem value="" disabled>
                   Select Deployment Type...
@@ -205,6 +245,11 @@ export function BasicInformationSection({
                     return opt?.label ?? value;
                   }
                   return value;
+                }}
+                MenuProps={{
+                  PaperProps: {
+                    onScroll: handleProductsMenuScroll,
+                  },
                 }}
               >
                 <MenuItem value="" disabled>

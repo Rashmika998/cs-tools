@@ -27,25 +27,21 @@ import {
 } from "@wso2/oxygen-ui";
 import { Bot, CircleAlert, Sparkles } from "@wso2/oxygen-ui-icons-react";
 import { useCallback, useState, useMemo, useEffect, type JSX } from "react";
-import useInfiniteProjects, { flattenProjectPages } from "@api/useGetProjects";
+import useGetProjectDetails from "@api/useGetProjectDetails";
+import useInfiniteProjects from "@api/useGetProjects";
 import { usePatchProject } from "@api/usePatchProject";
 import { useSuccessBanner } from "@context/success-banner/SuccessBannerContext";
+import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
 import { setNoveraChatEnabled } from "@utils/settingsStorage";
 
 interface SettingsAiAssistantProps {
   projectId: string;
 }
 
-interface AiCapability {
-  id: string;
-  title: string;
-  description: string;
-  enabled: boolean;
-  onToggle: (enabled: boolean) => void;
-}
+type PatchSuccessKind = "novera" | "kb" | "noveraAndKb";
 
 /**
- * AI Assistant settings tab: Novera chat, knowledge base suggestions.
+ * AI Assistant settings: Novera chat and Smart Knowledge Base suggestions (hasKbReferences).
  *
  * @param {SettingsAiAssistantProps} props - Component props.
  * @returns {JSX.Element} The component.
@@ -55,22 +51,35 @@ export default function SettingsAiAssistant({
 }: SettingsAiAssistantProps): JSX.Element {
   const theme = useTheme();
   const { showSuccess } = useSuccessBanner();
-  const {
-    data: projectsData,
-    isSuccess: isProjectsLoaded,
-    refetch: refetchProjects,
-  } = useInfiniteProjects({ pageSize: 20, enabled: !!projectId });
+  const { showError } = useErrorBanner();
+  const { refetch: refetchProjects } = useInfiniteProjects({
+    pageSize: 20,
+    enabled: !!projectId,
+  });
+  const { data: projectDetails, isLoading: isProjectDetailsLoading } =
+    useGetProjectDetails(projectId);
   const patchProject = usePatchProject(projectId);
   const [noveraOverride, setNoveraOverride] = useState<boolean | null>(null);
-  const [kbSuggestionsEnabled, setKbSuggestionsEnabled] = useState(true);
+  const [kbOverride, setKbOverride] = useState<boolean | null>(null);
 
-  const projectHasAgent = useMemo(() => {
-    if (!isProjectsLoaded) return undefined;
-    const project = flattenProjectPages(projectsData).find((p) => p.id === projectId);
-    return project?.hasAgent;
-  }, [isProjectsLoaded, projectsData, projectId]);
+  const { projectHasAgent, projectHasKbReferences } = useMemo(() => {
+    const detailsAvailable = !!projectDetails;
+    const agent = detailsAvailable
+      ? (projectDetails.hasAgent ?? projectDetails.account?.hasAgent)
+      : undefined;
+    const kb = detailsAvailable
+      ? (projectDetails.hasKbReferences ?? projectDetails.account?.hasKbReferences)
+      : undefined;
+    return {
+      projectHasAgent: agent,
+      projectHasKbReferences: kb,
+    };
+  }, [projectDetails]);
 
-  const noveraEnabled = noveraOverride ?? projectHasAgent ?? true;
+  const noveraEnabled = noveraOverride ?? projectHasAgent ?? false;
+  const kbReferencesEnabled =
+    noveraEnabled &&
+    (kbOverride ?? projectHasKbReferences ?? false);
 
   useEffect(() => {
     if (projectHasAgent !== undefined) {
@@ -78,61 +87,102 @@ export default function SettingsAiAssistant({
     }
   }, [projectHasAgent]);
 
+  const notifyPatchSuccess = useCallback(
+    async (kind: PatchSuccessKind) => {
+      const refreshed = await refetchProjects();
+      const refreshedProject = refreshed.data?.pages
+        ?.flatMap((page) => page.projects ?? [])
+        ?.find((p) => p.id === projectId);
+      setNoveraOverride(null);
+      setKbOverride(null);
+      if (refreshedProject?.hasAgent !== undefined) {
+        setNoveraChatEnabled(refreshedProject.hasAgent);
+      } else if (projectDetails?.hasAgent !== undefined) {
+        setNoveraChatEnabled(projectDetails.hasAgent);
+      }
+      const messages: Record<PatchSuccessKind, string> = {
+        novera: "AI Chat Assistant (Novera) was updated successfully.",
+        kb: "Smart Knowledge Base suggestions were updated successfully.",
+        noveraAndKb:
+          "AI assistant and Smart Knowledge Base settings were updated successfully.",
+      };
+      showSuccess(messages[kind]);
+    },
+    [projectDetails?.hasAgent, projectId, refetchProjects, showSuccess],
+  );
+
+  const handlePatchError = useCallback(
+    (err: unknown) => {
+      showError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update AI assistant settings.",
+      );
+    },
+    [showError],
+  );
+
   const handleNoveraToggle = useCallback(
     (checked: boolean) => {
-      const previous = noveraEnabled;
+      const rollbackNovera = noveraEnabled;
       setNoveraOverride(checked);
       setNoveraChatEnabled(checked);
+      if (!checked) {
+        setKbOverride(false);
+      }
       patchProject.mutate(
-        { hasAgent: checked },
+        checked
+          ? { hasAgent: true }
+          : { hasAgent: false, hasKbReferences: false },
         {
-          onSuccess: async () => {
-            await refetchProjects();
-            setNoveraOverride(null);
-            showSuccess("Novera settings updated successfully");
+          onSuccess: () => {
+            void notifyPatchSuccess(checked ? "novera" : "noveraAndKb");
           },
-          onError: () => {
-            setNoveraOverride(previous);
-            setNoveraChatEnabled(previous);
+          onError: (err) => {
+            handlePatchError(err);
+            setNoveraOverride(null);
+            setKbOverride(null);
+            setNoveraChatEnabled(rollbackNovera);
           },
         },
       );
     },
-    [noveraEnabled, patchProject, refetchProjects, showSuccess],
+    [noveraEnabled, patchProject, notifyPatchSuccess, handlePatchError],
   );
 
-  const handleKbToggle = useCallback((checked: boolean) => {
-    setKbSuggestionsEnabled(checked);
-    // KB suggestions can be persisted similarly when backend supports it
-  }, []);
-
-  const capabilities: AiCapability[] = [
-    {
-      id: "novera",
-      title: "AI Chat Assistant (Novera)",
-      description:
-        "Enable AI-powered chat assistant to help with troubleshooting before creating cases",
-      enabled: noveraEnabled,
-      onToggle: handleNoveraToggle,
+  const handleKbToggle = useCallback(
+    (checked: boolean) => {
+      if (!noveraEnabled) {
+        return;
+      }
+      setKbOverride(checked);
+      patchProject.mutate(
+        { hasKbReferences: checked },
+        {
+          onSuccess: () => {
+            void notifyPatchSuccess("kb");
+          },
+          onError: (err) => {
+            handlePatchError(err);
+            setKbOverride(null);
+          },
+        },
+      );
     },
-    {
-      id: "kb",
-      title: "Smart Knowledge Base Suggestions",
-      description:
-        "Get AI-powered article recommendations based on your issue description",
-      enabled: kbSuggestionsEnabled,
-      onToggle: handleKbToggle,
-    },
-  ];
+    [noveraEnabled, patchProject, notifyPatchSuccess, handlePatchError],
+  );
 
-  const enabledCount = capabilities.filter((c) => c.enabled).length;
-  const disabledCount = capabilities.length - enabledCount;
+  const enabledCount =
+    (noveraEnabled ? 1 : 0) + (noveraEnabled && kbReferencesEnabled ? 1 : 0);
+  const disabledCount = 2 - enabledCount;
+
+  const disabledForSwitches =
+    isProjectDetailsLoading || patchProject.isPending;
 
   const indigoMain = colors.indigo?.[600] ?? colors.purple[600];
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      {/* AI support header card */}
       <Paper
         sx={{
           p: 2.5,
@@ -197,14 +247,72 @@ export default function SettingsAiAssistant({
         </Box>
       </Paper>
 
-      {/* Support capabilities list */}
       <Box>
         <Typography variant="h6" color="text.primary" sx={{ mb: 2 }}>
           Support Capabilities
         </Typography>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-          {capabilities.map((cap) => (
-            <Paper key={cap.id} sx={{ p: 2.5 }}>
+          <Paper sx={{ p: 2.5 }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 2,
+              }}
+            >
+              <Box sx={{ flex: 1 }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1.5,
+                    mb: 1,
+                  }}
+                >
+                  <Bot size={20} color={colors.orange[600]} />
+                  <Typography variant="body1" id="ai-chat-assistant-label">
+                    AI Chat Assistant (Novera)
+                  </Typography>
+                  <Chip
+                    label={noveraEnabled ? "Active" : "Inactive"}
+                    size="small"
+                    color={noveraEnabled ? "success" : "default"}
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: "0.7rem" }}
+                  />
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Enable AI-powered chat assistant to help with troubleshooting
+                  before creating cases
+                </Typography>
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={noveraEnabled}
+                    disabled={disabledForSwitches}
+                    onChange={(_, checked) => handleNoveraToggle(checked)}
+                    color="warning"
+                    inputProps={{
+                      "aria-labelledby": "ai-chat-assistant-label",
+                    }}
+                  />
+                }
+                label=""
+              />
+            </Box>
+          </Paper>
+
+          <Box
+            sx={{
+              pl: 2.5,
+              ml: 1.5,
+              borderLeft: "2px solid",
+              borderColor: "divider",
+            }}
+          >
+            <Paper sx={{ p: 2.5 }}>
               <Box
                 sx={{
                   display: "flex",
@@ -223,36 +331,42 @@ export default function SettingsAiAssistant({
                     }}
                   >
                     <Bot size={20} color={colors.orange[600]} />
-                    <Typography variant="body1">{cap.title}</Typography>
+                    <Typography variant="body1" id="kb-suggestions-label">
+                      Smart Knowledge Base Suggestions
+                    </Typography>
                     <Chip
-                      label={cap.enabled ? "Active" : "Inactive"}
+                      label={kbReferencesEnabled ? "Active" : "Inactive"}
                       size="small"
-                      color={cap.enabled ? "success" : "default"}
+                      color={kbReferencesEnabled ? "success" : "default"}
                       variant="outlined"
                       sx={{ height: 20, fontSize: "0.7rem" }}
                     />
                   </Box>
                   <Typography variant="body2" color="text.secondary">
-                    {cap.description}
+                    Get AI-powered article recommendations based on your issue
+                    description
                   </Typography>
                 </Box>
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={cap.enabled}
-                      onChange={(_, checked) => cap.onToggle(checked)}
+                      checked={kbReferencesEnabled}
+                      disabled={!noveraEnabled || disabledForSwitches}
+                      onChange={(_, checked) => handleKbToggle(checked)}
                       color="warning"
+                      inputProps={{
+                        "aria-labelledby": "kb-suggestions-label",
+                      }}
                     />
                   }
                   label=""
                 />
               </Box>
             </Paper>
-          ))}
+          </Box>
         </Box>
       </Box>
 
-      {/* AI best practices card */}
       <Paper
         sx={{
           p: 2.5,

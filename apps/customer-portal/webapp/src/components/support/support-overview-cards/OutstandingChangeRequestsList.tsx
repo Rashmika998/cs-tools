@@ -20,10 +20,11 @@ import type { ChangeRequestItem } from "@models/responses";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import { formatRelativeTime } from "@utils/support";
 import OutstandingChangeRequestsSkeleton from "./OutstandingChangeRequestsSkeleton";
+import EmptyIcon from "@components/common/empty-state/EmptyIcon";
 import {
   getChangeRequestStateColor,
   getChangeRequestStateIcon,
-} from "@constants/supportConstants";
+} from "@constants/changeRequestConstants";
 
 export interface OutstandingChangeRequestsListProps {
   changeRequests: ChangeRequestItem[];
@@ -56,9 +57,21 @@ export default function OutstandingChangeRequestsList({
 
   if (changeRequests.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary">
-        No change requests. Try adjusting your filters or search query.
-      </Typography>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          py: 2,
+        }}
+      >
+        <EmptyIcon
+          style={{ width: 120, maxWidth: "100%", height: "auto", marginBottom: 12 }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          No change requests.
+        </Typography>
+      </Box>
     );
   }
 
@@ -113,8 +126,8 @@ export default function OutstandingChangeRequestsList({
             }}
           >
             {cr.state?.label ? (() => {
-              const statusColor = getChangeRequestStateColor(cr.state.label);
-              const StatusIcon = getChangeRequestStateIcon(cr.state.label);
+              const statusColor = getChangeRequestStateColor(cr.state);
+              const StatusIcon = getChangeRequestStateIcon(cr.state);
               return (
                 <Chip
                   icon={<StatusIcon size={12} />}

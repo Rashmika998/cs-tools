@@ -27,7 +27,7 @@ import type { ChangeRequestDetails } from "@models/responses";
 import {
   formatChangeRequestDisplayDate,
   formatChangeRequestDuration,
-} from "@utils/changeRequestSchedule";
+} from "@utils/changeRequests";
 
 export interface ScheduledMaintenanceWindowCardProps {
   changeRequest: ChangeRequestDetails;

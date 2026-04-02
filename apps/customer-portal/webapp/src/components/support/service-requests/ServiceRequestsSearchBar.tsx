@@ -21,9 +21,15 @@ import {
   TextField,
   InputAdornment,
 } from "@wso2/oxygen-ui";
-import { Search } from "@wso2/oxygen-ui-icons-react";
+import { RotateCcw, Search } from "@wso2/oxygen-ui-icons-react";
 import type { JSX, ChangeEvent } from "react";
-import type { ServiceRequestStatusFilter } from "@pages/ServiceRequestsPage";
+
+/** Status bucket filter for the legacy Service Requests search bar (tabs). */
+export type ServiceRequestStatusFilter =
+  | "all"
+  | "pending"
+  | "in_progress"
+  | "completed";
 
 export interface ServiceRequestStats {
   pending: number;
@@ -38,6 +44,7 @@ export interface ServiceRequestsSearchBarProps {
   statusFilter: ServiceRequestStatusFilter;
   onStatusFilterChange: (value: ServiceRequestStatusFilter) => void;
   stats?: ServiceRequestStats;
+  onClearRefinements?: () => void;
 }
 
 const STATUS_TABS: { value: ServiceRequestStatusFilter; label: string }[] = [
@@ -68,10 +75,16 @@ export default function ServiceRequestsSearchBar({
   statusFilter,
   onStatusFilterChange,
   stats,
+  onClearRefinements,
 }: ServiceRequestsSearchBarProps): JSX.Element {
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
     onSearchChange(event.target.value);
   };
+
+  const activeRefinementCount =
+    (searchTerm.trim().length > 0 ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0);
+  const hasRefinements = activeRefinementCount > 0;
 
   return (
     <Paper sx={{ p: 2 }}>
@@ -80,6 +93,7 @@ export default function ServiceRequestsSearchBar({
           display: "flex",
           alignItems: "center",
           gap: 2,
+          flexWrap: "wrap",
         }}
       >
         <Box sx={{ flex: 1 }}>
@@ -132,6 +146,18 @@ export default function ServiceRequestsSearchBar({
             );
           })}
         </Box>
+        {hasRefinements && onClearRefinements && (
+          <Button
+            variant="outlined"
+            color="warning"
+            size="small"
+            startIcon={<RotateCcw size={16} />}
+            onClick={onClearRefinements}
+            sx={{ flexShrink: 0 }}
+          >
+            {`Reset filters (${activeRefinementCount})`}
+          </Button>
+        )}
       </Box>
     </Paper>
   );

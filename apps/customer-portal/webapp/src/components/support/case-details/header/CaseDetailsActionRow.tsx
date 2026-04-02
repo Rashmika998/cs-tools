@@ -15,13 +15,10 @@
 // under the License.
 
 import {
-  Avatar,
   Box,
   Button,
   CircularProgress,
-  Divider,
   Paper,
-  Skeleton,
   Stack,
   Typography,
   alpha,
@@ -38,11 +35,8 @@ import useGetProjectFilters from "@api/useGetProjectFilters";
 import { usePatchCase } from "@api/usePatchCase";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
 import { useSuccessBanner } from "@context/success-banner/SuccessBannerContext";
-import type { AssignedEngineerValue } from "@utils/support";
 import {
   ACTION_TO_CASE_STATE_LABEL,
-  formatValue,
-  getAssignedEngineerLabel,
   getAvailableCaseActions,
   isWithinOpenRelatedCaseWindow,
   toPresentContinuousActionLabel,
@@ -73,7 +67,7 @@ function getActionButtonSx(
 }
 
 export interface CaseDetailsActionRowProps {
-  assignedEngineer: AssignedEngineerValue;
+  assignedEngineer: unknown;
   engineerInitials: string;
   statusLabel?: string | null;
   /** When case is closed, used to hide "Open Related Case" after 2 months. */
@@ -85,10 +79,12 @@ export interface CaseDetailsActionRowProps {
   caseId?: string;
   isLoading?: boolean;
   showOnlyEngineer?: boolean;
+  /** When true, hides assigned engineer (e.g. security report analysis). */
+  hideAssignedEngineer?: boolean;
 }
 
 /**
- * Support action row: avatar, name, "Support Engineer" label, and "Manage case status" actions.
+ * Support action row: optional assigned engineer, "Manage State" label, and state action buttons.
  *
  * @param {CaseDetailsActionRowProps} props - Action display data and error state.
  * @returns {JSX.Element} The action row wrapped in Paper.
@@ -124,31 +120,15 @@ export default function CaseDetailsActionRow({
   caseId = "",
   isLoading = false,
   showOnlyEngineer = false,
+  hideAssignedEngineer = false,
 }: CaseDetailsActionRowProps): JSX.Element {
+  void assignedEngineer;
+  void engineerInitials;
+  void hideAssignedEngineer;
+  void isLoading;
   const theme = useTheme();
-  const hasEngineer = !!getAssignedEngineerLabel(assignedEngineer);
-
   const { data: filterMetadata } = useGetProjectFilters(projectId);
   const caseStates = filterMetadata?.caseStates;
-
-  if (showOnlyEngineer && !hasEngineer) {
-    return (
-      <Paper
-        variant="outlined"
-        sx={{
-          mt: 2,
-          mb: 1,
-          py: 0.5,
-          px: 2,
-          bgcolor: "background.default",
-        }}
-      >
-        <Typography variant="caption" color="text.secondary">
-          No engineer assigned
-        </Typography>
-      </Paper>
-    );
-  }
 
   const { showSuccess } = useSuccessBanner();
   const { showError } = useErrorBanner();
@@ -193,54 +173,6 @@ export default function CaseDetailsActionRow({
         }}
       >
         <Stack direction="row" spacing={1.5} alignItems="center">
-          {hasEngineer && (
-            <>
-              {isLoading ? (
-                <Skeleton variant="circular" width={18} height={18} />
-              ) : (
-                <Avatar
-                  sx={{
-                    width: 18,
-                    height: 18,
-                    bgcolor: "primary.light",
-                    color: "primary.contrastText",
-                    fontSize: "0.6rem",
-                  }}
-                >
-                  {engineerInitials}
-                </Avatar>
-              )}
-
-              <Box>
-                {isLoading ? (
-                  <Skeleton
-                    variant="text"
-                    width={90}
-                    height={14}
-                    sx={{ mb: 0.25 }}
-                  />
-                ) : (
-                  <Typography
-                    variant="caption"
-                    color="text.primary"
-                    sx={{ lineHeight: 1.2 }}
-                  >
-                    {formatValue(assignedEngineer)}
-                  </Typography>
-                )}
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ fontSize: "0.7rem", lineHeight: 1.2, display: "block" }}
-                >
-                  Support Engineer
-                </Typography>
-              </Box>
-
-              <Divider orientation="vertical" flexItem />
-            </>
-          )}
-
           {!showOnlyEngineer && (
             <Stack direction="row" spacing={1.5} alignItems="center">
               <CirclePlay size={12} color={theme.palette.primary.main} />
@@ -249,7 +181,7 @@ export default function CaseDetailsActionRow({
                 color="text.secondary"
                 sx={{ fontSize: "0.7rem" }}
               >
-                Manage case status
+                Manage State
               </Typography>
             </Stack>
           )}

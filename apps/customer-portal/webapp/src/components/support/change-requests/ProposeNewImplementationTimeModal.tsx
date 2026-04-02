@@ -37,7 +37,7 @@ import {
   changeRequestToApiDatetime,
   changeRequestToDatetimeLocal,
   formatChangeRequestDisplayDate,
-} from "@utils/changeRequestSchedule";
+} from "@utils/changeRequests";
 
 export interface ProposeNewImplementationTimeModalProps {
   open: boolean;

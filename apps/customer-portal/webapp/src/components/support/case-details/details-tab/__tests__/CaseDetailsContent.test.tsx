@@ -17,6 +17,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider, createTheme } from "@wso2/oxygen-ui";
+import { MemoryRouter } from "react-router";
 import CaseDetailsContent from "@case-details-details/CaseDetailsContent";
 
 const mockCaseDetails = {
@@ -104,22 +105,24 @@ function renderContent(
   } = {},
 ) {
   return render(
-    <ThemeProvider theme={createTheme()}>
-      <CaseDetailsContent
-        data={props.data ?? mockCaseDetails}
-        isLoading={props.isLoading ?? false}
-        isError={props.isError ?? false}
-        caseId={props.caseId ?? "case-001"}
-        onBack={props.onBack ?? vi.fn()}
-      />
-    </ThemeProvider>,
+    <MemoryRouter>
+      <ThemeProvider theme={createTheme()}>
+        <CaseDetailsContent
+          data={props.data ?? mockCaseDetails}
+          isLoading={props.isLoading ?? false}
+          isError={props.isError ?? false}
+          caseId={props.caseId ?? "case-001"}
+          onBack={props.onBack ?? vi.fn()}
+        />
+      </ThemeProvider>
+    </MemoryRouter>,
   );
 }
 
 describe("CaseDetailsContent", () => {
   it("should show loading skeleton when isLoading is true", () => {
     renderContent({ data: undefined, isLoading: true });
-    expect(screen.getByText("Back to Support Center")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^back$/i })).toBeInTheDocument();
     const skeletons = document.querySelectorAll(".MuiSkeleton-root");
     expect(skeletons.length).toBeGreaterThan(0);
   });
@@ -127,19 +130,34 @@ describe("CaseDetailsContent", () => {
   it("should render header and action row when not in focus mode", () => {
     renderContent();
     expect(screen.getByText("CS0001001")).toBeInTheDocument();
-    expect(screen.getByText("Manage case status")).toBeInTheDocument();
+    expect(screen.getByText("Manage State")).toBeInTheDocument();
   });
 
   it("should hide header and action row when focus mode is on", () => {
     renderContent();
     const focusButton = screen.getByRole("button", { name: /focus mode/i });
     fireEvent.click(focusButton);
-    expect(screen.queryByText("Manage case status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage State")).not.toBeInTheDocument();
   });
 
   it("should show attachment count in Attachments tab label when available", () => {
     renderContent();
     expect(screen.getByText("Attachments (3)")).toBeInTheDocument();
+  });
+
+  it("should omit Calls tab when case status is not eligible for call scheduling", () => {
+    renderContent();
+    expect(screen.queryByRole("tab", { name: /^calls/i })).not.toBeInTheDocument();
+  });
+
+  it("should show Calls tab when case status allows call scheduling", () => {
+    renderContent({
+      data: {
+        ...mockCaseDetails,
+        status: { id: "2", label: "Work In Progress" },
+      },
+    });
+    expect(screen.getByRole("tab", { name: /^calls/i })).toBeInTheDocument();
   });
 
   it("should render tab panels", () => {

@@ -28,7 +28,7 @@ import {
 import { X } from "@wso2/oxygen-ui-icons-react";
 import { useCallback, useState, type ChangeEvent, type JSX } from "react";
 import type { CallRequest } from "@models/responses";
-import { formatUtcToLocal } from "@utils/support";
+import { formatCallRequestPromptScheduledTime } from "@utils/support";
 
 export interface RejectCallRequestModalProps {
   open: boolean;
@@ -36,7 +36,6 @@ export interface RejectCallRequestModalProps {
   onClose: () => void;
   onConfirm: (reason: string) => void;
   isRejecting?: boolean;
-  userTimeZone?: string;
 }
 
 /**
@@ -44,7 +43,7 @@ export interface RejectCallRequestModalProps {
  * Implemented as PATCH with the Customer Rejected state key.
  * User must enter a mandatory reason before confirming.
  *
- * @param {RejectCallRequestModalProps} props - open, call, onClose, onConfirm, isRejecting, userTimeZone.
+ * @param {RejectCallRequestModalProps} props - open, call, onClose, onConfirm, isRejecting.
  * @returns {JSX.Element} The reject call request modal.
  */
 export default function RejectCallRequestModal({
@@ -53,7 +52,6 @@ export default function RejectCallRequestModal({
   onClose,
   onConfirm,
   isRejecting = false,
-  userTimeZone,
 }: RejectCallRequestModalProps): JSX.Element {
   const [reason, setReason] = useState("");
 
@@ -85,6 +83,20 @@ export default function RejectCallRequestModal({
   }, [reason, isRejecting, onConfirm]);
 
   const canConfirm = reason.trim() !== "";
+
+  const promptWhen =
+    call != null
+      ? formatCallRequestPromptScheduledTime(
+          call.preferredTimes,
+          call.scheduleTime,
+        )
+      : "--";
+  const rejectDescription =
+    call == null
+      ? "Are you sure you want to reject this call request?"
+      : promptWhen !== "--"
+        ? `Are you sure you want to reject the call request scheduled for ${promptWhen}?`
+        : "Are you sure you want to reject this call request?";
 
   return (
     <Dialog
@@ -122,9 +134,7 @@ export default function RejectCallRequestModal({
           id="reject-call-request-modal-description"
           color="text.secondary"
         >
-          {call
-            ? `Are you sure you want to reject the call request${call.scheduleTime ? ` scheduled for ${formatUtcToLocal(call.scheduleTime, "short", true, userTimeZone)}` : ""}?`
-            : "Are you sure you want to reject this call request?"}
+          {rejectDescription}
         </Typography>
         <TextField
           id="reject-call-reason"

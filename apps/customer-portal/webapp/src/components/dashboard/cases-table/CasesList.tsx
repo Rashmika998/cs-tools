@@ -40,6 +40,8 @@ import {
 import { getSeverityLegendColor } from "@constants/dashboardConstants";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import CasesTableSkeleton from "@components/dashboard/cases-table/CasesTableSkeleton";
+import EmptyIcon from "@components/common/empty-state/EmptyIcon";
+import SearchNoResultsIcon from "@components/common/empty-state/SearchNoResultsIcon";
 
 interface CasesListProps {
   isLoading: boolean;
@@ -51,6 +53,7 @@ interface CasesListProps {
   onRowsPerPageChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onCaseClick?: (caseItem: CaseListItem) => void;
   showPagination?: boolean;
+  hasListRefinement?: boolean;
 }
 
 const CasesList = ({
@@ -63,6 +66,7 @@ const CasesList = ({
   onRowsPerPageChange,
   onCaseClick,
   showPagination = true,
+  hasListRefinement = false,
 }: CasesListProps): JSX.Element => {
   return (
     <>
@@ -101,7 +105,44 @@ const CasesList = ({
             ) : data?.cases.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} align="center">
-                  No cases found. Try adjusting your filters or search query.
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      py: 4,
+                    }}
+                  >
+                    {hasListRefinement ? (
+                      <>
+                        <SearchNoResultsIcon
+                          style={{
+                            width: 160,
+                            maxWidth: "100%",
+                            height: "auto",
+                            marginBottom: 12,
+                          }}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          No outstanding cases. Try adjusting your filters.
+                        </Typography>
+                      </>
+                    ) : (
+                      <>
+                        <EmptyIcon
+                          style={{
+                            width: 160,
+                            maxWidth: "100%",
+                            height: "auto",
+                            marginBottom: 12,
+                          }}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          No outstanding cases.
+                        </Typography>
+                      </>
+                    )}
+                  </Box>
                 </TableCell>
               </TableRow>
             ) : (

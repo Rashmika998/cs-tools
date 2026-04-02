@@ -14,13 +14,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { Box, Divider, Paper, Skeleton, Stack } from "@wso2/oxygen-ui";
+import { Box, Paper, Skeleton, Stack } from "@wso2/oxygen-ui";
 import type { JSX } from "react";
 
 export interface CaseDetailsSkeletonProps {
   /** When true, hides the action row (manage status section). */
   hideActionRow?: boolean;
   showEngineerOnly?: boolean;
+  /** When true, omits engineer avatar/name skeleton (security report analysis). */
+  hideAssignedEngineer?: boolean;
 }
 
 /**
@@ -62,12 +64,14 @@ export function CaseDetailsHeaderSkeleton(): JSX.Element {
 export default function CaseDetailsSkeleton({
   hideActionRow = false,
   showEngineerOnly = false,
+  hideAssignedEngineer = false,
 }: CaseDetailsSkeletonProps = {}): JSX.Element {
+  void hideAssignedEngineer;
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <CaseDetailsHeaderSkeleton />
 
-      {/* Action row: avatar, engineer, manage status, buttons */}
+      {/* Action row: manage status label placeholder */}
       {!hideActionRow && (
         <Paper
           variant="outlined"
@@ -86,26 +90,11 @@ export default function CaseDetailsSkeleton({
           }}
         >
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Skeleton variant="circular" width={18} height={18} />
-            <Box>
-              <Skeleton
-                variant="text"
-                width={90}
-                height={14}
-                sx={{ mb: 0.25 }}
-              />
-              <Box sx={{ fontSize: "0.7rem", color: "text.secondary" }}>
-                Support Engineer
-              </Box>
-            </Box>
             {!showEngineerOnly && (
-              <>
-                <Divider orientation="vertical" flexItem />
-                <Stack direction="row" spacing={1.5} alignItems="center">
-                  <Skeleton variant="circular" width={12} height={12} />
-                  <Skeleton variant="text" width={100} height={14} />
-                </Stack>
-              </>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Skeleton variant="circular" width={12} height={12} />
+                <Skeleton variant="text" width={100} height={14} />
+              </Stack>
             )}
           </Stack>
         </Paper>

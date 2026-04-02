@@ -19,13 +19,15 @@ import { useNavigate, useParams, useLocation } from "react-router";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
 import useGetCaseDetails from "@api/useGetCaseDetails";
-import ServiceRequestDetailContent from "@components/support/service-requests/ServiceRequestDetailContent";
+import CaseDetailsContent from "@case-details-details/CaseDetailsContent";
 
 /**
- * ServiceRequestDetailsPage displays the SR-specific detail view for a single
- * service request. Data is fetched via GET cases/[id]; layout is SR-only.
+ * ServiceRequestDetailsPage displays a service request with the same shell as
+ * case details (tabs, header, actions). Data comes from GET case by id.
  *
- * URL: /:projectId/support/service-requests/:serviceRequestId
+ * URL: /:projectId/support|operations/service-requests/:serviceRequestId
+ *
+ * @returns {JSX.Element} The rendered page.
  */
 export default function ServiceRequestDetailsPage(): JSX.Element {
   const navigate = useNavigate();
@@ -34,17 +36,14 @@ export default function ServiceRequestDetailsPage(): JSX.Element {
     projectId: string;
     serviceRequestId: string;
   }>();
-  const basePath = location.pathname.includes("/operations/") ? "operations" : "support";
 
   const { showLoader, hideLoader } = useLoader();
   const { showError } = useErrorBanner();
 
-  const {
-    data,
-    isLoading,
-    isFetching,
-    isError,
-  } = useGetCaseDetails(projectId || "", serviceRequestId || "");
+  const { data, isLoading, isFetching, isError } = useGetCaseDetails(
+    projectId || "",
+    serviceRequestId || "",
+  );
 
   const showSkeletons =
     isLoading || isFetching || (data === undefined && !isError);
@@ -75,18 +74,43 @@ export default function ServiceRequestDetailsPage(): JSX.Element {
   }, [isError, showError]);
 
   const handleBack = () => {
+    const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+    if (returnTo) {
+      navigate(returnTo);
+      return;
+    }
+    const basePath = location.pathname.includes("/operations/")
+      ? "operations"
+      : "support";
     navigate(`/projects/${projectId}/${basePath}/service-requests`);
   };
 
+  const handleOpenRelatedCase = () => {
+    if (!projectId) return;
+    navigate(`/projects/${projectId}/support/chat/create-related-case`, {
+      state: {
+        relatedCase: {
+          parentCaseId: data?.id ?? serviceRequestId ?? "",
+          number: data?.number ?? "",
+          title: data?.title ?? "",
+          description: data?.description ?? "",
+          deploymentId: data?.deployment?.id,
+          deploymentLabel: data?.deployment?.label,
+        },
+      },
+    });
+  };
+
   return (
-    <ServiceRequestDetailContent
+    <CaseDetailsContent
       data={data}
       isLoading={showSkeletons}
       isError={isError}
       caseId={serviceRequestId || ""}
       projectId={projectId}
       onBack={handleBack}
+      onOpenRelatedCase={handleOpenRelatedCase}
+      isServiceRequest
     />
   );
 }
-

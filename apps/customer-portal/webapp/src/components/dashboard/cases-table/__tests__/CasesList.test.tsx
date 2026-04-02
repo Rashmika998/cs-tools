@@ -20,8 +20,7 @@ import CasesList from "@components/dashboard/cases-table/CasesList";
 
 // Mock Oxygen UI components (use importOriginal for alpha, colors, etc.; override components for testing)
 vi.mock("@wso2/oxygen-ui", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@wso2/oxygen-ui")>();
+  const actual = await importOriginal<typeof import("@wso2/oxygen-ui")>();
   return {
     ...actual,
     Box: ({ children }: any) => <div data-testid="box">{children}</div>,
@@ -38,8 +37,10 @@ vi.mock("@wso2/oxygen-ui", async (importOriginal) => {
     TableHead: ({ children }: any) => (
       <thead data-testid="table-head">{children}</thead>
     ),
-    TableRow: ({ children }: any) => (
-      <tr data-testid="table-row">{children}</tr>
+    TableRow: ({ children, onClick, hover: _h, sx: _sx }: any) => (
+      <tr data-testid="table-row" onClick={onClick}>
+        {children}
+      </tr>
     ),
     Typography: ({ children, onClick, ...rest }: any) => (
       <span onClick={onClick} {...rest}>
@@ -72,7 +73,8 @@ vi.mock("@wso2/oxygen-ui", async (importOriginal) => {
 });
 
 vi.mock("@wso2/oxygen-ui-icons-react", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@wso2/oxygen-ui-icons-react")>();
+  const actual =
+    await importOriginal<typeof import("@wso2/oxygen-ui-icons-react")>();
   return {
     ...actual,
     ExternalLink: () => <span />,
@@ -155,7 +157,29 @@ describe("CasesList", () => {
       />,
     );
 
-    expect(screen.getByText("No cases found.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No outstanding cases."),
+    ).toBeInTheDocument();
+  });
+
+  it("should show refined empty message when filters are active and list is empty", () => {
+    render(
+      <CasesList
+        isLoading={false}
+        data={{ cases: [], totalRecords: 0, offset: 0, limit: 10 } as any}
+        page={0}
+        rowsPerPage={10}
+        onPageChange={mockOnPageChange}
+        onRowsPerPageChange={mockOnRowsPerPageChange}
+        hasListRefinement={true}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "No outstanding cases. Try adjusting your filters.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("should render list of cases", () => {
@@ -228,13 +252,21 @@ describe("CasesList", () => {
     fireEvent.click(screen.getByText("Test Case 1"));
     expect(mockOnCaseClick).toHaveBeenCalledTimes(1);
     expect(mockOnCaseClick).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "1", title: "Test Case 1", number: "CS-001" }),
+      expect.objectContaining({
+        id: "1",
+        title: "Test Case 1",
+        number: "CS-001",
+      }),
     );
 
     fireEvent.click(screen.getByText("Test Case 2"));
     expect(mockOnCaseClick).toHaveBeenCalledTimes(2);
     expect(mockOnCaseClick).toHaveBeenLastCalledWith(
-      expect.objectContaining({ id: "2", title: "Test Case 2", number: "CS-002" }),
+      expect.objectContaining({
+        id: "2",
+        title: "Test Case 2",
+        number: "CS-002",
+      }),
     );
   });
 

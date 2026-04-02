@@ -22,17 +22,26 @@ import { useLogger } from "@hooks/useLogger";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
 import useInfiniteProjects, { flattenProjectPages } from "@api/useGetProjects";
+import useGetProjectDetails from "@api/useGetProjectDetails";
 import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
 import { useGetProjectChangeRequestsStats } from "@api/useGetProjectChangeRequestsStats";
 import {
   DASHBOARD_STATS,
   SEVERITY_API_LABELS,
 } from "@constants/dashboardConstants";
-import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
 import { CaseType } from "@constants/supportConstants";
+import {
+  calculateProjectStats,
+  getProjectPermissions,
+  shouldExcludeS0,
+} from "@utils/subscriptionUtils";
 import { StatCard } from "@components/dashboard/stats/StatCard";
 import ChartLayout from "@components/dashboard/charts/ChartLayout";
 import CasesTable from "@components/dashboard/cases-table/CasesTable";
+import {
+  computeCrCardIsCardError,
+  computeCrCardIsCardLoading,
+} from "@utils/dashboardUtils";
 
 /**
  * DashboardPage component to display project-specific statistics and overview.
@@ -51,17 +60,31 @@ export default function DashboardPage(): JSX.Element {
     isLoading: isProjectsLoading,
   } = useInfiniteProjects({ pageSize: 20, enabled: !!projectId });
   const projects = useMemo(() => flattenProjectPages(projectsData), [projectsData]);
-  const project = useMemo(
+  const projectFromList = useMemo(
     () => projects.find((p) => p.id === projectId),
     [projects, projectId],
   );
-  const projectReady = !isProjectsLoading && project !== undefined;
+  const { data: projectDetails, isFetching: isProjectDetailsFetching } =
+    useGetProjectDetails(projectId || "");
+  const resolvedProject = projectFromList ?? projectDetails ?? undefined;
 
-  const isManagedCloudSubscription =
-    projectReady &&
-    project?.type?.label === PROJECT_TYPE_LABELS.MANAGED_CLOUD_SUBSCRIPTION;
-  const excludeS0 = projectReady ? !isManagedCloudSubscription : false;
-  const hasAgent = projectReady ? (project?.hasAgent ?? false) : false;
+  const awaitingProjectContext =
+    !!projectId &&
+    resolvedProject === undefined &&
+    (isProjectsLoading || isProjectDetailsFetching);
+
+  const permissions = useMemo(
+    () => getProjectPermissions(resolvedProject?.type?.label),
+    [resolvedProject?.type?.label],
+  );
+
+  const excludeS0 = shouldExcludeS0(resolvedProject?.type?.label);
+  const hasAgent = resolvedProject?.hasAgent ?? false;
+
+  const includeCrStats = permissions.includeChangeRequestsInDashboardTotals;
+  const showOpsChart = permissions.showOutstandingOpsChart;
+  const operationsChartMode =
+    permissions.hasSR && !permissions.hasCR ? "srOnly" : "srAndCr";
 
   const {
     data: combinedCasesStats,
@@ -91,7 +114,7 @@ export default function DashboardPage(): JSX.Element {
     isError: isErrorServiceRequest,
   } = useGetProjectCasesStats(projectId || "", {
     caseTypes: [CaseType.SERVICE_REQUEST],
-    enabled: !!projectId,
+    enabled: !!projectId && showOpsChart,
   });
 
   const {
@@ -108,10 +131,10 @@ export default function DashboardPage(): JSX.Element {
     isLoading: isChangeRequestStatsLoading,
     isError: isErrorChangeRequestStats,
   } = useGetProjectChangeRequestsStats(projectId || "", {
-    enabled: !!projectId,
+    enabled: !!projectId && includeCrStats,
   });
 
-  const isDashboardLoading = isAuthLoading || isProjectsLoading;
+  const isDashboardLoading = isAuthLoading || awaitingProjectContext;
 
   useEffect(() => {
     if (isDashboardLoading) {
@@ -131,27 +154,23 @@ export default function DashboardPage(): JSX.Element {
   const hasShownErrorRef = useRef(false);
 
   useEffect(() => {
-    if (
+    const srFailed = showOpsChart && isErrorServiceRequest;
+    const crFailed = includeCrStats && isErrorChangeRequestStats;
+    const allCoreFailed =
       isErrorCombinedCases &&
       isErrorDefaultCase &&
-      isErrorServiceRequest &&
       isErrorEngagement &&
-      isErrorChangeRequestStats &&
-      !hasShownErrorRef.current
-    ) {
+      (!showOpsChart || srFailed) &&
+      (!includeCrStats || crFailed);
+
+    if (allCoreFailed && !hasShownErrorRef.current) {
       hasShownErrorRef.current = true;
       showError("Could not load dashboard statistics.");
       logger.error(
         `Failed to load dashboard stats for project ID: ${projectId}`,
       );
     }
-    if (
-      !isErrorCombinedCases ||
-      !isErrorDefaultCase ||
-      !isErrorServiceRequest ||
-      !isErrorEngagement ||
-      !isErrorChangeRequestStats
-    ) {
+    if (!allCoreFailed) {
       hasShownErrorRef.current = false;
     }
   }, [
@@ -160,6 +179,8 @@ export default function DashboardPage(): JSX.Element {
     isErrorServiceRequest,
     isErrorEngagement,
     isErrorChangeRequestStats,
+    showOpsChart,
+    includeCrStats,
     showError,
     logger,
     projectId,
@@ -190,7 +211,9 @@ export default function DashboardPage(): JSX.Element {
         (s) => s.label === SEVERITY_API_LABELS[4],
       )?.count ?? 0;
 
-    const catastrophic = isManagedCloudSubscription ? catastrophicCount : 0;
+    const catastrophic = permissions.includeS0InSupportMetrics
+      ? catastrophicCount
+      : 0;
     const total = catastrophic + critical + high + medium + low;
 
     return {
@@ -201,13 +224,13 @@ export default function DashboardPage(): JSX.Element {
       low,
       total,
     };
-  }, [defaultCaseStats, isManagedCloudSubscription]);
+  }, [defaultCaseStats, permissions.includeS0InSupportMetrics]);
 
   const outstandingOperations = useMemo(() => {
     const hasServiceRequests =
       !!serviceRequestStats && !isErrorServiceRequest;
     const hasChangeRequests =
-      !!changeRequestStats && !isErrorChangeRequestStats;
+      includeCrStats && !!changeRequestStats && !isErrorChangeRequestStats;
 
     const serviceRequestsCount = hasServiceRequests
       ? serviceRequestStats?.totalCount ??
@@ -218,14 +241,19 @@ export default function DashboardPage(): JSX.Element {
       ? changeRequestStats?.totalCount ?? 0
       : 0;
 
-    const total = serviceRequestsCount + changeRequestsCount;
-
-    return {
-      serviceRequests: serviceRequestsCount,
-      changeRequests: changeRequestsCount,
-      total,
-    };
-  }, [serviceRequestStats, changeRequestStats, isErrorServiceRequest, isErrorChangeRequestStats]);
+    return calculateProjectStats(
+      permissions,
+      serviceRequestsCount,
+      changeRequestsCount,
+    );
+  }, [
+    serviceRequestStats,
+    changeRequestStats,
+    isErrorServiceRequest,
+    isErrorChangeRequestStats,
+    includeCrStats,
+    permissions,
+  ]);
 
   const outstandingEngagements = useMemo(() => {
     const source = engagementStats;
@@ -252,9 +280,40 @@ export default function DashboardPage(): JSX.Element {
   const isChartsLoading =
     isDashboardLoading ||
     isDefaultCaseLoading ||
-    isServiceRequestLoading ||
+    (showOpsChart && isServiceRequestLoading) ||
     isEngagementLoading ||
-    isChangeRequestStatsLoading;
+    (includeCrStats && isChangeRequestStatsLoading);
+
+  const crBranchState = useMemo(() => {
+    const hasCombined = !!combinedCasesStats && !isErrorCombinedCases;
+    const hasChange = !!changeRequestStats && !isErrorChangeRequestStats;
+    const isCardLoading = computeCrCardIsCardLoading(
+      includeCrStats,
+      combinedCasesStats,
+      changeRequestStats,
+      isCombinedCasesLoading,
+      isChangeRequestStatsLoading,
+      isErrorCombinedCases,
+      isErrorChangeRequestStats,
+    );
+    const isCardError = computeCrCardIsCardError(
+      includeCrStats,
+      isCardLoading,
+      combinedCasesStats,
+      changeRequestStats,
+      isErrorCombinedCases,
+      isErrorChangeRequestStats,
+    );
+    return { hasCombined, hasChange, isCardLoading, isCardError };
+  }, [
+    changeRequestStats,
+    combinedCasesStats,
+    includeCrStats,
+    isChangeRequestStatsLoading,
+    isCombinedCasesLoading,
+    isErrorChangeRequestStats,
+    isErrorCombinedCases,
+  ]);
 
   return (
     <Box sx={{ width: "100%", pt: 0, position: "relative" }}>
@@ -274,39 +333,30 @@ export default function DashboardPage(): JSX.Element {
 
           switch (stat.id) {
             case "totalCases": {
-              const hasCombined =
-                !!combinedCasesStats && !isErrorCombinedCases;
-              const hasChange =
-                !!changeRequestStats && !isErrorChangeRequestStats;
+              isCardLoading = crBranchState.isCardLoading;
+              isCardError = crBranchState.isCardError;
 
-              const combinedTotal = hasCombined
+              const combinedTotal = crBranchState.hasCombined
                 ? combinedCasesStats?.totalCount ??
                   combinedCasesStats?.totalCases ??
                   0
                 : 0;
-              const changeTotal = hasChange
+              const changeTotal = crBranchState.hasChange
                 ? changeRequestStats?.totalCount ?? 0
                 : 0;
 
-              value = combinedTotal + changeTotal;
-
-              isCardError =
-                !hasCombined &&
-                !hasChange &&
-                (isErrorCombinedCases || isErrorChangeRequestStats);
-              isCardLoading =
-                !isCardError &&
-                ((isCombinedCasesLoading && !combinedCasesStats) ||
-                  (isChangeRequestStatsLoading && !changeRequestStats));
+              value = includeCrStats
+                ? !isCardError && crBranchState.hasCombined && crBranchState.hasChange
+                  ? combinedTotal + changeTotal
+                  : 0
+                : combinedTotal;
               break;
             }
             case "openCases": {
-              const hasCombined =
-                !!combinedCasesStats && !isErrorCombinedCases;
-              const hasChange =
-                !!changeRequestStats && !isErrorChangeRequestStats;
+              isCardLoading = crBranchState.isCardLoading;
+              isCardError = crBranchState.isCardError;
 
-              const combinedActive = hasCombined
+              const combinedActive = crBranchState.hasCombined
                 ? combinedCasesStats?.activeCount ??
                   combinedCasesStats?.stateCount
                     ?.filter((state) => state.label !== "Closed")
@@ -314,7 +364,7 @@ export default function DashboardPage(): JSX.Element {
                   0
                 : 0;
 
-              const changeActive = hasChange
+              const changeActive = crBranchState.hasChange
                 ? changeRequestStats?.activeCount ??
                   changeRequestStats?.stateCount
                     ?.filter(
@@ -326,16 +376,11 @@ export default function DashboardPage(): JSX.Element {
                   0
                 : 0;
 
-              value = combinedActive + changeActive;
-
-              isCardError =
-                !hasCombined &&
-                !hasChange &&
-                (isErrorCombinedCases || isErrorChangeRequestStats);
-              isCardLoading =
-                !isCardError &&
-                ((isCombinedCasesLoading && !combinedCasesStats) ||
-                  (isChangeRequestStatsLoading && !changeRequestStats));
+              value = includeCrStats
+                ? !isCardError && crBranchState.hasCombined && crBranchState.hasChange
+                  ? combinedActive + changeActive
+                  : 0
+                : combinedActive;
               break;
             }
             case "resolvedCases": {
@@ -429,10 +474,16 @@ export default function DashboardPage(): JSX.Element {
         isLoading={isChartsLoading}
         isErrorOutstanding={isErrorDefaultCase}
         isErrorActiveCases={
-          isErrorServiceRequest && isErrorChangeRequestStats
+          showOpsChart
+            ? includeCrStats
+              ? isErrorServiceRequest || isErrorChangeRequestStats
+              : isErrorServiceRequest
+            : false
         }
         isErrorEngagements={isErrorEngagement}
         excludeS0={excludeS0}
+        showOperationsChart={showOpsChart}
+        operationsChartMode={operationsChartMode}
       />
       {/* Cases Table */}
       {projectId && (
@@ -441,6 +492,7 @@ export default function DashboardPage(): JSX.Element {
             projectId={projectId}
             excludeS0={excludeS0}
             hasAgent={hasAgent}
+            includeDeploymentFilter={permissions.hasDeployments}
           />
         </Box>
       )}

@@ -27,7 +27,7 @@ import useGetCaseComments from "@api/useGetCaseComments";
 import useGetUserDetails from "@api/useGetUserDetails";
 import type { CaseComment } from "@models/responses";
 import EmptyIcon from "@components/common/empty-state/EmptyIcon";
-import { formatCommentDate } from "@utils/support";
+import { compareByCreatedOnThenId, formatCommentDate } from "@utils/support";
 import ActivityCommentInput from "@case-details-activity/ActivityCommentInput";
 import CommentBubble from "@case-details-activity/CommentBubble";
 import ImageFullscreenModal from "@case-details-activity/ImageFullscreenModal";
@@ -66,10 +66,7 @@ export default function CaseDetailsActivityPanel({
 
   const commentsSorted = useMemo(() => {
     const list = commentsData?.comments ?? [];
-    return [...list].sort(
-      (a, b) =>
-        new Date(a.createdOn).getTime() - new Date(b.createdOn).getTime(),
-    );
+    return [...list].sort(compareByCreatedOnThenId);
   }, [commentsData?.comments]);
 
   const commentsToShow = useMemo(

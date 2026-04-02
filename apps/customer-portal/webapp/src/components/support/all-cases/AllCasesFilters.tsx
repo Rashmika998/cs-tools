@@ -22,7 +22,7 @@ import {
   Select,
   Typography,
 } from "@wso2/oxygen-ui";
-import type { JSX } from "react";
+import type { JSX, UIEvent } from "react";
 import type { SelectChangeEvent } from "@wso2/oxygen-ui";
 import type {
   CaseMetadataResponse,
@@ -39,6 +39,9 @@ export interface AllCasesFiltersProps {
   deployments?: ProjectDeploymentItem[];
   onFilterChange: (field: string, value: string) => void;
   excludeS0?: boolean;
+  onLoadMoreDeployments?: () => void;
+  hasMoreDeployments?: boolean;
+  isFetchingMoreDeployments?: boolean;
 }
 
 /**
@@ -53,6 +56,9 @@ export default function AllCasesFilters({
   deployments,
   onFilterChange,
   excludeS0 = false,
+  onLoadMoreDeployments,
+  hasMoreDeployments = false,
+  isFetchingMoreDeployments = false,
 }: AllCasesFiltersProps): JSX.Element {
   const handleSelectChange =
     (field: string) => (event: SelectChangeEvent<string | string[]>) => {
@@ -100,6 +106,31 @@ export default function AllCasesFilters({
                 value={filters[def.filterKey] || ""}
                 label={label}
                 onChange={handleSelectChange(def.filterKey)}
+                MenuProps={
+                  isDeploymentFilter
+                    ? {
+                        PaperProps: {
+                          onScroll: (e: UIEvent<HTMLElement>) => {
+                            if (
+                              !onLoadMoreDeployments ||
+                              !hasMoreDeployments ||
+                              isFetchingMoreDeployments
+                            ) {
+                              return;
+                            }
+                            const el = e.currentTarget;
+                            const threshold = 24;
+                            const isNearBottom =
+                              el.scrollHeight -
+                                el.scrollTop -
+                                el.clientHeight <
+                              threshold;
+                            if (isNearBottom) onLoadMoreDeployments();
+                          },
+                        },
+                      }
+                    : undefined
+                }
               >
                 <MenuItem value="">
                   <Typography variant="body2">{allLabel}</Typography>

@@ -15,7 +15,7 @@
 // under the License.
 
 import type { ReactElement } from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useGetCallRequests } from "@api/useGetCallRequests";
@@ -102,9 +102,14 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     expect(screen.getByTestId("calls-list-skeleton")).toBeInTheDocument();
   });
 
@@ -117,9 +122,14 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     expect(
       screen.getByText(/Error loading call requests/i),
     ).toBeInTheDocument();
@@ -133,6 +143,7 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: {
         pages: [
           {
@@ -154,7 +165,11 @@ describe("CallsPanel", () => {
       },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     expect(screen.getByText(/Call Request/i)).toBeInTheDocument();
     expect(screen.getByText(/Pending on WSO2/i)).toBeInTheDocument();
     expect(screen.getByText(/Test notes/i)).toBeInTheDocument();
@@ -168,10 +183,15 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: { pages: [{ callRequests: [] }] },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     expect(
       screen.getByText(/No call requests found for this case/i),
     ).toBeInTheDocument();
@@ -196,12 +216,17 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: {
         pages: [{ callRequests: [mockCall] }],
       },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
 
     fireEvent.click(screen.getByRole("button", { name: /Cancel/i }));
 
@@ -219,7 +244,7 @@ describe("CallsPanel", () => {
     expect(mockPatchMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         callRequestId: "call-1",
-        reason: "No longer needed",
+        cancellationReason: "No longer needed",
         stateKey: CALL_REQUEST_STATE_CANCELLED,
       }),
       expect.any(Object),
@@ -234,6 +259,7 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: {
         pages: [
           {
@@ -255,7 +281,11 @@ describe("CallsPanel", () => {
       },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     expect(screen.getByRole("button", { name: /Approve/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reject/i })).toBeInTheDocument();
   });
@@ -268,6 +298,7 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: {
         pages: [
           {
@@ -289,7 +320,11 @@ describe("CallsPanel", () => {
       },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
 
     // Reject modal should open with a reason input
@@ -320,6 +355,7 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: {
         pages: [
           {
@@ -341,7 +377,11 @@ describe("CallsPanel", () => {
       },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     fireEvent.click(screen.getByRole("button", { name: /Approve/i }));
     expect(screen.getByText(/Approve Call Request/i)).toBeInTheDocument();
     expect(
@@ -349,8 +389,19 @@ describe("CallsPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("should show Load more and call fetchNextPage when clicked", () => {
+  it("should show pagination like attachments and fetch next page when changing page", async () => {
     const mockFetchNextPage = vi.fn();
+    const tenCalls = Array.from({ length: 10 }, (_, i) => ({
+      id: `call-${i + 1}`,
+      case: { id: "case-1", label: "CS0438719" },
+      reason: `Notes ${i + 1}`,
+      preferredTimes: [] as string[],
+      durationMin: 60,
+      scheduleTime: "",
+      createdOn: "2024-10-29 10:00:00",
+      updatedOn: "2024-10-29 10:00:00",
+      state: { id: "1", label: "Pending" },
+    }));
     vi.mocked(useGetCallRequests).mockReturnValue({
       isPending: false,
       isError: false,
@@ -358,35 +409,32 @@ describe("CallsPanel", () => {
       fetchNextPage: mockFetchNextPage,
       hasNextPage: true,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: {
         pages: [
           {
-            callRequests: [
-              {
-                id: "call-1",
-                case: { id: "case-1", label: "CS0438719" },
-                reason: "Notes",
-                preferredTimes: [],
-                durationMin: 60,
-                scheduleTime: "2024-11-05 14:00:00",
-                createdOn: "2024-10-29 10:00:00",
-                updatedOn: "2024-10-29 10:00:00",
-                state: { id: "1", label: "Pending" },
-              },
-            ],
+            callRequests: tenCalls,
+            totalRecords: 25,
+            limit: 10,
+            offset: 0,
           },
         ],
       },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
 
-    const loadMoreBtn = screen.getByRole("button", { name: /Load more/i });
-    expect(loadMoreBtn).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: /pagination/i }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(loadMoreBtn);
+    fireEvent.click(screen.getByRole("button", { name: /Go to page 2/i }));
 
-    expect(mockFetchNextPage).toHaveBeenCalled();
+    await waitFor(() => expect(mockFetchNextPage).toHaveBeenCalled());
   });
 
   it("should show missing timezone dialog when user has no timezone set", () => {
@@ -403,10 +451,15 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: { pages: [{ callRequests: [] }] },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
     expect(screen.getByText("Time Zone Not Set")).toBeInTheDocument();
   });
 
@@ -418,16 +471,21 @@ describe("CallsPanel", () => {
       fetchNextPage: vi.fn(),
       hasNextPage: false,
       isFetchingNextPage: false,
+      isFetchNextPageError: false,
       data: { pages: [{ callRequests: [] }] },
     } as unknown as ReturnType<typeof useGetCallRequests>);
 
-    renderWithProviders(<CallsPanel projectId={mockProjectId} caseId={mockCaseId} />);
+    renderWithProviders(<CallsPanel
+        projectId={mockProjectId}
+        caseId={mockCaseId}
+        caseStatusLabel="Work In Progress"
+      />);
 
     fireEvent.click(screen.getByRole("button", { name: /Request Call/i }));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Preferred Time/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Meeting Duration/i)).toBeInTheDocument();
+    expect(document.getElementById("preferred-time-0")).toBeTruthy();
+    expect(screen.getByLabelText(/^Meeting Duration \*$/i)).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText(
         /Describe your call request or topics you'd like to discuss/i,

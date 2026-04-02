@@ -15,6 +15,7 @@
 // under the License.
 
 import type { ProjectDeploymentItem } from "@models/responses";
+import type { SelectedDeploymentProduct } from "@components/project-details/deployments/deploymentSelectionTypes";
 import { displayValue, formatProjectDateTime } from "@utils/projectDetails";
 import {
   Box,
@@ -38,6 +39,8 @@ import { useDownloadDeploymentLicense } from "@api/useDownloadDeploymentLicense"
 
 export interface DeploymentCardProps {
   deployment: ProjectDeploymentItem;
+  selectedProduct: SelectedDeploymentProduct | null;
+  onToggleProductSelect: (deploymentId: string, productItemId: string) => void;
 }
 
 /**
@@ -48,6 +51,8 @@ export interface DeploymentCardProps {
  */
 export default function DeploymentCard({
   deployment,
+  selectedProduct,
+  onToggleProductSelect,
 }: DeploymentCardProps): JSX.Element {
   const { name, url, description, createdOn, updatedOn } = deployment;
   const projectId = deployment.project?.id ?? "";
@@ -163,6 +168,8 @@ export default function DeploymentCard({
         <DeploymentProductList
           deploymentId={deployment.id}
           projectId={deployment.project?.id ?? ""}
+          selectedProduct={selectedProduct}
+          onToggleProductSelect={onToggleProductSelect}
         />
 
         <Divider />

@@ -37,10 +37,13 @@ import {
   stripHtml,
 } from "@utils/support";
 import ServiceRequestsListSkeleton from "./ServiceRequestsListSkeleton";
+import EmptyIcon from "@components/common/empty-state/EmptyIcon";
+import SearchNoResultsIcon from "@components/common/empty-state/SearchNoResultsIcon";
 
 export interface ServiceRequestsListProps {
   serviceRequests: CaseListItem[];
   isLoading: boolean;
+  hasListRefinement?: boolean;
   onServiceRequestClick?: (sr: CaseListItem) => void;
 }
 
@@ -53,6 +56,7 @@ export interface ServiceRequestsListProps {
 export default function ServiceRequestsList({
   serviceRequests,
   isLoading,
+  hasListRefinement = false,
   onServiceRequestClick,
 }: ServiceRequestsListProps): JSX.Element {
   const theme = useTheme();
@@ -62,10 +66,39 @@ export default function ServiceRequestsList({
   }
 
   if (serviceRequests.length === 0) {
+    if (hasListRefinement) {
+      return (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            py: 6,
+          }}
+        >
+          <SearchNoResultsIcon
+            style={{ width: 200, maxWidth: "100%", height: "auto", marginBottom: 16 }}
+          />
+          <Typography variant="body1" color="text.secondary">
+            No service requests found. Try adjusting your filters or search query.
+          </Typography>
+        </Box>
+      );
+    }
     return (
-      <Box sx={{ textAlign: "center", py: 6 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          py: 6,
+        }}
+      >
+        <EmptyIcon
+          style={{ width: 200, maxWidth: "100%", height: "auto", marginBottom: 16 }}
+        />
         <Typography variant="body1" color="text.secondary">
-          No service requests found. Try adjusting your filters or search query.
+          No service requests yet.
         </Typography>
       </Box>
     );

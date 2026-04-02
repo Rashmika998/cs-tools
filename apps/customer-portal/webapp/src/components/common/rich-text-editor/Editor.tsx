@@ -50,11 +50,7 @@ import { useLogger } from "@hooks/useLogger";
 import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html";
 import { $getRoot } from "lexical";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
-import {
-  KEY_ENTER_COMMAND,
-  COMMAND_PRIORITY_HIGH,
-  INSERT_PARAGRAPH_COMMAND,
-} from "lexical";
+import { KEY_ENTER_COMMAND, COMMAND_PRIORITY_HIGH } from "lexical";
 
 /**
  * Internal component to handle editable state changes.
@@ -119,8 +115,8 @@ const OnChangeHTMLPlugin = ({
 };
 
 /**
- * Plugin to call onSubmitKeyDown when Enter is pressed without Shift.
- * Shift+Enter inserts new paragraph (new line); Enter submits.
+ * Plugin to call onSubmit only on Ctrl+Enter / Cmd+Enter.
+ * Plain Enter is left to Lexical (new lines, list items, paragraphs).
  */
 const EnterSubmitPlugin = ({
   onSubmit,
@@ -138,10 +134,8 @@ const EnterSubmitPlugin = ({
       KEY_ENTER_COMMAND,
       (event: KeyboardEvent | null) => {
         if (event === null) return false;
-        if (event.shiftKey) {
-          event.preventDefault?.();
-          editor.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined);
-          return true;
+        if (!event.ctrlKey && !event.metaKey) {
+          return false;
         }
         event.preventDefault?.();
         onSubmit();
@@ -232,7 +226,7 @@ const Editor = ({
   minHeight?: number | string;
   showToolbar?: boolean;
   toolbarVariant?: ToolbarVariant;
-  /** When provided, Enter (without Shift) triggers this callback to submit. Shift+Enter inserts newline. */
+  /** When provided, Ctrl+Enter / Cmd+Enter triggers submit; plain Enter stays in the editor (lists, paragraphs). */
   onSubmitKeyDown?: () => void;
   placeholder?: string;
   id?: string;
@@ -285,6 +279,19 @@ const Editor = ({
     scrollElement(scrollNodeRef, direction);
   }, []);
 
+  const editorInputDynamicSx = useMemo(() => {
+    const unbounded =
+      maxHeight === "none" ||
+      maxHeight === "unset" ||
+      (typeof maxHeight === "string" &&
+        maxHeight.trim().toLowerCase() === "none");
+    return {
+      maxHeight:
+        typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight,
+      overflowY: (unbounded ? "visible" : "auto") as "visible" | "auto",
+    };
+  }, [maxHeight]);
+
   return (
     <LexicalComposer initialConfig={memoizedEditorConfig}>
       <Paper
@@ -327,10 +334,8 @@ const Editor = ({
               outline: "none",
               minHeight:
                 typeof minHeight === "number" ? `${minHeight}px` : minHeight,
-              maxHeight:
-                typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight,
-              overflowY: "auto",
               padding: 0,
+              ...editorInputDynamicSx,
               ...oxygenTheme.typography.body2,
               color: disabled ? "text.disabled" : "text.primary",
               "& p": {

@@ -20,6 +20,12 @@ export interface PaginationRequest {
   limit?: number;
 }
 
+/** Object type where at least one key from T is required. */
+export type AtLeastOne<
+  T,
+  Keys extends keyof T = keyof T,
+> = Keys extends keyof T ? Required<Pick<T, Keys>> & Partial<Omit<T, Keys>> : never;
+
 // Request body for searching projects.
 export interface SearchProjectsRequest {
   filters?: {
@@ -259,19 +265,50 @@ export interface TimeCardSearchRequest {
   };
 }
 
+export interface ConsumptionFilter {
+  include?: boolean;
+  startDate?: string;
+  endDate?: string;
+}
+
+// Request payload for searching deployments (POST /projects/:projectId/deployments/search).
+export interface DeploymentSearchRequest {
+  filters?: {
+    consumption?: ConsumptionFilter;
+  };
+  pagination?: {
+    limit?: number;
+    offset?: number;
+  };
+}
+
+// Request payload for searching deployed products (POST /deployments/:deploymentId/products/search).
+export interface DeployedProductSearchRequest {
+  filters?: {
+    consumption?: ConsumptionFilter;
+  };
+  pagination?: {
+    limit?: number;
+    offset?: number;
+  };
+}
+
 // Request body for validating a project contact (POST /projects/:projectId/contacts/validate).
 export interface ValidateContactRequest {
   contactEmail: string;
 }
 
 // Request body for PATCH /change-requests/:id (update planned start).
-export interface PatchChangeRequestRequest {
-  plannedStartOn: string;
-}
+export type PatchChangeRequestRequest = AtLeastOne<{
+  plannedStartOn?: string;
+  isCustomerApproved?: boolean;
+  isCustomerReviewed?: boolean;
+}>;
 
 // Request body for PATCH /projects/:id.
 export interface PatchProjectRequest {
   hasAgent?: boolean;
+  hasKbReferences?: boolean;
 }
 
 // Request body for creating a registry token (POST /projects/:projectId/registry-tokens).

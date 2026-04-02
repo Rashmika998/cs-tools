@@ -58,7 +58,7 @@ describe("RequestCallModal", () => {
       />,
     );
 
-    expect(screen.getByLabelText(/Preferred Time/i)).toBeInTheDocument();
+    expect(document.getElementById("preferred-time-0")).toBeTruthy();
     expect(screen.getByLabelText(/Meeting Duration/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Reason \*/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Request Call/i })).toBeInTheDocument();

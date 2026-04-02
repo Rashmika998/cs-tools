@@ -161,10 +161,10 @@ paths:
           description: InternalServerError
         "403":
           description: Forbidden
-  /projects/{id}/deployments:
-    get:
-      summary: Get deployments of a project by ID.
-      operationId: getProjectsIdDeployments
+  /projects/{id}/deployments/search:
+    post:
+      summary: Search deployments of a project.
+      operationId: postProjectsIdDeploymentsSearch
       parameters:
       - name: id
         in: path
@@ -172,13 +172,16 @@ paths:
         required: true
         schema:
           $ref: '#/components/schemas/IdString'
+      requestBody:
+        description: Payload for searching deployments of the project
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentSearchPayload'
+        required: true
       responses:
         "200":
           description: Ok
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DeploymentsResponse'
         "400":
           description: BadRequest
           content:
@@ -189,6 +192,7 @@ paths:
           description: InternalServerError
         "403":
           description: Forbidden
+  /projects/{id}/deployments:
     post:
       summary: Create a new deployment for a project.
       operationId: postProjectsIdDeployments
@@ -1207,37 +1211,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorPayload'
-  /deployments/{id}/products:
-    get:
-      summary: Get products of a deployment by deployment ID.
-      operationId: getDeploymentsIdProducts
+  /deployments/{id}/products/search:
+    post:
+      summary: Search products of a deployment.
+      operationId: postDeploymentsIdProductsSearch
       parameters:
       - name: id
         in: path
-        description: ID of the deployment
         required: true
         schema:
           $ref: '#/components/schemas/IdString'
-      - name: offset
-        in: query
-        description: Offset for pagination
-        schema:
-          type: integer
-          format: int64
-          default: 0
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          format: int64
-          default: 10
+      requestBody:
+        description: Deployed product search payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployedProductSearchPayload'
+        required: true
       responses:
         "200":
           description: Ok
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DeployedProductsResponse'
         "400":
           description: BadRequest
           content:
@@ -1248,6 +1241,7 @@ paths:
           description: InternalServerError
         "403":
           description: Forbidden
+  /deployments/{id}/products:
     post:
       summary: Add a product to a deployment by deployment ID.
       operationId: postDeploymentsIdProducts
@@ -2319,6 +2313,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorPayload'
+  /projects/{id}/stats/usage:
+    get:
+      summary: Get usage stats for a specific project.
+      operationId: getProjectsIdStatsUsage
+      parameters:
+      - name: id
+        in: path
+        description: ID of the project
+        required: true
+        schema:
+          $ref: '#/components/schemas/IdString'
+      responses:
+        "200":
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageStats'
+        "500":
+          description: InternalServerError
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden
+        "404":
+          description: NotFound
+        "400":
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
 components:
   schemas:
     Account:
@@ -3214,6 +3240,8 @@ components:
       required:
       - content
       - createdBy
+      - createdByFirstName
+      - createdByLastName
       - createdOn
       - hasInlineAttachments
       - id
@@ -3248,6 +3276,14 @@ components:
           description: List of inline attachments
           items:
             $ref: '#/components/schemas/InlineAttachment'
+        createdByFirstName:
+          type: string
+          description: First name of the user who created the comment
+          nullable: true
+        createdByLastName:
+          type: string
+          description: Last name of the user who created the comment
+          nullable: true
       additionalProperties: false
       description: Comment information.
     CommentCreatePayload:
@@ -3294,6 +3330,18 @@ components:
           limit:
             type: integer
             format: int64
+    ConsumptionFilter:
+      type: object
+      properties:
+        include:
+          type: boolean
+          description: Indicates whether to filter based on consumption (true to filter)
+        startDate:
+          $ref: '#/components/schemas/Date'
+        endDate:
+          $ref: '#/components/schemas/Date'
+      additionalProperties: false
+      description: Consumption filter.
     Contact:
       required:
       - email
@@ -3683,82 +3731,6 @@ components:
         d:[0-5]\\d$"
       type: string
       description: DateTime string type with YYYY-MM-DD HH:MM:SS format constraint.
-    DeployedProduct:
-      required:
-      - category
-      - cores
-      - createdOn
-      - deployment
-      - description
-      - endOfLifeOn
-      - id
-      - product
-      - releasedOn
-      - tps
-      - updatedOn
-      - updates
-      - version
-      type: object
-      properties:
-        id:
-          type: string
-          description: ID
-        createdOn:
-          type: string
-          description: Created date and time
-        updatedOn:
-          type: string
-          description: Updated date and time
-        description:
-          type: string
-          description: Description
-          nullable: true
-        category:
-          description: Category
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/ReferenceItem'
-        product:
-          description: Product
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/ReferenceItem'
-        deployment:
-          description: Deployment
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/ReferenceItem'
-        version:
-          description: Product version
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/ReferenceItem'
-        updates:
-          type: array
-          description: Product updates
-          nullable: true
-          items:
-            $ref: '#/components/schemas/ProductUpdate'
-        cores:
-          type: integer
-          description: Cores allocated for the product
-          format: int64
-          nullable: true
-        tps:
-          type: number
-          description: TPS allocated for the product
-          format: double
-          nullable: true
-        releasedOn:
-          type: string
-          description: Release date of the product
-          nullable: true
-        endOfLifeOn:
-          type: string
-          description: End of life date of the product
-          nullable: true
-      additionalProperties: false
-      description: Deployed product data.
     DeployedProductCreatePayload:
       required:
       - productId
@@ -3791,6 +3763,19 @@ components:
           nullable: true
       additionalProperties: false
       description: Request payload for creating a deployed product.
+    DeployedProductSearchPayload:
+      type: object
+      properties:
+        filters:
+          type: object
+          properties:
+            consumption:
+              $ref: '#/components/schemas/ConsumptionFilter'
+          description: Filters
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+      additionalProperties: false
+      description: Deployed product search payload
     DeployedProductUpdatePayload:
       type: object
       properties:
@@ -3820,75 +3805,6 @@ components:
             product)
       additionalProperties: false
       description: Payload for updating a deployed product.
-    DeployedProductsResponse:
-      type: object
-      description: Deployed products response.
-      allOf:
-      - $ref: '#/components/schemas/Pagination'
-      - required:
-        - deployedProducts
-        - totalRecords
-        type: object
-        properties:
-          deployedProducts:
-            type: array
-            description: List of deployed products
-            items:
-              $ref: '#/components/schemas/DeployedProduct'
-          totalRecords:
-            type: integer
-            description: Total records count
-            format: int64
-          offset:
-            type: integer
-            format: int64
-          limit:
-            type: integer
-            format: int64
-    Deployment:
-      required:
-      - createdOn
-      - description
-      - id
-      - name
-      - project
-      - type
-      - updatedOn
-      - url
-      type: object
-      properties:
-        id:
-          type: string
-          description: ID
-        name:
-          type: string
-          description: Name
-        createdOn:
-          type: string
-          description: Created date and time
-        updatedOn:
-          type: string
-          description: Updated date and time
-        description:
-          type: string
-          description: Description
-          nullable: true
-        url:
-          type: string
-          description: URL
-          nullable: true
-        project:
-          description: Associated project
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/ReferenceItem'
-        type:
-          description: Type
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/ReferenceItem'
-      additionalProperties: false
-      description: Deployment information.
     DeploymentCreatePayload:
       required:
       - deploymentTypeKey
@@ -3907,6 +3823,20 @@ components:
           type: string
           description: Description
       description: Payload for creating a deployment.
+    DeploymentSearchPayload:
+      type: object
+      properties:
+        filters:
+          type: object
+          properties:
+            consumption:
+              $ref: '#/components/schemas/ConsumptionFilter'
+          additionalProperties: false
+          description: Filter criteria
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+      additionalProperties: false
+      description: Request payload for searching deployments.
     DeploymentUpdatePayload:
       type: object
       properties:
@@ -3926,31 +3856,6 @@ components:
           description: Active status (can only be set to false to deactivate deployment)
       additionalProperties: false
       description: Request payload for updating a deployment.
-    DeploymentsResponse:
-      type: object
-      description: Deployments response.
-      allOf:
-      - $ref: '#/components/schemas/Pagination'
-      - required:
-        - deployments
-        - totalRecords
-        type: object
-        properties:
-          deployments:
-            type: array
-            description: List of deployments
-            items:
-              $ref: '#/components/schemas/Deployment'
-          totalRecords:
-            type: integer
-            description: Total records count
-            format: int64
-          offset:
-            type: integer
-            format: int64
-          limit:
-            type: integer
-            format: int64
     ErrorPayload:
       required:
       - message
@@ -4077,12 +3982,18 @@ components:
     MetadataResponse:
       required:
       - featureFlags
+      - projectTypes
       - timeZones
       type: object
       properties:
         timeZones:
           type: array
           description: List of available time zones
+          items:
+            $ref: '#/components/schemas/ReferenceItem'
+        projectTypes:
+          type: array
+          description: List of available project types
           items:
             $ref: '#/components/schemas/ReferenceItem'
         featureFlags:
@@ -4931,6 +4842,7 @@ components:
       - asc
     StatsFilter:
       type: string
+      description: Stats filter enum
       enum:
       - me
     SubscriptionData:
@@ -5176,6 +5088,27 @@ components:
           description: Timezone of the user
       additionalProperties: false
       description: Updated user information.
+    UsageStats:
+      required:
+      - deployedProductCount
+      - deploymentCount
+      - instanceCount
+      type: object
+      properties:
+        deploymentCount:
+          type: integer
+          description: Deployment count associated with the project
+          format: int64
+        deployedProductCount:
+          type: integer
+          description: Deployed product count associated with the project
+          format: int64
+        instanceCount:
+          type: integer
+          description: Instance count associated with the project
+          format: int64
+      additionalProperties: false
+      description: Usage and metrics statistics for a project.
     User:
       type: object
       description: User.

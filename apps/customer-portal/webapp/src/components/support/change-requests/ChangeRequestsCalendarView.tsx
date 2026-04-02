@@ -33,9 +33,10 @@ import type { ChangeRequestItem } from "@models/responses";
 import ChangeRequestsCalendarSkeleton from "@components/support/change-requests/ChangeRequestsCalendarSkeleton";
 import ErrorStateIcon from "@components/common/error-state/ErrorStateIcon";
 import {
-  getChangeRequestStateColor,
   ChangeRequestStates,
-} from "@constants/supportConstants";
+  getChangeRequestStateColor,
+  type ChangeRequestState,
+} from "@constants/changeRequestConstants";
 
 export interface ChangeRequestsCalendarViewProps {
   changeRequests: ChangeRequestItem[];
@@ -45,6 +46,20 @@ export interface ChangeRequestsCalendarViewProps {
 }
 
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const CALENDAR_LEGEND_STATES: ChangeRequestState[] = [
+  ChangeRequestStates.NEW,
+  ChangeRequestStates.ASSESS,
+  ChangeRequestStates.AUTHORIZE,
+  ChangeRequestStates.CUSTOMER_APPROVAL,
+  ChangeRequestStates.SCHEDULED,
+  ChangeRequestStates.IMPLEMENT,
+  ChangeRequestStates.REVIEW,
+  ChangeRequestStates.CUSTOMER_REVIEW,
+  ChangeRequestStates.ROLLBACK,
+  ChangeRequestStates.CLOSED,
+  ChangeRequestStates.CANCELED,
+];
 
 /**
  * Calendar view for change requests.
@@ -215,9 +230,7 @@ export default function ChangeRequestsCalendarView({
                   minute: "2-digit",
                   hour12: true,
                 });
-                const stateColor = getChangeRequestStateColor(
-                  item.state?.label,
-                );
+                const stateColor = getChangeRequestStateColor(item.state);
 
                 return (
                   <Box
@@ -248,7 +261,6 @@ export default function ChangeRequestsCalendarView({
                       textAlign: "left",
                       width: "100%",
                       display: "block",
-                      background: alpha(stateColor, 0.1),
                     }}
                     title={`${item.title} - ${item.state?.label || "No Status"}`}
                     aria-label={`${item.number}: ${item.title} - ${item.state?.label || "No Status"}`}
@@ -383,256 +395,29 @@ export default function ChangeRequestsCalendarView({
             <Typography variant="body2" color="text.secondary">
               States:
             </Typography>
-            {/* New */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.NEW),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.NEW),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.NEW}
-              </Typography>
-            </Box>
-            {/* Assess */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.ASSESS),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.ASSESS),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.ASSESS}
-              </Typography>
-            </Box>
-            {/* Authorize */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.AUTHORIZE),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.AUTHORIZE),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.AUTHORIZE}
-              </Typography>
-            </Box>
-            {/* Customer Approval */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(
-                      ChangeRequestStates.CUSTOMER_APPROVAL,
-                    ),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(
-                      ChangeRequestStates.CUSTOMER_APPROVAL,
-                    ),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.CUSTOMER_APPROVAL}
-              </Typography>
-            </Box>
-            {/* Scheduled */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.SCHEDULED),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.SCHEDULED),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.SCHEDULED}
-              </Typography>
-            </Box>
-            {/* Implement */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.IMPLEMENT),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.IMPLEMENT),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.IMPLEMENT}
-              </Typography>
-            </Box>
-            {/* Review */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.REVIEW),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.REVIEW),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.REVIEW}
-              </Typography>
-            </Box>
-            {/* Customer Review */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(
-                      ChangeRequestStates.CUSTOMER_REVIEW,
-                    ),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(
-                      ChangeRequestStates.CUSTOMER_REVIEW,
-                    ),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.CUSTOMER_REVIEW}
-              </Typography>
-            </Box>
-            {/* Rollback */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.ROLLBACK),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.ROLLBACK),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.ROLLBACK}
-              </Typography>
-            </Box>
-            {/* Closed */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.CLOSED),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.CLOSED),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.CLOSED}
-              </Typography>
-            </Box>
-            {/* Canceled */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Box
-                sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 0.5,
-                  bgcolor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.CANCELED),
-                    0.2,
-                  ),
-                  border: "1px solid",
-                  borderColor: alpha(
-                    getChangeRequestStateColor(ChangeRequestStates.CANCELED),
-                    0.3,
-                  ),
-                }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                {ChangeRequestStates.CANCELED}
-              </Typography>
-            </Box>
+            {CALENDAR_LEGEND_STATES.map((state) => {
+              const c = getChangeRequestStateColor(state);
+              return (
+                <Box
+                  key={state}
+                  sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+                >
+                  <Box
+                    sx={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: 0.5,
+                      bgcolor: alpha(c, 3),
+                      border: "1px solid",
+                      borderColor: alpha(c, 0.3),
+                    }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    {state}
+                  </Typography>
+                </Box>
+              );
+            })}
           </Box>
 
           {/* Month Navigation */}

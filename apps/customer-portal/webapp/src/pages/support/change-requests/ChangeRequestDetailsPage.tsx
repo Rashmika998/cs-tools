@@ -16,6 +16,7 @@
 
 import { useParams, useNavigate, useLocation } from "react-router";
 import { type JSX, useMemo, useState } from "react";
+import DOMPurify from "dompurify";
 import {
   Box,
   Button,
@@ -26,7 +27,6 @@ import {
   Divider,
   alpha,
   colors,
-  Skeleton,
 } from "@wso2/oxygen-ui";
 import {
   ArrowLeft,
@@ -46,44 +46,25 @@ import {
   X,
 } from "@wso2/oxygen-ui-icons-react";
 import { useErrorBanner } from "@context/error-banner/ErrorBannerContext";
+import { useSuccessBanner } from "@context/success-banner/SuccessBannerContext";
 import ErrorStateIcon from "@components/common/error-state/ErrorStateIcon";
 import useGetChangeRequestDetails from "@api/useGetChangeRequestDetails";
+import { usePatchChangeRequest } from "@api/usePatchChangeRequest";
 import ScheduledMaintenanceWindowCard from "@components/support/change-requests/ScheduledMaintenanceWindowCard";
 import ProposeNewImplementationTimeModal from "@components/support/change-requests/ProposeNewImplementationTimeModal";
-import { generateChangeRequestDetailsPdf } from "@utils/changeRequestDetailsPdf";
+import ChangeRequestDetailsLoadingSkeleton from "@components/support/change-requests/ChangeRequestDetailsLoadingSkeleton";
+import {
+  buildChangeRequestWorkflowStages,
+  generateChangeRequestDetailsPdf,
+  getChangeRequestDecisionMode,
+} from "@utils/changeRequests";
+import { formatDateTime } from "@utils/support";
 import {
   formatImpactLabel,
   getChangeRequestStateIcon,
   getChangeRequestImpactColorShades,
   getChangeRequestStateColorShades,
-  ChangeRequestStates,
-  type ChangeRequestState,
-} from "@constants/supportConstants";
-
-/**
- * State order for change request workflow
- */
-const STATE_ORDER = [
-  ChangeRequestStates.NEW,
-  ChangeRequestStates.ASSESS,
-  ChangeRequestStates.AUTHORIZE,
-  ChangeRequestStates.CUSTOMER_APPROVAL,
-  ChangeRequestStates.SCHEDULED,
-  ChangeRequestStates.IMPLEMENT,
-  ChangeRequestStates.REVIEW,
-  ChangeRequestStates.CUSTOMER_REVIEW,
-  ChangeRequestStates.ROLLBACK,
-  ChangeRequestStates.CLOSED,
-  ChangeRequestStates.CANCELED,
-];
-
-/**
- * Strip HTML tags from a string
- */
-function stripHtmlTags(html: string | null | undefined): string {
-  if (!html) return "";
-  return html.replace(/<[^>]*>/g, "").trim();
-}
+} from "@constants/changeRequestConstants";
 
 /**
  * ChangeRequestDetailsPage component to display detailed information about a change request.
@@ -97,9 +78,13 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
     projectId: string;
     changeRequestId: string;
   }>();
-  const basePath = location.pathname.includes("/operations/") ? "operations" : "support";
+  const basePath = location.pathname.includes("/operations/")
+    ? "operations"
+    : "support";
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
 
   const { showError } = useErrorBanner();
+  const { showSuccess } = useSuccessBanner();
   const [proposeTimeOpen, setProposeTimeOpen] = useState(false);
 
   const {
@@ -108,222 +93,58 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
     error,
     isFetching,
   } = useGetChangeRequestDetails(changeRequestId || "");
+  const patchChangeRequest = usePatchChangeRequest(changeRequestId || "");
 
-  // Workflow stages with dynamic state
-  const { workflowStages, currentStateIndex } = useMemo(() => {
-    if (!changeRequest) return { workflowStages: [], currentStateIndex: -1 };
-
-    const currentState =
-      (changeRequest.state?.label as ChangeRequestState) ||
-      ChangeRequestStates.NEW;
-    const { hasCustomerApproved, hasCustomerReviewed } = changeRequest;
-
-    const currentIndex = STATE_ORDER.indexOf(currentState);
-
-    const stages = [
-      {
-        name: ChangeRequestStates.NEW,
-        description: "Change request created",
-        completed: currentIndex > 0,
-        current: currentState === ChangeRequestStates.NEW,
-        disabled: false,
-      },
-      {
-        name: ChangeRequestStates.ASSESS,
-        description: "Technical assessment completed",
-        completed: currentIndex > 1,
-        current: currentState === ChangeRequestStates.ASSESS,
-        disabled: false,
-      },
-      {
-        name: ChangeRequestStates.AUTHORIZE,
-        description: "Internal authorization obtained",
-        completed: currentIndex > 2,
-        current: currentState === ChangeRequestStates.AUTHORIZE,
-        disabled: false,
-      },
-      {
-        name: ChangeRequestStates.CUSTOMER_APPROVAL,
-        description: "Customer approval received",
-        completed: currentIndex > 3 && hasCustomerApproved,
-        current: currentState === ChangeRequestStates.CUSTOMER_APPROVAL,
-        disabled:
-          (currentState === ChangeRequestStates.IMPLEMENT ||
-            currentState === ChangeRequestStates.REVIEW) &&
-          !hasCustomerApproved,
-      },
-      {
-        name: ChangeRequestStates.SCHEDULED,
-        description: "Maintenance window scheduled",
-        completed: currentIndex > 4,
-        current: currentState === ChangeRequestStates.SCHEDULED,
-        disabled: false,
-      },
-      {
-        name: ChangeRequestStates.IMPLEMENT,
-        description: "Change implementation",
-        completed: currentIndex > 5,
-        current: currentState === ChangeRequestStates.IMPLEMENT,
-        disabled: false,
-      },
-      {
-        name: ChangeRequestStates.REVIEW,
-        description: "Internal review",
-        completed: currentIndex > 6,
-        current: currentState === ChangeRequestStates.REVIEW,
-        disabled: false,
-      },
-      {
-        name: ChangeRequestStates.CUSTOMER_REVIEW,
-        description: "Customer validation",
-        completed: currentIndex > 7 && hasCustomerReviewed,
-        current: currentState === ChangeRequestStates.CUSTOMER_REVIEW,
-        disabled:
-          (currentState === ChangeRequestStates.ROLLBACK ||
-            currentState === ChangeRequestStates.CLOSED ||
-            currentState === ChangeRequestStates.CANCELED) &&
-          !hasCustomerReviewed,
-      },
-      {
-        name: ChangeRequestStates.ROLLBACK,
-        description: "Change rollback if needed",
-        completed: false,
-        current: currentState === ChangeRequestStates.ROLLBACK,
-        disabled:
-          currentState === ChangeRequestStates.CLOSED ||
-          currentState === ChangeRequestStates.CANCELED,
-      },
-      {
-        name: ChangeRequestStates.CLOSED,
-        description: "Change request completed",
-        completed: false,
-        current: currentState === ChangeRequestStates.CLOSED,
-        disabled:
-          currentState === ChangeRequestStates.CANCELED ||
-          currentState === ChangeRequestStates.ROLLBACK,
-      },
-      {
-        name: ChangeRequestStates.CANCELED,
-        description: "Change request canceled",
-        completed: false,
-        current: currentState === ChangeRequestStates.CANCELED,
-        disabled:
-          currentState === ChangeRequestStates.CLOSED ||
-          currentState === ChangeRequestStates.ROLLBACK,
-      },
-    ];
-
-    return { workflowStages: stages, currentStateIndex: currentIndex };
-  }, [changeRequest]);
+  const { workflowStages, currentStateIndex } = useMemo(
+    () => buildChangeRequestWorkflowStages(changeRequest),
+    [changeRequest],
+  );
+  const decisionMode = getChangeRequestDecisionMode(changeRequest);
+  const canShowApprovalActions = decisionMode !== "none";
+  const canShowProposeNewTime = decisionMode === "customerApproval";
 
   const impactColor = getChangeRequestImpactColorShades(
     changeRequest?.impact?.label,
   );
-  const statusColor = getChangeRequestStateColorShades(
-    changeRequest?.state?.label,
-  );
+  const statusColor = getChangeRequestStateColorShades(changeRequest?.state);
 
   const handleApproveChange = () => {
-    // TODO: wire API action when backend flow is finalized.
+    if (!changeRequest || decisionMode === "none") return;
+    patchChangeRequest.mutate(
+      decisionMode === "customerApproval"
+        ? { isCustomerApproved: true }
+        : { isCustomerReviewed: true },
+      {
+        onSuccess: () => {
+          showSuccess("Change request approved successfully.");
+        },
+        onError: (err) => {
+          showError(err?.message ?? "Failed to approve change request.");
+        },
+      },
+    );
   };
 
   const handleRejectChange = () => {
-    // TODO: wire API action when backend flow is finalized.
-  };
-
-  // Render state icon based on state label
-  const renderStateIcon = () => {
-    const IconComponent = getChangeRequestStateIcon(
-      changeRequest?.state?.label,
+    if (!changeRequest || decisionMode === "none") return;
+    patchChangeRequest.mutate(
+      decisionMode === "customerApproval"
+        ? { isCustomerApproved: false }
+        : { isCustomerReviewed: false },
+      {
+        onSuccess: () => {
+          showSuccess("Change request rejected successfully.");
+        },
+        onError: (err) => {
+          showError(err?.message ?? "Failed to reject change request.");
+        },
+      },
     );
-    return <IconComponent size={12} />;
   };
 
   // Loading state with skeleton (or if fetching/no data yet)
   if (isLoading || (isFetching && !changeRequest)) {
-    return (
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {/* Header Skeleton */}
-        <Paper variant="outlined" sx={{ p: 4 }}>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-            <Box sx={{ width: "100%" }}>
-              <Box
-                sx={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  flexWrap: "wrap",
-                  gap: 1,
-                  mb: 1,
-                }}
-              >
-                <Skeleton variant="text" width="60%" height={40} />
-                <Stack direction="row" spacing={1}>
-                  <Skeleton variant="rounded" width={100} height={24} />
-                  <Skeleton variant="rounded" width={100} height={24} />
-                </Stack>
-              </Box>
-              <Stack
-                direction="row"
-                spacing={1.5}
-                sx={{ alignItems: "center" }}
-              >
-                <Skeleton variant="text" width={100} />
-                <Skeleton variant="text" width={150} />
-                <Skeleton variant="text" width={200} />
-              </Stack>
-              <Stack direction="row" spacing={1} sx={{ mt: 1.5, justifyContent: "flex-end" }}>
-                <Skeleton variant="rounded" width={130} height={32} />
-                <Skeleton variant="rounded" width={130} height={32} />
-                <Skeleton variant="rounded" width={95} height={32} />
-              </Stack>
-            </Box>
-          </Box>
-        </Paper>
-
-        {/* Workflow Skeleton */}
-        <Paper variant="outlined" sx={{ p: 3 }}>
-          <Box sx={{ mb: 2 }}>
-            <Skeleton variant="text" width={250} height={32} />
-            <Skeleton variant="text" width="60%" height={20} />
-          </Box>
-          <Stack spacing={0}>
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Box key={i} sx={{ display: "flex", gap: 2 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                  }}
-                >
-                  <Skeleton variant="circular" width={40} height={40} />
-                  {i < 5 && (
-                    <Box sx={{ width: 2, height: 64, mt: 0.5 }}>
-                      <Skeleton variant="rectangular" width={2} height={64} />
-                    </Box>
-                  )}
-                </Box>
-                <Box sx={{ flex: 1, pb: i < 5 ? 2 : 0 }}>
-                  <Skeleton variant="text" width="30%" height={20} />
-                  <Skeleton variant="text" width="60%" height={16} />
-                </Box>
-              </Box>
-            ))}
-          </Stack>
-        </Paper>
-
-        {/* Content Cards Skeleton */}
-        {[1, 2, 3, 4].map((i) => (
-          <Paper key={i} variant="outlined" sx={{ p: 3 }}>
-            <Skeleton variant="text" width={200} height={32} sx={{ mb: 2 }} />
-            <Skeleton variant="text" width="100%" />
-            <Skeleton variant="text" width="90%" />
-            <Skeleton variant="text" width="95%" />
-          </Paper>
-        ))}
-      </Box>
-    );
+    return <ChangeRequestDetailsLoadingSkeleton />;
   }
 
   // Error state - only show error if we have an actual error and not loading
@@ -332,7 +153,11 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
       <Stack spacing={3}>
         <Button
           startIcon={<ArrowLeft size={16} />}
-          onClick={() => navigate(`/projects/${projectId}/${basePath}/change-requests`)}
+          onClick={() =>
+            returnTo
+              ? navigate(returnTo)
+              : navigate(`/projects/${projectId}/${basePath}/change-requests`)
+          }
           sx={{ alignSelf: "flex-start" }}
           variant="text"
         >
@@ -351,112 +176,92 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
     );
   }
 
-  // Loading state or no data yet
   if (!changeRequest) {
-    return (
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {/* Header Skeleton */}
-        <Paper variant="outlined" sx={{ p: 4 }}>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-            <Box sx={{ width: "100%" }}>
-              <Box
-                sx={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  flexWrap: "wrap",
-                  gap: 1,
-                  mb: 1,
-                }}
-              >
-                <Skeleton variant="text" width="60%" height={40} />
-                <Stack direction="row" spacing={1}>
-                  <Skeleton variant="rounded" width={100} height={24} />
-                  <Skeleton variant="rounded" width={100} height={24} />
-                </Stack>
-              </Box>
-              <Stack
-                direction="row"
-                spacing={1.5}
-                sx={{ alignItems: "center" }}
-              >
-                <Skeleton variant="text" width={100} />
-                <Skeleton variant="text" width={150} />
-                <Skeleton variant="text" width={200} />
-              </Stack>
-              <Stack direction="row" spacing={1} sx={{ mt: 1.5, justifyContent: "flex-end" }}>
-                <Skeleton variant="rounded" width={130} height={32} />
-                <Skeleton variant="rounded" width={130} height={32} />
-                <Skeleton variant="rounded" width={95} height={32} />
-              </Stack>
-            </Box>
-          </Box>
-        </Paper>
-
-        {/* Workflow Skeleton */}
-        <Paper variant="outlined" sx={{ p: 3 }}>
-          <Box sx={{ mb: 2 }}>
-            <Skeleton variant="text" width={250} height={32} />
-            <Skeleton variant="text" width="60%" height={20} />
-          </Box>
-          <Stack spacing={0}>
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Box key={i} sx={{ display: "flex", gap: 2 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                  }}
-                >
-                  <Skeleton variant="circular" width={40} height={40} />
-                  {i < 5 && (
-                    <Box sx={{ width: 2, height: 64, mt: 0.5 }}>
-                      <Skeleton variant="rectangular" width={2} height={64} />
-                    </Box>
-                  )}
-                </Box>
-                <Box sx={{ flex: 1, pb: i < 5 ? 2 : 0 }}>
-                  <Skeleton variant="text" width="30%" height={20} />
-                  <Skeleton variant="text" width="60%" height={16} />
-                </Box>
-              </Box>
-            ))}
-          </Stack>
-        </Paper>
-
-        {/* Content Cards Skeleton */}
-        {[1, 2, 3, 4].map((i) => (
-          <Paper key={i} variant="outlined" sx={{ p: 3 }}>
-            <Skeleton variant="text" width={200} height={32} sx={{ mb: 2 }} />
-            <Skeleton variant="text" width="100%" />
-            <Skeleton variant="text" width="90%" />
-            <Skeleton variant="text" width="95%" />
-          </Paper>
-        ))}
-      </Box>
-    );
+    return <ChangeRequestDetailsLoadingSkeleton />;
   }
 
-  // Compute stripped values for proper fallback rendering
-  const descriptionText = stripHtmlTags(changeRequest.description);
-  const impactText = stripHtmlTags(changeRequest.impactDescription);
-  const serviceOutageText = stripHtmlTags(changeRequest.serviceOutage);
-  const communicationPlanText = stripHtmlTags(changeRequest.communicationPlan);
-  const rollbackPlanText = stripHtmlTags(changeRequest.rollbackPlan);
-  const testPlanText = stripHtmlTags(changeRequest.testPlan);
+  // Render state icon from stable id/label resolution
+  const renderStateIcon = () => {
+    const IconComponent = getChangeRequestStateIcon(changeRequest.state);
+    return <IconComponent size={12} />;
+  };
+
+  const renderHtmlContent = (
+    html: string | null | undefined,
+    fallback: string,
+  ): JSX.Element => {
+    if (!html || html.trim() === "") {
+      return (
+        <Typography variant="body2" color="text.secondary">
+          {fallback}
+        </Typography>
+      );
+    }
+    return (
+      <Box
+        component="div"
+        sx={{
+          typography: "body2",
+          color: "text.secondary",
+          "& p": { mb: 0.5 },
+          "& p:last-child": { mb: 0 },
+        }}
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized backend HTML content
+        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
+      />
+    );
+  };
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minHeight: "100vh" }}>
-      {/* Fixed Header: Back Button */}
-      <Box sx={{ flexShrink: 0 }}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        minHeight: "100vh",
+      }}
+    >
+      {/* Fixed Header: Back Button + Export */}
+      <Box
+        sx={{
+          flexShrink: 0,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 2,
+          flexWrap: "wrap",
+        }}
+      >
         <Button
           startIcon={<ArrowLeft size={16} />}
-          onClick={() => navigate(`/projects/${projectId}/${basePath}/change-requests`)}
+          onClick={() =>
+            returnTo
+              ? navigate(returnTo)
+              : navigate(`/projects/${projectId}/${basePath}/change-requests`)
+          }
           sx={{ alignSelf: "flex-start" }}
           variant="text"
         >
           Back to Change Requests
+        </Button>
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={<Download size={18} />}
+          color="warning"
+          onClick={() => {
+            try {
+              generateChangeRequestDetailsPdf(changeRequest, []);
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Failed to generate PDF";
+              showError(message);
+            }
+          }}
+        >
+          Download Change Request PDF
         </Button>
       </Box>
 
@@ -481,7 +286,14 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
                   flexWrap: "wrap",
                 }}
               >
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <Typography variant="h5" color="text.primary">
                     {changeRequest.title || "Not Available"}
                   </Typography>
@@ -498,7 +310,14 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
                     />
                   )}
                 </Box>
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    gap: 1,
+                    flexWrap: "wrap",
+                    justifyContent: "flex-end",
+                  }}
+                >
                   {changeRequest.impact?.label &&
                     typeof changeRequest.impact.label === "string" && (
                       <Chip
@@ -551,76 +370,108 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
                     flexWrap: "wrap",
                   }}
                 >
-                  <Typography variant="body2" fontWeight={600} color="text.primary">
+                  <Typography
+                    variant="body2"
+                    fontWeight={600}
+                    color="text.primary"
+                  >
                     {changeRequest.number}
                   </Typography>
                   <Typography variant="body2" color="text.disabled">
                     |
                   </Typography>
-                  <Typography variant="body2">
+                  {changeRequest.createdOn && (
+                    <>
+                      <Typography variant="body2" color="text.secondary">
+                        {`Created: ${formatDateTime(changeRequest.createdOn)}`}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        color="text.disabled"
+                        sx={{ ml: 1 }}
+                      >
+                        |
+                      </Typography>
+                    </>
+                  )}
+                  <Button
+                    variant="text"
+                    size="small"
+                    startIcon={<ExternalLink size={14} />}
+                    onClick={() => {
+                      if (changeRequest.case?.id) {
+                        navigate(
+                          `/projects/${projectId}/support/cases/${changeRequest.case.id}`,
+                        );
+                      }
+                    }}
+                    disabled={!changeRequest.case?.id}
+                    sx={{ minHeight: "unset", p: 0 }}
+                  >
                     Service Request:{" "}
                     {changeRequest.case?.number || "Not Available"}
-                  </Typography>
-                  <Typography variant="body2" color="text.disabled">
-                    |
-                  </Typography>
-                  <Typography variant="body2">
-                    Created {changeRequest.createdOn}
-                  </Typography>
+                  </Button>
                 </Box>
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<CalendarClock size={14} aria-hidden />}
-                    onClick={() => setProposeTimeOpen(true)}
-                    sx={{
-                      height: 32,
-                      color: colors.blue[700],
-                      borderColor: colors.blue[300],
-                      "&:hover": {
-                        bgcolor: alpha(colors.blue[500], 0.08),
-                        borderColor: colors.blue[400],
-                      },
-                    }}
-                  >
-                    Propose New Time
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<FileCheck size={14} aria-hidden />}
-                    onClick={handleApproveChange}
-                    sx={{
-                      height: 32,
-                      color: colors.green[800],
-                      borderColor: colors.green[300],
-                      "&:hover": {
-                        bgcolor: alpha(colors.green[500], 0.08),
-                        borderColor: colors.green[400],
-                      },
-                    }}
-                  >
-                    Approve Change
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<X size={14} aria-hidden />}
-                    onClick={handleRejectChange}
-                    sx={{
-                      height: 32,
-                      color: colors.red[800],
-                      borderColor: colors.red[300],
-                      "&:hover": {
-                        bgcolor: alpha(colors.red[500], 0.08),
-                        borderColor: colors.red[400],
-                      },
-                    }}
-                  >
-                    Reject
-                  </Button>
-                </Stack>
+                {canShowApprovalActions && (
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    {canShowProposeNewTime && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<CalendarClock size={14} aria-hidden />}
+                        onClick={() => setProposeTimeOpen(true)}
+                        disabled={patchChangeRequest.isPending}
+                        sx={{
+                          height: 32,
+                          color: colors.blue[700],
+                          borderColor: colors.blue[300],
+                          "&:hover": {
+                            bgcolor: alpha(colors.blue[500], 0.08),
+                            borderColor: colors.blue[400],
+                          },
+                        }}
+                      >
+                        Propose New Time
+                      </Button>
+                    )}
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<FileCheck size={14} aria-hidden />}
+                      onClick={handleApproveChange}
+                      disabled={patchChangeRequest.isPending}
+                      sx={{
+                        height: 32,
+                        color: colors.green[800],
+                        borderColor: colors.green[300],
+                        "&:hover": {
+                          bgcolor: alpha(colors.green[500], 0.08),
+                          borderColor: colors.green[400],
+                        },
+                      }}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<X size={14} aria-hidden />}
+                      onClick={handleRejectChange}
+                      disabled={patchChangeRequest.isPending}
+                      sx={{
+                        height: 32,
+                        color: colors.red[800],
+                        borderColor: colors.red[300],
+                        "&:hover": {
+                          bgcolor: alpha(colors.red[500], 0.08),
+                          borderColor: colors.red[400],
+                        },
+                      }}
+                    >
+                      Reject
+                    </Button>
+                  </Stack>
+                )}
               </Box>
             </Box>
           </Box>
@@ -638,11 +489,17 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
         }}
       >
         {/* Left Column - Scrollable Content */}
-        <Box sx={{ flex: 1, overflow: { xs: "visible", md: "auto" }, display: "flex", flexDirection: "column", gap: 2 }}>
+        <Box
+          sx={{
+            flex: 1,
+            overflow: { xs: "visible", md: "auto" },
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
           {/* Scheduled Maintenance Window Card */}
-          <ScheduledMaintenanceWindowCard
-            changeRequest={changeRequest}
-          />
+          <ScheduledMaintenanceWindowCard changeRequest={changeRequest} />
 
           {/* Deployment & Component Card */}
           <Paper variant="outlined">
@@ -654,9 +511,19 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
             </Box>
 
             <Box sx={{ px: 3, py: 3 }}>
-              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 3 }}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                  gap: 3,
+                }}
+              >
                 <Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 1 }}
+                  >
                     Deployment
                   </Typography>
                   <Typography variant="body2">
@@ -666,7 +533,11 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
                   </Typography>
                 </Box>
                 <Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 1 }}
+                  >
                     Component
                   </Typography>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -694,17 +565,10 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
             <Box sx={{ px: 3, py: 3 }}>
               <Stack spacing={3}>
                 <Box>
-                  <Typography
-                    variant="body2"
-                    color="text.primary"
-                    fontWeight={500}
-                    sx={{ mb: 1 }}
-                  >
-                    Change Description
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {descriptionText || "No description available"}
-                  </Typography>
+                  {renderHtmlContent(
+                    changeRequest.description,
+                    "No description available",
+                  )}
                 </Box>
               </Stack>
             </Box>
@@ -722,55 +586,28 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
             <Box sx={{ px: 3, py: 3 }}>
               <Stack spacing={3}>
                 <Box>
-                  <Typography
-                    variant="body2"
-                    color="text.primary"
-                    fontWeight={500}
-                    sx={{ mb: 1 }}
-                  >
-                    Impact Description
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {impactText || "No impact description available"}
-                  </Typography>
+                  {renderHtmlContent(
+                    changeRequest.impactDescription,
+                    "No impact description available",
+                  )}
                 </Box>
-
-                {changeRequest.hasServiceOutage && (
-                  <>
-                    <Divider />
-
-                    <Box>
-                      <Typography
-                        variant="body2"
-                        color="text.primary"
-                        fontWeight={500}
-                        sx={{ mb: 2 }}
-                      >
-                        Service Outage Details
-                      </Typography>
-                      <Paper
-                        sx={{
-                          bgcolor: alpha(colors.red[500], 0.05),
-                          border: 1,
-                          borderColor: alpha(colors.red[500], 0.2),
-                          p: 2,
-                        }}
-                      >
-                        <Box sx={{ display: "flex", gap: 1.5 }}>
-                          <TriangleAlert
-                            size={20}
-                            color={colors.red[600]}
-                            style={{ marginTop: 2 }}
-                          />
-                          <Typography variant="body2" color="text.primary">
-                            {serviceOutageText || "Service outage details not available"}
-                          </Typography>
-                        </Box>
-                      </Paper>
-                    </Box>
-                  </>
-                )}
               </Stack>
+            </Box>
+          </Paper>
+
+          <Paper variant="outlined">
+            <Box sx={{ px: 3, pt: 3 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <TriangleAlert size={20} color={colors.grey[600]} />
+                <Typography variant="h6">Service Outage Details</Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ px: 3, py: 3 }}>
+              {renderHtmlContent(
+                changeRequest.serviceOutage,
+                "No service outage details available.",
+              )}
             </Box>
           </Paper>
 
@@ -784,9 +621,10 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
             </Box>
 
             <Box sx={{ px: 3, py: 3 }}>
-              <Typography variant="body2" color="text.secondary">
-                {communicationPlanText || "No communication plan available"}
-              </Typography>
+              {renderHtmlContent(
+                changeRequest.communicationPlan,
+                "No communication plan available",
+              )}
             </Box>
           </Paper>
 
@@ -800,9 +638,10 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
             </Box>
 
             <Box sx={{ px: 3, py: 3 }}>
-              <Typography variant="body2" color="text.secondary">
-                {rollbackPlanText || "No rollback plan available"}
-              </Typography>
+              {renderHtmlContent(
+                changeRequest.rollbackPlan,
+                "No rollback plan available",
+              )}
             </Box>
           </Paper>
 
@@ -816,9 +655,10 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
             </Box>
 
             <Box sx={{ px: 3, py: 3 }}>
-              <Typography variant="body2" color="text.secondary">
-                {testPlanText || "No test plan available"}
-              </Typography>
+              {renderHtmlContent(
+                changeRequest.testPlan,
+                "No test plan available",
+              )}
             </Box>
           </Paper>
 
@@ -842,7 +682,9 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
                   <Typography variant="body2" color="text.secondary">
                     Created Date
                   </Typography>
-                  <Typography variant="body2">{changeRequest.createdOn}</Typography>
+                  <Typography variant="body2">
+                    {changeRequest.createdOn}
+                  </Typography>
                 </Box>
 
                 <Divider />
@@ -876,46 +718,21 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
               </Stack>
             </Box>
           </Paper>
-
-          {/* Action Buttons */}
-          <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 2 }}>
-            <Button
-              variant="contained"
-              startIcon={<Download size={18} />}
-              sx={{ flex: 1 }}
-              onClick={() => {
-                try {
-                  generateChangeRequestDetailsPdf(changeRequest, []);
-                } catch (error) {
-                  const message = error instanceof Error ? error.message : "Failed to generate PDF";
-                  showError(message);
-                  console.error("PDF generation error:", error);
-                }
-              }}
-            >
-              Download Change Request PDF
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<ExternalLink size={18} />}
-              sx={{ flex: 1 }}
-              onClick={() => {
-                if (changeRequest.case?.id) {
-                  navigate(`/projects/${projectId}/support/cases/${changeRequest.case.id}`);
-                }
-              }}
-              disabled={!changeRequest.case?.id}
-            >
-              View Related Service Request
-            </Button>
-          </Box>
         </Box>
 
         {/* Right Column - Workflow (Fixed Width, Scrollable) */}
-        <Box sx={{ width: { xs: "100%", md: 400 }, flexShrink: 0, overflow: { xs: "visible", md: "auto" } }}>
+        <Box
+          sx={{
+            width: { xs: "100%", md: 400 },
+            flexShrink: 0,
+            overflow: { xs: "visible", md: "auto" },
+          }}
+        >
           <Paper variant="outlined">
             <Box sx={{ px: 3, pt: 3 }}>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+              <Box
+                sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}
+              >
                 <Typography variant="h6">Change Request Workflow</Typography>
               </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -962,12 +779,17 @@ export default function ChangeRequestDetailsPage(): JSX.Element {
                           }}
                         >
                           {stage.completed ? (
-                            <CircleCheckBig size={20} color={colors.green[600]} />
+                            <CircleCheckBig
+                              size={20}
+                              color={colors.green[600]}
+                            />
                           ) : (
                             <Circle
                               size={20}
                               color={
-                                stage.current ? colors.blue[600] : colors.grey[400]
+                                stage.current
+                                  ? colors.blue[600]
+                                  : colors.grey[400]
                               }
                               fill={stage.current ? colors.blue[600] : "none"}
                             />

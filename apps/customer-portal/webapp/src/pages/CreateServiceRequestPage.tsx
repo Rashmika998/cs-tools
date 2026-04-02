@@ -24,10 +24,14 @@ import {
   type FormEvent,
   type JSX,
 } from "react";
-import { useNavigate, useParams, useLocation } from "react-router";
+import { useNavigate, useParams, useLocation, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetProjectDeployments } from "@api/useGetProjectDeployments";
-import { useGetDeploymentsProducts } from "@api/useGetDeploymentsProducts";
+import { usePostProjectDeploymentsSearchInfinite } from "@api/usePostProjectDeploymentsSearch";
+import type { ProjectDeploymentItem } from "@models/responses";
+import {
+  extractDeploymentProducts,
+  usePostDeploymentProductsSearchInfinite,
+} from "@api/usePostDeploymentProductsSearch";
 import { useAuthApiClient } from "@api/useAuthApiClient";
 import { useSearchCatalogs } from "@api/useSearchCatalogs";
 import { useGetCatalogItemVariables } from "@api/useGetCatalogItemVariables";
@@ -69,6 +73,7 @@ import { CaseType } from "@constants/supportConstants";
 export default function CreateServiceRequestPage(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { projectId } = useParams<{ projectId: string }>();
   const basePath = location.pathname.includes("/operations/") ? "operations" : "support";
   const { showLoader, hideLoader } = useLoader();
@@ -92,20 +97,47 @@ export default function CreateServiceRequestPage(): JSX.Element {
 
   const { data: projectDetails, isLoading: isProjectLoading } =
     useGetProjectDetails(projectId || "");
-  const { data: projectDeployments, isLoading: isDeploymentsLoading } =
-    useGetProjectDeployments(projectId || "");
+  const deploymentsQuery = usePostProjectDeploymentsSearchInfinite(projectId || "", {
+    pageSize: 10,
+    enabled: !!projectId,
+  });
+  const projectDeployments = useMemo(
+    () => deploymentsQuery.data?.pages.flatMap((p) => p.deployments ?? []) ?? [],
+    [deploymentsQuery.data],
+  );
+  const isDeploymentsLoading = deploymentsQuery.isLoading;
+
+  const prefill = useMemo(() => {
+    const depId = searchParams.get("deploymentId")?.trim() ?? "";
+    const prodId = searchParams.get("productId")?.trim() ?? "";
+    if (!depId || !projectDeployments.length) return { deploymentLabel: "", productId: "" };
+    const dep = projectDeployments.find((d: ProjectDeploymentItem) => d.id === depId);
+    const deploymentLabel = dep?.name?.trim() || dep?.type?.label?.trim() || "";
+    return { deploymentLabel, productId: prodId };
+  }, [searchParams, projectDeployments]);
+
+  const effectiveDeployment = deployment || prefill.deploymentLabel || "";
+  const effectiveProduct = product || prefill.productId || "";
 
   const baseDeploymentOptions = getBaseDeploymentOptions(projectDeployments);
   const selectedDeploymentMatch = useMemo(
-    () => resolveDeploymentMatch(deployment, projectDeployments, undefined),
-    [deployment, projectDeployments],
+    () => resolveDeploymentMatch(effectiveDeployment, projectDeployments, undefined),
+    [effectiveDeployment, projectDeployments],
   );
   const selectedDeploymentId = selectedDeploymentMatch?.id ?? "";
 
-  const {
-    data: deploymentProductsData,
-    isLoading: deploymentProductsLoading,
-  } = useGetDeploymentsProducts(selectedDeploymentId);
+  const deploymentProductsQuery = usePostDeploymentProductsSearchInfinite(
+    selectedDeploymentId,
+    { pageSize: 10, enabled: !!selectedDeploymentId },
+  );
+  const deploymentProductsLoading = deploymentProductsQuery.isLoading;
+  const deploymentProductsData = useMemo(
+    () =>
+      deploymentProductsQuery.data?.pages.flatMap((p) =>
+        extractDeploymentProducts(p),
+      ) ?? [],
+    [deploymentProductsQuery.data],
+  );
 
   const allDeploymentProducts = useMemo(
     () =>
@@ -123,7 +155,7 @@ export default function CreateServiceRequestPage(): JSX.Element {
     [baseProductOptions],
   );
 
-  const productId = resolveProductId(product, allDeploymentProducts);
+  const productId = resolveProductId(effectiveProduct, allDeploymentProducts);
   const { data: catalogsData, isLoading: isCatalogsLoading } =
     useSearchCatalogs(productId);
   const { data: variablesData, isLoading: isVariablesLoading } =
@@ -365,9 +397,9 @@ export default function CreateServiceRequestPage(): JSX.Element {
       >
         <BasicInformationSection
           project={projectDisplay}
-          product={product}
+          product={effectiveProduct}
           setProduct={handleProductChange}
-          deployment={deployment}
+          deployment={effectiveDeployment}
           setDeployment={handleDeploymentChange}
           productOptionList={sortedProductOptions}
           isProductAutoDetected={false}
@@ -379,6 +411,23 @@ export default function CreateServiceRequestPage(): JSX.Element {
           isProductLoading={
             !!selectedDeploymentId && deploymentProductsLoading
           }
+          onLoadMoreDeployments={() => {
+            if (deploymentsQuery.hasNextPage && !deploymentsQuery.isFetchingNextPage) {
+              void deploymentsQuery.fetchNextPage();
+            }
+          }}
+          hasMoreDeployments={!!deploymentsQuery.hasNextPage}
+          isFetchingMoreDeployments={deploymentsQuery.isFetchingNextPage}
+          onLoadMoreProducts={() => {
+            if (
+              deploymentProductsQuery.hasNextPage &&
+              !deploymentProductsQuery.isFetchingNextPage
+            ) {
+              void deploymentProductsQuery.fetchNextPage();
+            }
+          }}
+          hasMoreProducts={!!deploymentProductsQuery.hasNextPage}
+          isFetchingMoreProducts={deploymentProductsQuery.isFetchingNextPage}
         />
 
         {!!productId && (

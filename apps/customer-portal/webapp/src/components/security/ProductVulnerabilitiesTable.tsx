@@ -97,6 +97,7 @@ const ProductVulnerabilitiesTable = ({
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchInput("");
     setPage(0);
   };
 
@@ -140,8 +141,10 @@ const ProductVulnerabilitiesTable = ({
   }, [filters, severityOptions]);
 
   const activeFilterCount = useMemo(
-    () => activeFilterFields.filter((f) => appliedFilters[f.id]).length,
-    [activeFilterFields, appliedFilters],
+    () =>
+      (searchInput.trim() ? 1 : 0) +
+      activeFilterFields.filter((f) => appliedFilters[f.id]).length,
+    [activeFilterFields, appliedFilters, searchInput],
   );
 
   return (

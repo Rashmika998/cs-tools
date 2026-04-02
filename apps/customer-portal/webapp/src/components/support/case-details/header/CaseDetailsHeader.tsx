@@ -28,6 +28,8 @@ export interface CaseDetailsHeaderProps {
   statusChipIcon: ReactNode;
   statusChipSx: Record<string, unknown>;
   isLoading?: boolean;
+  /** When false, hides the severity (priority) chip — e.g. security report analysis. */
+  showSeverityChip?: boolean;
 }
 
 /**
@@ -44,6 +46,7 @@ export default function CaseDetailsHeader({
   statusChipIcon,
   statusChipSx,
   isLoading = false,
+  showSeverityChip = true,
 }: CaseDetailsHeaderProps): JSX.Element {
   if (isLoading) {
     return <CaseDetailsHeaderSkeleton />;
@@ -60,30 +63,32 @@ export default function CaseDetailsHeader({
         <Typography variant="body2" fontWeight={500} color="text.primary">
           {formatValue(caseNumber)}
         </Typography>
-        <Chip
-          label={mapSeverityToDisplay(severityLabel ?? undefined)}
-          size="small"
-          variant="outlined"
-          sx={{
-            bgcolor: alpha(
-              getSeverityLegendColor(severityLabel ?? undefined),
-              0.1,
-            ),
-            color: getSeverityLegendColor(severityLabel ?? undefined),
-            borderColor: alpha(
-              getSeverityLegendColor(severityLabel ?? undefined),
-              0.3,
-            ),
-            fontWeight: 500,
-            px: 0,
-            height: 20,
-            fontSize: "0.75rem",
-            "& .MuiChip-label": {
-              pl: "6px",
-              pr: "6px",
-            },
-          }}
-        />
+        {showSeverityChip && (
+          <Chip
+            label={mapSeverityToDisplay(severityLabel ?? undefined)}
+            size="small"
+            variant="outlined"
+            sx={{
+              bgcolor: alpha(
+                getSeverityLegendColor(severityLabel ?? undefined),
+                0.1,
+              ),
+              color: getSeverityLegendColor(severityLabel ?? undefined),
+              borderColor: alpha(
+                getSeverityLegendColor(severityLabel ?? undefined),
+                0.3,
+              ),
+              fontWeight: 500,
+              px: 0,
+              height: 20,
+              fontSize: "0.75rem",
+              "& .MuiChip-label": {
+                pl: "6px",
+                pr: "6px",
+              },
+            }}
+          />
+        )}
         <Chip
           size="small"
           variant="outlined"

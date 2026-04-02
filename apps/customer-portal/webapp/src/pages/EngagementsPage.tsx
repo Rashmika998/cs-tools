@@ -38,7 +38,8 @@ import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectCases from "@api/useGetProjectCases";
 import { useLoader } from "@context/linear-loader/LoaderContext";
 import { CaseType } from "@constants/supportConstants";
-import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
+import { shouldExcludeS0 } from "@utils/subscriptionUtils";
+import { hasListSearchOrFilters } from "@utils/support";
 import type { AllCasesFilterValues } from "@models/responses";
 import { isS0Case } from "@utils/support";
 import AllCasesList from "@components/support/all-cases/AllCasesList";
@@ -58,6 +59,9 @@ export default function EngagementsPage(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState("");
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<AllCasesFilterValues>({});
+  const [sortField, setSortField] = useState<
+    "createdOn" | "updatedOn" | "severity" | "state"
+  >("createdOn");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -66,9 +70,9 @@ export default function EngagementsPage(): JSX.Element {
     projectId || "",
   );
   const projectReady = !isProjectLoading && project !== undefined;
-  const isManagedCloudSubscription =
-    project?.type?.label === PROJECT_TYPE_LABELS.MANAGED_CLOUD_SUBSCRIPTION;
-  const excludeS0 = projectReady ? !isManagedCloudSubscription : false;
+  const excludeS0 = projectReady
+    ? shouldExcludeS0(project?.type?.label)
+    : false;
 
   const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
@@ -92,11 +96,11 @@ export default function EngagementsPage(): JSX.Element {
         searchQuery: searchTerm.trim() || undefined,
       },
       sortBy: {
-        field: "createdOn",
+        field: sortField,
         order: sortOrder,
       },
     }),
-    [filters, searchTerm, sortOrder],
+    [filters, searchTerm, sortField, sortOrder],
   );
 
   const {
@@ -150,7 +154,9 @@ export default function EngagementsPage(): JSX.Element {
 
   const filteredCases = useMemo(
     () =>
-      excludeS0 ? currentPageCases.filter((c) => !isS0Case(c)) : currentPageCases,
+      excludeS0
+        ? currentPageCases.filter((c) => !isS0Case(c))
+        : currentPageCases,
     [currentPageCases, excludeS0],
   );
 
@@ -172,6 +178,7 @@ export default function EngagementsPage(): JSX.Element {
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchTerm("");
     setPage(1);
   };
 
@@ -180,10 +187,19 @@ export default function EngagementsPage(): JSX.Element {
     setPage(1);
   };
 
+  const handleSortFieldChange = (
+    value: "createdOn" | "updatedOn" | "severity" | "state",
+  ) => {
+    setSortField(value);
+    setPage(1);
+  };
+
   const handleSearchChange = (value: string) => {
     setSearchTerm(value);
     setPage(1);
   };
+
+  const listHasRefinement = hasListSearchOrFilters(searchTerm, filters);
 
   return (
     <Stack spacing={3}>
@@ -204,6 +220,7 @@ export default function EngagementsPage(): JSX.Element {
         onFilterChange={handleFilterChange}
         onClearFilters={handleClearFilters}
         excludeS0={excludeS0}
+        isProjectContextLoading={!projectReady}
       />
 
       <Box
@@ -219,13 +236,46 @@ export default function EngagementsPage(): JSX.Element {
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="sort-label">Sort</InputLabel>
+            <InputLabel id="engagements-sort-by-label">Sort by</InputLabel>
+            <Select<"createdOn" | "updatedOn" | "severity" | "state">
+              labelId="engagements-sort-by-label"
+              id="engagements-sort-by"
+              value={sortField}
+              label="Sort by"
+              onChange={(e) =>
+                handleSortFieldChange(
+                  e.target.value as
+                    | "createdOn"
+                    | "updatedOn"
+                    | "severity"
+                    | "state",
+                )
+              }
+            >
+              <MenuItem value="createdOn">
+                <Typography variant="body2">Created on</Typography>
+              </MenuItem>
+              <MenuItem value="updatedOn">
+                <Typography variant="body2">Updated on</Typography>
+              </MenuItem>
+              <MenuItem value="severity">
+                <Typography variant="body2">Severity</Typography>
+              </MenuItem>
+              <MenuItem value="state">
+                <Typography variant="body2">State</Typography>
+              </MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel id="sort-label">Order By</InputLabel>
             <Select<"desc" | "asc">
               labelId="sort-label"
               id="sort"
               value={sortOrder}
               label="Sort"
-              onChange={(e) => handleSortChange(e.target.value as "desc" | "asc")}
+              onChange={(e) =>
+                handleSortChange(e.target.value as "desc" | "asc")
+              }
             >
               <MenuItem value="desc">
                 <Typography variant="body2">Newest First</Typography>
@@ -242,6 +292,7 @@ export default function EngagementsPage(): JSX.Element {
         cases={paginatedCases}
         isLoading={isCasesAreaLoading}
         isError={isCasesError}
+        hasListRefinement={listHasRefinement}
         onCaseClick={
           projectId
             ? (caseItem) =>

@@ -68,7 +68,9 @@ import {
   mapSeverityToDisplay,
   getAssignedEngineerLabel,
   stripHtml,
+  countListSearchAndFilters,
 } from "@utils/support";
+import DOMPurify from "dompurify";
 
 /**
  * SecurityReportAnalysis displays security vulnerability reports uploaded for analysis.
@@ -173,6 +175,7 @@ const SecurityReportAnalysis = (): JSX.Element => {
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchTerm("");
     setPage(1);
   };
 
@@ -192,7 +195,8 @@ const SecurityReportAnalysis = (): JSX.Element => {
     setPage(value);
   };
 
-  const hasActiveFilters = !!filters.statusId || !!filters.deploymentId;
+  const activeFiltersCount = countListSearchAndFilters(searchTerm, filters);
+  const hasActiveFilters = activeFiltersCount > 0;
 
   const reportViewTabs = useMemo(
     () => [
@@ -229,9 +233,16 @@ const SecurityReportAnalysis = (): JSX.Element => {
             <Typography variant="h5" color="text.primary" sx={{ mb: 0.5 }}>
               Security Report Analysis
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Security vulnerability reports uploaded for analysis
-            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              component="div"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(
+                  "Security vulnerability reports uploaded for analysis",
+                ),
+              }}
+            />
           </Box>
 
           {/* Action Buttons */}
@@ -308,7 +319,9 @@ const SecurityReportAnalysis = (): JSX.Element => {
               ))
             }
           >
-            {hasActiveFilters ? "Clear Filters" : "Filters"}
+            {hasActiveFilters
+              ? `Clear Filters (${activeFiltersCount})`
+              : "Filters"}
           </Button>
         </Box>
 

@@ -26,6 +26,8 @@ export interface CaseDetailsTabsProps {
   onFocusModeToggle?: () => void;
   attachmentCount?: number;
   callCount?: number;
+  hideCallsTab?: boolean;
+  hideKnowledgeBaseTab?: boolean;
 }
 
 /**
@@ -41,7 +43,19 @@ export default function CaseDetailsTabs({
   onFocusModeToggle,
   attachmentCount,
   callCount,
+  hideCallsTab = false,
+  hideKnowledgeBaseTab = false,
 }: CaseDetailsTabsProps): JSX.Element {
+  const tabs = CASE_DETAILS_TABS.filter((t) => {
+    if (hideCallsTab && t.label.startsWith("Calls")) {
+      return false;
+    }
+    if (hideKnowledgeBaseTab && t.label.startsWith("Knowledge Base")) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <Box
       sx={{
@@ -70,7 +84,7 @@ export default function CaseDetailsTabs({
           "& .MuiTabs-indicator": { bgcolor: "primary.main" },
         }}
       >
-        {CASE_DETAILS_TABS.map(({ label, Icon }) => {
+        {tabs.map(({ label, Icon }) => {
           const isAttachmentsTab = label.startsWith("Attachments");
           const isCallsTab = label.startsWith("Calls");
 

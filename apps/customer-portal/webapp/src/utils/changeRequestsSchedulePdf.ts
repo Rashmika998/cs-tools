@@ -17,7 +17,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { ChangeRequestItem, ChangeRequestStats } from "@models/responses";
-import { formatImpactLabel } from "@constants/supportConstants";
+import { formatImpactLabel } from "@constants/changeRequestConstants";
 
 /**
  * Formats a date string for display in the PDF.
@@ -92,8 +92,8 @@ export function generateChangeRequestsSchedulePdf(
   doc.text("Summary Statistics", 14, 38);
   doc.setFontSize(10);
   doc.text(`Total Requests: ${stats.totalRequests}`, 14, 45);
-  doc.text(`Scheduled: ${stats.scheduled}`, 14, 52);
-  doc.text(`In Progress: ${stats.inProgress}`, 14, 59);
+  doc.text(`Awaiting Your Action: ${stats.awaitingYourAction}`, 14, 52);
+  doc.text(`Ongoing: ${stats.ongoing}`, 14, 59);
   doc.text(`Completed: ${stats.completed}`, 14, 66);
 
   // Change Requests Details

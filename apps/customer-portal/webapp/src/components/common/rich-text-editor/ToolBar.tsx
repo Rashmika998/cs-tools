@@ -414,7 +414,8 @@ const Toolbar = ({
         sx={{
           overflowX: "auto",
           overflowY: "hidden",
-          width: "100%",
+          flex: 1,
+          minWidth: 0,
           msOverflowStyle: "none",
           scrollbarWidth: "none",
           "&::-webkit-scrollbar": {
@@ -803,16 +804,23 @@ const Toolbar = ({
 
       {showKeyboardHint && !disabled && (
         <Typography
+          component="span"
           variant="caption"
           sx={{
             color: "text.secondary",
-            ml: 2,
             flexShrink: 0,
+            pl: 1,
             whiteSpace: "nowrap",
           }}
         >
-          Press <strong>Enter</strong> to send, <strong>Shift+Enter</strong> for
-          newline
+          <Typography component="span" variant="caption" fontWeight={600}>
+            Ctrl+Enter
+          </Typography>
+          {" or "}
+          <Typography component="span" variant="caption" fontWeight={600}>
+            ⌘+Enter
+          </Typography>
+          {" to send."}
         </Typography>
       )}
     </Box>

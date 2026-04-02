@@ -25,7 +25,10 @@ import { ApiQueryKeys } from "@constants/apiConstants";
 import { useLogger } from "@hooks/useLogger";
 import type { CallRequestsResponse } from "@models/responses";
 
-const LIMIT = 10;
+/** Page size for POST .../call-requests/search (must match backend max). */
+export const CALL_REQUESTS_PAGE_SIZE = 10;
+
+const LIMIT = CALL_REQUESTS_PAGE_SIZE;
 
 /**
  * Hook to fetch call requests for a specific case using infinite query.

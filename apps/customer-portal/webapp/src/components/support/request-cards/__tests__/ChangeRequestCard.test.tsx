@@ -18,7 +18,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import ChangeRequestCard from "@components/support/request-cards/ChangeRequestCard";
-import { CHANGE_REQUEST_BULLET_ITEMS } from "@constants/supportConstants";
+import { CHANGE_REQUEST_BULLET_ITEMS } from "@constants/changeRequestConstants";
 
 // Mock the child component to isolate the test
 vi.mock("@components/support/request-cards/RequestCard", () => ({

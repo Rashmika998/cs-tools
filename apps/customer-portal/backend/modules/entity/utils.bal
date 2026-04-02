@@ -304,7 +304,7 @@ public isolated function validateAttachmentUpdatePayload(AttachmentUpdatePayload
 # + payload - Change request update payload
 # + return - Validation error message or null if valid
 public isolated function validateChangeRequestUpdatePayload(ChangeRequestUpdatePayload payload) returns string? {
-    if payload.keys().length() > 0 || payload.keys().length() > 1 {
+    if payload.keys().length() == 0 || payload.keys().length() > 1 {
         return "Only one field can be updated at a time.";
     }
     return;

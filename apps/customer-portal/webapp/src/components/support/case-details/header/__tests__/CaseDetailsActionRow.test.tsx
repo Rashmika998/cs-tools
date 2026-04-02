@@ -50,7 +50,7 @@ vi.mock("@components/common/error-indicator/ErrorIndicator", () => ({
 }));
 
 describe("CaseDetailsActionRow", () => {
-  it("should render engineer name, Support Engineer label and action buttons when not loading", () => {
+  it("should render manage state action buttons when not loading", () => {
     render(
       <ThemeProvider theme={createTheme()}>
         <CaseDetailsActionRow
@@ -60,9 +60,7 @@ describe("CaseDetailsActionRow", () => {
         />
       </ThemeProvider>,
     );
-    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByText("Support Engineer")).toBeInTheDocument();
-    expect(screen.getByText("Manage case status")).toBeInTheDocument();
+    expect(screen.getByText("Manage State")).toBeInTheDocument();
     expect(screen.queryByText("Escalate Case")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeInTheDocument();
   });
@@ -78,12 +76,12 @@ describe("CaseDetailsActionRow", () => {
       </ThemeProvider>,
     );
     expect(screen.queryByText("Support Engineer")).not.toBeInTheDocument();
-    expect(screen.getByText("Manage case status")).toBeInTheDocument();
+    expect(screen.getByText("Manage State")).toBeInTheDocument();
     expect(screen.getByText("Close")).toBeInTheDocument();
   });
 
-  it("should show skeletons for avatar and engineer but keep play icon, Manage case status when isLoading with engineer", () => {
-    const { container } = render(
+  it("should keep manage state and actions visible when isLoading", () => {
+    render(
       <ThemeProvider theme={createTheme()}>
         <CaseDetailsActionRow
           assignedEngineer="Jane Doe"
@@ -93,12 +91,9 @@ describe("CaseDetailsActionRow", () => {
         />
       </ThemeProvider>,
     );
-    expect(screen.getByText("Support Engineer")).toBeInTheDocument();
-    expect(screen.getByText("Manage case status")).toBeInTheDocument();
+    expect(screen.getByText("Manage State")).toBeInTheDocument();
     expect(screen.queryByText("Escalate Case")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeInTheDocument();
-    const skeletons = container.querySelectorAll(".MuiSkeleton-root");
-    expect(skeletons.length).toBeGreaterThan(0);
   });
 
   it("should render Open Related Case button for closed status within 2 months", () => {

@@ -72,4 +72,14 @@ describe("CaseDetailsTabs", () => {
     );
     expect(screen.getByRole("button", { name: /exit focus mode/i })).toBeInTheDocument();
   });
+
+  it("should omit Calls tab when hideCallsTab is true", () => {
+    render(
+      <ThemeProvider theme={createTheme()}>
+        <CaseDetailsTabs value={0} onChange={vi.fn()} hideCallsTab />
+      </ThemeProvider>,
+    );
+    expect(screen.queryByRole("tab", { name: /^calls/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /knowledge base/i })).toBeInTheDocument();
+  });
 });

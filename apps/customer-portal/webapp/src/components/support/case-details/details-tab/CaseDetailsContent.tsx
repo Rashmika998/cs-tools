@@ -28,11 +28,14 @@ import {
   getInitials,
   isSecurityReportAnalysisType,
 } from "@utils/support";
+import {
+  CALL_SCHEDULABLE_CASE_STATUSES,
+  type CaseStatus,
+} from "@constants/supportConstants";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 import CaseDetailsBackButton from "@case-details/CaseDetailsBackButton";
 import CaseDetailsHeader from "@case-details/CaseDetailsHeader";
 import CaseDetailsActionRow from "@case-details/CaseDetailsActionRow";
-import SecurityReportAnalysisHeader from "@case-details/SecurityReportAnalysisHeader";
 import CaseDetailsTabs from "@case-details/CaseDetailsTabs";
 import CaseDetailsTabPanels from "@case-details/CaseDetailsTabPanels";
 import CaseDetailsSkeleton from "@case-details/CaseDetailsSkeleton";
@@ -47,6 +50,7 @@ export interface CaseDetailsContentProps {
   projectId?: string;
   hideActionRow?: boolean;
   showEngineerOnly?: boolean;
+  isServiceRequest?: boolean;
 }
 
 /**
@@ -65,6 +69,7 @@ export default function CaseDetailsContent({
   projectId = "",
   hideActionRow = false,
   showEngineerOnly = false,
+  isServiceRequest = false,
 }: CaseDetailsContentProps): JSX.Element {
   const theme = useTheme();
   const location = useLocation();
@@ -72,6 +77,9 @@ export default function CaseDetailsContent({
   const [focusMode, setFocusMode] = useState(false);
 
   const isEngagementRoute = location.pathname.includes("/engagements/");
+  const isSecurityReportAnalysisRoute = location.pathname.includes(
+    "security-report-analysis",
+  );
 
   const statusLabel = data?.status?.label;
   const severityLabel = data?.severity?.label;
@@ -123,6 +131,33 @@ export default function CaseDetailsContent({
   const engineerInitials = getInitials(assignedEngineer);
 
   const isSecurityReportAnalysis = isSecurityReportAnalysisType(data?.type);
+  const hideAssignedEngineer =
+    isSecurityReportAnalysis || isSecurityReportAnalysisRoute || isServiceRequest;
+
+  const isCallSchedulingAllowed =
+    statusLabel != null &&
+    CALL_SCHEDULABLE_CASE_STATUSES.includes(statusLabel as CaseStatus);
+
+  const hideCallsTab =
+    isSecurityReportAnalysis || !isCallSchedulingAllowed;
+  const hideKnowledgeBaseTab =
+    isSecurityReportAnalysis || isEngagementRoute || isServiceRequest;
+
+  const visibleTabs = useMemo(
+    () => [
+      0,
+      1,
+      2,
+      ...(hideCallsTab ? [] : [3]),
+      ...(hideKnowledgeBaseTab ? [] : [4]),
+    ],
+    [hideCallsTab, hideKnowledgeBaseTab],
+  );
+  const clampedActiveTab = Math.min(activeTab, Math.max(0, visibleTabs.length - 1));
+
+  const resolvedPanelIndex = useMemo(() => {
+    return visibleTabs[clampedActiveTab] ?? visibleTabs[0] ?? 0;
+  }, [visibleTabs, clampedActiveTab]);
 
   if (isLoading) {
     return (
@@ -135,6 +170,7 @@ export default function CaseDetailsContent({
           <CaseDetailsSkeleton
             hideActionRow={hideActionRow}
             showEngineerOnly={showEngineerOnly}
+            hideAssignedEngineer={hideAssignedEngineer}
           />
         </Paper>
       </Box>
@@ -174,10 +210,17 @@ export default function CaseDetailsContent({
               py: 2,
             }}
           >
-            <ErrorIndicator entityName="case details" size="medium" />
+            <ErrorIndicator
+              entityName={
+                isServiceRequest ? "service request details" : "case details"
+              }
+              size="medium"
+            />
             <Box>
               <Typography variant="body1" color="error" fontWeight={500}>
-                Failed to load case details
+                {isServiceRequest
+                  ? "Failed to load service request details"
+                  : "Failed to load case details"}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 Something went wrong while fetching the information.
@@ -195,24 +238,22 @@ export default function CaseDetailsContent({
                 statusChipIcon={statusChipIcon}
                 statusChipSx={statusChipSx}
                 isLoading={isLoading}
+                showSeverityChip={!isSecurityReportAnalysis}
               />
 
-              {isSecurityReportAnalysis ? (
-                <SecurityReportAnalysisHeader data={data} />
-              ) : (
-                (!hideActionRow || showEngineerOnly) && (
-                  <CaseDetailsActionRow
-                    assignedEngineer={assignedEngineer}
-                    engineerInitials={engineerInitials}
-                    statusLabel={statusLabel}
-                    closedOn={data?.closedOn}
-                    onOpenRelatedCase={onOpenRelatedCase}
-                    projectId={resolvedProjectId}
-                    caseId={caseId}
-                    isLoading={isLoading}
-                    showOnlyEngineer={showEngineerOnly}
-                  />
-                )
+              {(!hideActionRow || showEngineerOnly) && (
+                <CaseDetailsActionRow
+                  assignedEngineer={assignedEngineer}
+                  engineerInitials={engineerInitials}
+                  statusLabel={statusLabel}
+                  closedOn={data?.closedOn}
+                  onOpenRelatedCase={onOpenRelatedCase}
+                  projectId={resolvedProjectId}
+                  caseId={caseId}
+                  isLoading={isLoading}
+                  showOnlyEngineer={showEngineerOnly}
+                  hideAssignedEngineer={hideAssignedEngineer}
+                />
               )}
             </>
           )
@@ -220,11 +261,13 @@ export default function CaseDetailsContent({
 
         <CaseDetailsTabs
           focusMode={focusMode}
-          value={activeTab}
+          value={clampedActiveTab}
           onChange={(_e, newValue) => setActiveTab(newValue)}
           onFocusModeToggle={() => setFocusMode((prev) => !prev)}
           attachmentCount={attachmentCount}
           callCount={callCount}
+          hideCallsTab={hideCallsTab}
+          hideKnowledgeBaseTab={hideKnowledgeBaseTab}
         />
       </Paper>
 
@@ -236,20 +279,21 @@ export default function CaseDetailsContent({
           mt: 2,
           display: "flex",
           flexDirection: "column",
-          overflow: activeTab === 0 ? "hidden" : "auto",
-          p: activeTab === 0 ? 0 : 3,
+          overflow: resolvedPanelIndex === 0 ? "hidden" : "auto",
+          p: resolvedPanelIndex === 0 ? 0 : 3,
           pt: 0,
           WebkitOverflowScrolling: "touch",
         }}
       >
         <CaseDetailsTabPanels
-          activeTab={activeTab}
+          panelIndex={resolvedPanelIndex}
           caseId={caseId}
           data={data}
           isError={isError}
           projectId={projectId}
           focusMode={focusMode}
           isEngagement={isEngagementRoute}
+          isServiceRequest={isServiceRequest}
         />
       </Box>
     </Box>

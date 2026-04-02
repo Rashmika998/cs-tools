@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { useParams, useNavigate, useSearchParams } from "react-router";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router";
 import {
   useState,
   useMemo,
@@ -39,10 +39,14 @@ import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
 import useGetProjectDetails from "@api/useGetProjectDetails";
 import useGetProjectFilters from "@api/useGetProjectFilters";
 import useGetProjectCases from "@api/useGetProjectCases";
-import { useGetDeployments } from "@api/useGetDeployments";
-import { isS0Case } from "@utils/support";
+import { usePostProjectDeploymentsSearchInfinite } from "@api/usePostProjectDeploymentsSearch";
+import { hasListSearchOrFilters, isS0Case } from "@utils/support";
 import { CaseType } from "@constants/supportConstants";
-import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
+import DOMPurify from "dompurify";
+import {
+  getProjectPermissions,
+  shouldExcludeS0,
+} from "@utils/subscriptionUtils";
 import type { AllCasesFilterValues } from "@models/responses";
 import AllCasesStatCards from "@components/support/all-cases/AllCasesStatCards";
 import AllCasesSearchBar from "@components/support/all-cases/AllCasesSearchBar";
@@ -55,6 +59,8 @@ import AllCasesList from "@components/support/all-cases/AllCasesList";
  */
 export default function AllCasesPage(): JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const { projectId } = useParams<{ projectId: string }>();
   const [searchParams] = useSearchParams();
   const createdByMe = searchParams.get("createdByMe") === "true";
@@ -72,16 +78,32 @@ export default function AllCasesPage(): JSX.Element {
   const { data: project, isLoading: isProjectLoading } = useGetProjectDetails(
     projectId || "",
   );
-  const projectReady = !isProjectLoading && project !== undefined;
-  const isManagedCloudSubscription =
-    project?.type?.label === PROJECT_TYPE_LABELS.MANAGED_CLOUD_SUBSCRIPTION;
-  const excludeS0 = projectReady ? !isManagedCloudSubscription : false;
+  const projectDetailsReady = !isProjectLoading && project !== undefined;
+
+  const permissions = useMemo(() => {
+    if (!projectDetailsReady || !project) {
+      return getProjectPermissions(undefined);
+    }
+    return getProjectPermissions(project.type?.label);
+  }, [projectDetailsReady, project]);
+
+  const excludeS0 = useMemo(() => {
+    if (!projectDetailsReady || !project) {
+      return false;
+    }
+    return shouldExcludeS0(project.type?.label);
+  }, [projectDetailsReady, project]);
 
   // Fetch filter metadata first to get Incident and Query IDs for stats API
   const { data: filterMetadata } = useGetProjectFilters(projectId || "");
 
-  // Fetch deployments for the deployment filter
-  const { data: deploymentsData } = useGetDeployments(projectId || "");
+  // Fetch deployments for the deployment filter (10 at a time)
+  const deploymentsQuery = usePostProjectDeploymentsSearchInfinite(projectId || "", {
+    pageSize: 10,
+    enabled: !!projectId,
+  });
+  const deploymentsList =
+    deploymentsQuery.data?.pages.flatMap((p) => p.deployments ?? []) ?? [];
 
   const {
     data: stats,
@@ -99,7 +121,8 @@ export default function AllCasesPage(): JSX.Element {
         statusIds: filters.statusId ? [Number(filters.statusId)] : undefined,
         severityId: filters.severityId ? Number(filters.severityId) : undefined,
         issueId: filters.issueTypes ? Number(filters.issueTypes) : undefined,
-        deploymentId: filters.deploymentId || undefined,
+        deploymentId:
+          permissions.hasDeployments ? filters.deploymentId || undefined : undefined,
         searchQuery: searchTerm.trim() || undefined,
         createdByMe: createdByMe || undefined,
       },
@@ -108,7 +131,7 @@ export default function AllCasesPage(): JSX.Element {
         order: sortOrder,
       },
     }),
-    [filters, searchTerm, sortField, sortOrder, createdByMe],
+    [filters, searchTerm, sortField, sortOrder, createdByMe, permissions.hasDeployments],
   );
 
   // Fetch all cases using infinite query (runs in parallel with stats when projectId and auth are ready)
@@ -128,8 +151,12 @@ export default function AllCasesPage(): JSX.Element {
   // Show loader only for initial load (until first stats + cases response), not for background refetches or fetchNextPage.
   const hasStatsResponse = stats !== undefined;
   const hasCasesResponse = data !== undefined;
+  const isProjectContextLoading = isProjectLoading;
   const isStatsLoading =
-    isStatsQueryLoading || (!!projectId && !hasStatsResponse);
+    isProjectContextLoading ||
+    isStatsQueryLoading ||
+    (!!projectId && !hasStatsResponse);
+
   const isCasesAreaLoading =
     isCasesQueryLoading ||
     (!!projectId && !hasCasesResponse) ||
@@ -192,6 +219,7 @@ export default function AllCasesPage(): JSX.Element {
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchTerm("");
     setPage(1);
   };
 
@@ -212,13 +240,17 @@ export default function AllCasesPage(): JSX.Element {
     setPage(1);
   };
 
+  // Note: deploymentId is ignored in API request when user lacks permissions.
+
+  const listHasRefinement = hasListSearchOrFilters(searchTerm, filters);
+
   return (
     <Stack spacing={3}>
       {/* Back button and header */}
       <Box>
         <Button
           startIcon={<ArrowLeft size={16} />}
-          onClick={() => navigate("..")}
+            onClick={() => (returnTo ? navigate(returnTo) : navigate(".."))}
           sx={{ mb: 2 }}
           variant="text"
         >
@@ -228,11 +260,19 @@ export default function AllCasesPage(): JSX.Element {
           <Typography variant="h4" color="text.primary" sx={{ mb: 1 }}>
             {createdByMe ? "My Cases" : "All Cases"}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {createdByMe
-              ? "Manage and track your support cases"
-              : "Manage and track all your support cases"}
-          </Typography>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            component="div"
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted static copy rendered as HTML by request
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(
+                createdByMe
+                  ? "Manage and track your support cases"
+                  : "Manage and track all your support cases",
+              ),
+            }}
+          />
         </Box>
       </Box>
 
@@ -250,10 +290,25 @@ export default function AllCasesPage(): JSX.Element {
         onFiltersToggle={() => setIsFiltersOpen(!isFiltersOpen)}
         filters={filters}
         filterMetadata={filterMetadata}
-        deployments={deploymentsData?.deployments}
+        deployments={
+          projectDetailsReady && permissions.hasDeployments
+            ? deploymentsList
+            : []
+        }
+        onLoadMoreDeployments={() => {
+          if (
+            deploymentsQuery.hasNextPage &&
+            !deploymentsQuery.isFetchingNextPage
+          ) {
+            void deploymentsQuery.fetchNextPage();
+          }
+        }}
+        hasMoreDeployments={!!deploymentsQuery.hasNextPage}
+        isFetchingMoreDeployments={deploymentsQuery.isFetchingNextPage}
         onFilterChange={handleFilterChange}
         onClearFilters={handleClearFilters}
         excludeS0={excludeS0}
+        isProjectContextLoading={isProjectContextLoading}
       />
 
       {/* Sort and results count */}
@@ -286,10 +341,10 @@ export default function AllCasesPage(): JSX.Element {
               }
             >
               <MenuItem value="createdOn">
-                <Typography variant="body2">Created date</Typography>
+                <Typography variant="body2">Created on</Typography>
               </MenuItem>
               <MenuItem value="updatedOn">
-                <Typography variant="body2">Updated date</Typography>
+                <Typography variant="body2">Updated on</Typography>
               </MenuItem>
               <MenuItem value="severity">
                 <Typography variant="body2">Severity</Typography>
@@ -300,21 +355,21 @@ export default function AllCasesPage(): JSX.Element {
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="sort-label">Order By</InputLabel>
+            <InputLabel id="order-by-label">Order by</InputLabel>
             <Select<"desc" | "asc">
-              labelId="sort-label"
-              id="sort"
+              labelId="order-by-label"
+              id="order-by"
               value={sortOrder}
-              label="Sort"
+              label="Order by"
               onChange={(e) =>
                 handleSortChange(e.target.value as "desc" | "asc")
               }
             >
               <MenuItem value="desc">
-                <Typography variant="body2">Newest First</Typography>
+                <Typography variant="body2">Newest first</Typography>
               </MenuItem>
               <MenuItem value="asc">
-                <Typography variant="body2">Oldest First</Typography>
+                <Typography variant="body2">Oldest first</Typography>
               </MenuItem>
             </Select>
           </FormControl>
@@ -326,6 +381,7 @@ export default function AllCasesPage(): JSX.Element {
         cases={paginatedCases}
         isLoading={isCasesAreaLoading && !isCasesError}
         isError={isCasesError}
+        hasListRefinement={listHasRefinement}
         onCaseClick={(c) =>
           navigate(`/projects/${projectId}/support/cases/${c.id}`)
         }

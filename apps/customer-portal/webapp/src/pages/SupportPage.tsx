@@ -33,7 +33,7 @@ import {
   SUPPORT_OVERVIEW_CHAT_LIMIT,
   CaseType,
 } from "@constants/supportConstants";
-import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
+import { getProjectPermissions } from "@utils/subscriptionUtils";
 import { isS0Case } from "@utils/support";
 import type { ChatHistoryItem } from "@models/responses";
 
@@ -46,15 +46,11 @@ export default function SupportPage(): JSX.Element {
   const logger = useLogger();
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
+  const supportPath = `/projects/${projectId}/support`;
 
-  const {
-    data: project,
-    isLoading: isProjectLoading,
-  } = useGetProjectDetails(projectId || "");
-  const isProjectLoaded = !isProjectLoading && project !== undefined;
-  const isManagedCloudSubscription =
-    isProjectLoaded &&
-    project?.type?.label === PROJECT_TYPE_LABELS.MANAGED_CLOUD_SUBSCRIPTION;
+  const { data: project } = useGetProjectDetails(projectId || "");
+  const includeS0InSupportMetrics =
+    getProjectPermissions(project?.type?.label).includeS0InSupportMetrics;
 
   const {
     data: stats,
@@ -94,10 +90,9 @@ export default function SupportPage(): JSX.Element {
 
   const rawCases =
     data?.pages?.[0]?.cases?.slice(0, SUPPORT_OVERVIEW_CASES_LIMIT) ?? [];
-  const cases =
-    isProjectLoaded && !isManagedCloudSubscription
-      ? rawCases.filter((c) => !isS0Case(c))
-      : rawCases;
+  const cases = !includeS0InSupportMetrics
+    ? rawCases.filter((c) => !isS0Case(c))
+    : rawCases;
 
   const chatItems: ChatHistoryItem[] = (
     conversationsData?.conversations?.slice(0, SUPPORT_OVERVIEW_CHAT_LIMIT) ??
@@ -142,11 +137,15 @@ export default function SupportPage(): JSX.Element {
             footerButtons={[
               {
                 label: "View my cases",
-                onClick: () => navigate("cases?createdByMe=true"),
+                onClick: () =>
+                  navigate("cases?createdByMe=true", {
+                    state: { returnTo: supportPath },
+                  }),
               },
               {
                 label: "View all cases",
-                onClick: () => navigate("cases"),
+                onClick: () =>
+                  navigate("cases", { state: { returnTo: supportPath } }),
               },
             ]}
             isError={isCasesError}
@@ -156,7 +155,10 @@ export default function SupportPage(): JSX.Element {
               isLoading={isCasesLoading}
               onCaseClick={
                 projectId
-                  ? (c) => navigate(`/projects/${projectId}/support/cases/${c.id}`)
+                  ? (c) =>
+                      navigate(`/projects/${projectId}/support/cases/${c.id}`, {
+                        state: { returnTo: supportPath },
+                      })
                   : undefined
               }
             />
@@ -171,11 +173,17 @@ export default function SupportPage(): JSX.Element {
             footerButtons={[
               {
                 label: "View my chat history",
-                onClick: () => navigate("conversations?createdByMe=true"),
+                onClick: () =>
+                  navigate("conversations?createdByMe=true", {
+                    state: { returnTo: supportPath },
+                  }),
               },
               {
                 label: "View all chat history",
-                onClick: () => navigate("conversations"),
+                onClick: () =>
+                  navigate("conversations", {
+                    state: { returnTo: supportPath },
+                  }),
               },
             ]}
             isError={isChatError}
@@ -200,7 +208,10 @@ export default function SupportPage(): JSX.Element {
                         navigate(
                           `/projects/${projectId}/support/conversations/${chatId}`,
                           {
-                            state: { conversationSummary: summary },
+                            state: {
+                              conversationSummary: summary,
+                              returnTo: supportPath,
+                            },
                           },
                         );
                       }

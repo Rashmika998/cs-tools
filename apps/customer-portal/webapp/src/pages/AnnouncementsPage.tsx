@@ -34,7 +34,9 @@ import { CaseType } from "@constants/supportConstants";
 import type { AnnouncementFilterValues } from "@constants/supportConstants";
 import AnnouncementsSearchBar from "@components/support/announcements/AnnouncementsSearchBar";
 import AnnouncementList from "@components/support/announcements/AnnouncementList";
+import { hasListSearchOrFilters } from "@utils/support";
 import AllCasesListSkeleton from "@components/support/all-cases/AllCasesListSkeleton";
+import DOMPurify from "dompurify";
 
 /**
  * AnnouncementsPage component to display announcements with stats, search, and filters (filter dropdowns disabled).
@@ -104,8 +106,11 @@ export default function AnnouncementsPage(): JSX.Element {
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchTerm("");
     setPage(1);
   };
+
+  const listHasRefinement = hasListSearchOrFilters(searchTerm, filters);
 
   return (
     <Stack spacing={3}>
@@ -122,9 +127,16 @@ export default function AnnouncementsPage(): JSX.Element {
           <Typography variant="h4" color="text.primary" sx={{ mb: 1 }}>
             Announcements
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            View and manage announcements for your project
-          </Typography>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            component="div"
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(
+                "View and manage announcements for your project",
+              ),
+            }}
+          />
         </Box>
       </Box>
 
@@ -151,21 +163,21 @@ export default function AnnouncementsPage(): JSX.Element {
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="sort-label">Sort</InputLabel>
+            <InputLabel id="announcements-order-by-label">Order by</InputLabel>
             <Select<"desc" | "asc">
-              labelId="sort-label"
-              id="sort"
+              labelId="announcements-order-by-label"
+              id="announcements-order-by"
               value={sortOrder}
-              label="Sort"
+              label="Order by"
               onChange={(e) =>
                 handleSortChange(e.target.value as "desc" | "asc")
               }
             >
               <MenuItem value="desc">
-                <Typography variant="body2">Newest First</Typography>
+                <Typography variant="body2">Newest first</Typography>
               </MenuItem>
               <MenuItem value="asc">
-                <Typography variant="body2">Oldest First</Typography>
+                <Typography variant="body2">Oldest first</Typography>
               </MenuItem>
             </Select>
           </FormControl>
@@ -178,6 +190,7 @@ export default function AnnouncementsPage(): JSX.Element {
         <AnnouncementList
           cases={cases}
           isLoading={false}
+          hasListRefinement={listHasRefinement}
           onCaseClick={(c) => navigate(`/projects/${projectId}/announcements/${c.id}`)}
         />
       )}

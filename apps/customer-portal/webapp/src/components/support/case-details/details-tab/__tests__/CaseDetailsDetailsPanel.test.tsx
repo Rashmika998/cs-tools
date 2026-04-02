@@ -16,9 +16,11 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router";
 import CaseDetailsDetailsPanel from "@case-details-details/CaseDetailsDetailsPanel";
 import { ThemeProvider, createTheme } from "@wso2/oxygen-ui";
 import type { CaseDetails } from "@models/responses";
+import { formatDateOnly } from "@utils/support";
 
 const mockCaseDetails: Partial<CaseDetails> = {
   id: "case-001",
@@ -56,14 +58,25 @@ vi.mock("@utils/casesTable", () => ({
 function renderDetailsPanel(props: {
   data?: Partial<CaseDetails>;
   isError?: boolean;
+  isServiceRequest?: boolean;
 } = {}) {
   return render(
-    <ThemeProvider theme={createTheme()}>
-      <CaseDetailsDetailsPanel
-        data={(props.data ?? mockCaseDetails) as CaseDetails}
-        isError={props.isError ?? false}
-      />
-    </ThemeProvider>,
+    <MemoryRouter initialEntries={["/projects/p1/support/cases/case-001"]}>
+      <Routes>
+        <Route
+          path="/projects/:projectId/support/cases/:caseId"
+          element={
+            <ThemeProvider theme={createTheme()}>
+              <CaseDetailsDetailsPanel
+                data={(props.data ?? mockCaseDetails) as CaseDetails}
+                isError={props.isError ?? false}
+                isServiceRequest={props.isServiceRequest ?? false}
+              />
+            </ThemeProvider>
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
   );
 }
 
@@ -88,9 +101,13 @@ describe("CaseDetailsDetailsPanel", () => {
   it("should render case overview dates and SLA", () => {
     renderDetailsPanel();
     expect(screen.getByText("Created Date")).toBeInTheDocument();
-    expect(screen.getByText("2026-01-31 10:45:12")).toBeInTheDocument();
+    expect(
+      screen.getByText(formatDateOnly(mockCaseDetails.createdOn)),
+    ).toBeInTheDocument();
     expect(screen.getByText("Last Updated")).toBeInTheDocument();
-    expect(screen.getByText("2026-02-10 23:47:57")).toBeInTheDocument();
+    expect(
+      screen.getByText(formatDateOnly(mockCaseDetails.updatedOn)),
+    ).toBeInTheDocument();
     expect(screen.getByText("SLA Response Time")).toBeInTheDocument();
     expect(
       screen.getByText((content) =>
@@ -163,5 +180,31 @@ describe("CaseDetailsDetailsPanel", () => {
     expect(screen.getByText("Something Went Wrong")).toBeInTheDocument();
     const svg = document.querySelector("svg");
     expect(svg).toBeInTheDocument();
+  });
+
+  it("should render service request overview and request detail fields when isServiceRequest", () => {
+    renderDetailsPanel({
+      isServiceRequest: true,
+      data: {
+        ...mockCaseDetails,
+        description: "<p>deploy jar</p>",
+        severity: null,
+        issueType: null,
+        changeRequests: [{ id: "cr-1", label: "JAR Deployment" }],
+        assignedTeam: { id: "team-1", label: "L2 Team" },
+        duration: "2h",
+      },
+    });
+    expect(screen.getByText("Service Request Overview")).toBeInTheDocument();
+    expect(screen.getByText("Request number")).toBeInTheDocument();
+    expect(screen.getByText("WSO2 Case Id")).toBeInTheDocument();
+    expect(screen.getByText("Severity")).toBeInTheDocument();
+    expect(screen.getByText("Duration")).toBeInTheDocument();
+    expect(screen.getAllByText("Assigned team").length).toBeGreaterThan(0);
+    expect(screen.getByText("Description")).toBeInTheDocument();
+    expect(screen.getByText("deploy jar")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "View related change request" }),
+    ).toHaveAttribute("href", "/projects/p1/support/change-requests/cr-1");
   });
 });

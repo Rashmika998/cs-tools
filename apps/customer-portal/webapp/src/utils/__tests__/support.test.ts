@@ -54,11 +54,23 @@ import {
   replaceInlineImageSources,
   extractInlineImageRefId,
   formatCommentDate,
+  toDatetimeLocalInputFromApiString,
+  dateFromApiCreatedOn,
+  compareByCreatedOnThenId,
+  parseApiLocalDateTimeMs,
   formatUtcToLocal,
   formatDateOnly,
   getInitials,
   hasDisplayableContent,
   stripCustomerPrefixFromReason,
+  formatCallRequestBackendDateTimeShort,
+  formatCallRequestPromptScheduledTime,
+  callRequestApiPreferredTimeToDatetimeLocal,
+  callRequestPreferredTimeFromDatetimeLocal,
+  datetimeLocalWallTimeToUtcMs,
+  normalizeDatetimeLocalForCompare,
+  resolveCallSchedulingTimeZone,
+  wallClockToUtcMilliseconds,
   isWithinOpenRelatedCaseWindow,
   toPresentContinuousActionLabel,
   toPresentTenseActionLabel,
@@ -147,6 +159,140 @@ describe("support utils", () => {
 
     it("returns empty string for empty input", () => {
       expect(stripCustomerPrefixFromReason("")).toBe("");
+    });
+  });
+
+  describe("formatCallRequestBackendDateTimeShort", () => {
+    it("formats literal Z ISO as wall clock (not UTC shift)", () => {
+      expect(
+        formatCallRequestBackendDateTimeShort("2026-04-01T16:55:00.000Z"),
+      ).toBe("Apr 1, 4:55 PM");
+    });
+
+    it("formatCallRequestPromptScheduledTime prefers first preferred time over scheduleTime", () => {
+      expect(
+        formatCallRequestPromptScheduledTime(
+          ["2026-04-02T08:45:00.000Z"],
+          "2026-04-02T14:15:00.000Z",
+        ),
+      ).toBe("Apr 2, 8:45 AM");
+    });
+
+    it("formats YYYY-MM-DD HH:mm:ss as wall-clock without shifting timezone", () => {
+      expect(formatCallRequestBackendDateTimeShort("2026-04-02 05:49:41")).toBe(
+        "Apr 2, 5:49 AM",
+      );
+    });
+
+    it("formats MM/DD/YYYY HH:mm:ss as wall-clock", () => {
+      expect(formatCallRequestBackendDateTimeShort("04/02/2026 01:50:00")).toBe(
+        "Apr 2, 1:50 AM",
+      );
+    });
+
+    it("returns -- for empty or invalid input", () => {
+      expect(formatCallRequestBackendDateTimeShort("")).toBe("--");
+      expect(formatCallRequestBackendDateTimeShort(undefined)).toBe("--");
+      expect(formatCallRequestBackendDateTimeShort("not a date")).toBe("--");
+    });
+  });
+
+  describe("datetimeLocalWallTimeToUtcMs (profile / filter API time zone)", () => {
+    it("interprets datetime-local as Asia/Colombo wall time for API ISO", () => {
+      const ms = datetimeLocalWallTimeToUtcMs(
+        "2026-04-03T06:17",
+        "Asia/Colombo",
+      );
+      expect(ms).not.toBeNull();
+      expect(new Date(ms!).toISOString()).toMatch(
+        /^2026-04-03T00:47:00\.000Z$/,
+      );
+    });
+
+    it("maps WSO2/Colombo filter API id to same UTC ms as Asia/Colombo", () => {
+      const msIana = datetimeLocalWallTimeToUtcMs(
+        "2026-04-03T06:17",
+        "Asia/Colombo",
+      );
+      const msWso2 = datetimeLocalWallTimeToUtcMs(
+        "2026-04-03T06:17",
+        "WSO2/Colombo",
+      );
+      expect(msWso2).toBe(msIana);
+    });
+
+    it("resolves Colombo wall clock to consistent UTC ms", () => {
+      const ms = wallClockToUtcMilliseconds(2026, 4, 3, 6, 17, "Asia/Colombo");
+      expect(ms).toBe(Date.parse("2026-04-03T00:47:00.000Z"));
+    });
+  });
+
+  describe("callRequestApiPreferredTimeToDatetimeLocal", () => {
+    it("strips literal Z to datetime-local (same clock as POST)", () => {
+      expect(
+        callRequestApiPreferredTimeToDatetimeLocal("2026-04-01T16:55:00.000Z"),
+      ).toBe("2026-04-01T16:55");
+    });
+
+    it("maps space-separated API time to datetime-local", () => {
+      expect(
+        callRequestApiPreferredTimeToDatetimeLocal("2024-10-29 14:00:00"),
+      ).toBe("2024-10-29T14:00");
+    });
+  });
+
+  describe("callRequestPreferredTimeFromDatetimeLocal", () => {
+    it("echoes modal wall clock as Z-suffixed ISO (not true UTC offset)", () => {
+      expect(callRequestPreferredTimeFromDatetimeLocal("2026-04-01T16:55")).toBe(
+        "2026-04-01T16:55:00.000Z",
+      );
+    });
+
+    it("returns empty for invalid input", () => {
+      expect(callRequestPreferredTimeFromDatetimeLocal("")).toBe("");
+      expect(callRequestPreferredTimeFromDatetimeLocal("bad")).toBe("");
+    });
+  });
+
+  describe("normalizeDatetimeLocalForCompare", () => {
+    it("orders lexicographically for same-width strings", () => {
+      expect(normalizeDatetimeLocalForCompare("2026-04-01T08:00")).toBe(
+        "2026-04-01T08:00",
+      );
+      expect(
+        normalizeDatetimeLocalForCompare("2026-04-01T08:00")! <
+          normalizeDatetimeLocalForCompare("2026-04-01T16:55")!,
+      ).toBe(true);
+    });
+
+    it("returns null for invalid input", () => {
+      expect(normalizeDatetimeLocalForCompare("")).toBeNull();
+    });
+  });
+
+  describe("resolveCallSchedulingTimeZone", () => {
+    it("maps WSO2/Colombo to Asia/Colombo", () => {
+      expect(resolveCallSchedulingTimeZone("WSO2/Colombo")).toBe(
+        "Asia/Colombo",
+      );
+    });
+
+    it("falls back to a valid IANA id for empty input", () => {
+      const tz = resolveCallSchedulingTimeZone("");
+      expect(typeof tz).toBe("string");
+      expect(tz.length).toBeGreaterThan(0);
+    });
+
+    it("falls back for invalid zone ids", () => {
+      const tz = resolveCallSchedulingTimeZone("Not/A/Real/Zone");
+      expect(typeof tz).toBe("string");
+      expect(() =>
+        new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date()),
+      ).not.toThrow();
+    });
+
+    it("passes through Asia/Kolkata", () => {
+      expect(resolveCallSchedulingTimeZone("Asia/Kolkata")).toBe("Asia/Kolkata");
     });
   });
 
@@ -826,11 +972,61 @@ describe("support utils", () => {
       expect(result).toMatch(/2026/);
     });
 
-    it("should normalize ServiceNow timestamp YYYY-MM-DD HH:MM:SS as UTC", () => {
+    it("should parse YYYY-MM-DD HH:MM:SS as local wall time (no UTC shift)", () => {
       const result = formatCommentDate("2026-02-13 15:45:00");
       expect(result).toMatch(/Feb/);
       expect(result).toMatch(/13/);
       expect(result).toMatch(/2026/);
+    });
+  });
+
+  describe("toDatetimeLocalInputFromApiString", () => {
+    it("should map YYYY-MM-DD HH:mm:ss to datetime-local without UTC shift", () => {
+      expect(toDatetimeLocalInputFromApiString("2026-03-27 13:34:56")).toBe(
+        "2026-03-27T13:34",
+      );
+    });
+
+    it("should map T-separated local wall time without Z", () => {
+      expect(toDatetimeLocalInputFromApiString("2026-03-27T13:34:56")).toBe(
+        "2026-03-27T13:34",
+      );
+    });
+  });
+
+  describe("parseApiLocalDateTimeMs", () => {
+    it("should parse T-separated unzoned as local wall", () => {
+      const space = parseApiLocalDateTimeMs("2026-03-27 13:32:54");
+      const tsep = parseApiLocalDateTimeMs("2026-03-27T13:32:54");
+      expect(space).toBe(tsep);
+    });
+  });
+
+  describe("compareByCreatedOnThenId", () => {
+    it("should order human before Novera when createdOn matches", () => {
+      const human = {
+        createdOn: "2026-03-27 13:29:37",
+        id: "b",
+        createdBy: "user@wso2.com",
+        type: "comments",
+      };
+      const novera = {
+        createdOn: "2026-03-27 13:29:37",
+        id: "a",
+        createdBy: "Novera",
+        type: "comments",
+      };
+      const sorted = [novera, human].sort(compareByCreatedOnThenId);
+      expect(sorted[0]?.createdBy).toBe("user@wso2.com");
+      expect(sorted[1]?.createdBy).toBe("Novera");
+    });
+  });
+
+  describe("dateFromApiCreatedOn", () => {
+    it("should order consecutive API local timestamps", () => {
+      const a = dateFromApiCreatedOn("2026-03-27 13:32:54");
+      const b = dateFromApiCreatedOn("2026-03-27 13:32:55");
+      expect(a.getTime()).toBeLessThan(b.getTime());
     });
   });
 

@@ -38,6 +38,7 @@ export interface ProjectListItem {
 export interface ProjectDetailsAccount {
   id: string;
   hasAgent?: boolean;
+  hasKbReferences?: boolean;
   name: string;
   activationDate?: string | null;
   deactivationDate?: string | null;
@@ -55,6 +56,7 @@ export interface ProjectDetails {
   description: string;
   createdOn: string;
   hasAgent?: boolean;
+  hasKbReferences?: boolean;
   type: {
     id: string;
     label: string;
@@ -411,8 +413,8 @@ export interface ChangeRequestSearchResponse {
 // Change Request Stats
 export interface ChangeRequestStats {
   totalRequests: number;
-  scheduled: number;
-  inProgress: number;
+  awaitingYourAction: number;
+  ongoing: number;
   completed: number;
 }
 
@@ -503,6 +505,12 @@ export interface CaseDetails {
   catalogItem?: IdLabelRef | null;
   /** Filled variables for service requests (from backend). */
   variables?: { name: string; value: string }[];
+  changeRequests?: IdLabelRef[];
+  createdBy?: string | null;
+  duration?: string | null;
+  assignedTeam?: IdLabelRef | null;
+  engagementStartDate?: string | null;
+  engagementEndDate?: string | null;
   deployment: IdLabelRef | null;
   severity: IdLabelRef | null;
   status: IdLabelRef | null;
@@ -830,6 +838,8 @@ export interface ProjectDeploymentItem {
   url: string | null;
   project: { id: string; label: string };
   type: { id: string; label: string };
+  deployedProductCount?: number;
+  instanceCount?: number;
 }
 
 // Response for GET /deployments/:deploymentId/products (paginated).
@@ -875,6 +885,18 @@ export interface DeploymentProductItem {
   releasedOn?: string | null;
   endOfLifeOn?: string | null;
   updates?: ProductUpdate[] | null;
+  instanceCount?: number;
+  instances?: Array<{
+    id: string;
+    instance: string;
+    coreUsageCount?: number | null;
+    updates?: number | null;
+    jdkVersion?: string | null;
+    createdOn?: string | null;
+    updatedOn?: string | null;
+    customCreatedOn?: string | null;
+    customUpdatedOn?: string | null;
+  }> | null;
 }
 
 // GET /attachments/:id — full payload with base64 or data URL in `content`.

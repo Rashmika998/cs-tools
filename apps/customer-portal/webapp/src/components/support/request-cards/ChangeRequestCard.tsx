@@ -19,7 +19,7 @@ import type { JSX } from "react";
 import { colors } from "@wso2/oxygen-ui";
 import { CalendarDays } from "@wso2/oxygen-ui-icons-react";
 import RequestCard from "@components/support/request-cards/RequestCard";
-import { CHANGE_REQUEST_BULLET_ITEMS } from "@constants/supportConstants";
+import { CHANGE_REQUEST_BULLET_ITEMS } from "@constants/changeRequestConstants";
 
 /**
  * Change Requests card for the Support page.

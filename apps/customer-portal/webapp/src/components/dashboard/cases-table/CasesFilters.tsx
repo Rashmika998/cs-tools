@@ -22,7 +22,7 @@ import {
   Select,
   Typography,
 } from "@wso2/oxygen-ui";
-import type { JSX } from "react";
+import type { JSX, UIEvent } from "react";
 import type { SelectChangeEvent } from "@wso2/oxygen-ui";
 import type { FilterField } from "@components/common/filter-panel/FilterPopover";
 
@@ -32,7 +32,7 @@ import type { FilterField } from "@components/common/filter-panel/FilterPopover"
 type SelectFilterField = FilterField & { type: "select" };
 
 export interface CasesFiltersProps {
-  filters: Record<string, string | number>;
+  filters: Record<string, string | number | undefined>;
   filterFields: SelectFilterField[];
   onFilterChange: (field: string, value: string | number) => void;
 }
@@ -69,6 +69,25 @@ export default function CasesFilters({
                 value={filters[field.id] || ""}
                 label={field.label}
                 onChange={handleSelectChange(field.id)}
+                MenuProps={{
+                  PaperProps: {
+                    onScroll: (e: UIEvent<HTMLElement>) => {
+                      if (
+                        !field.onLoadMore ||
+                        !field.hasMore ||
+                        field.isFetchingMore
+                      ) {
+                        return;
+                      }
+                      const el = e.currentTarget;
+                      const threshold = 24;
+                      const isNearBottom =
+                        el.scrollHeight - el.scrollTop - el.clientHeight <
+                        threshold;
+                      if (isNearBottom) field.onLoadMore();
+                    },
+                  },
+                }}
               >
                 <MenuItem value="">
                   <Typography variant="body2">All {field.label}</Typography>

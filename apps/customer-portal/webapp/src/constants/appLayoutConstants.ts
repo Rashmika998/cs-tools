@@ -15,6 +15,7 @@
 // under the License.
 
 import {
+  BarChart3,
   Briefcase,
   Cog,
   FolderOpen,
@@ -46,6 +47,12 @@ export const APP_SHELL_NAV_ITEMS: AppShellNavItem[] = [
     icon: Shield,
   },
   { id: "engagements", label: "Engagements", path: "engagements", icon: Briefcase },
+  {
+    id: "usage-metrics",
+    label: "Usage & Metrics",
+    path: "usage-metrics",
+    icon: BarChart3,
+  },
   {
     id: "project-details",
     label: "Project Details",

@@ -53,6 +53,8 @@ public type Pagination record {|
 public type MetadataResponse record {|
     # List of available time zones
     ChoiceListItem[] timeZones;
+    # List of available project types
+    ReferenceTableItem[] projectTypes;
     json...;
 |};
 
@@ -582,6 +584,12 @@ public type ProjectStatsResponse record {|
     decimal billableHours?;
     # SLA status
     string slaStatus?;
+    # Deployment count associated with the project
+    int deploymentCount;
+    # Deployed product count associated with the project
+    int deployedProductCount;
+    # Instance count associated with the project
+    int instanceCount;
     json...;
 |};
 
@@ -705,6 +713,10 @@ public type Comment record {|
     boolean hasInlineAttachments;
     # List of inline attachments
     InlineAttachment[] inlineAttachments;
+    # First name of the user who created the comment
+    string? createdByFirstName;
+    # Last name of the user who created the comment
+    string? createdByLastName;
     json...;
 |};
 
@@ -832,6 +844,42 @@ public type ProductUpdate record {|
     json...;
 |};
 
+# Deployed product search payload
+public type DeployedProductSearchPayload record {|
+    # Deployment ID
+    IdString deploymentId;
+    # Filters
+    record {
+        # Consumption based filters
+        ConsumptionFilter consumption?;
+    } filters?;
+    # Pagination details
+    Pagination pagination?;
+|};
+
+# Instance information.
+public type Instance record {|
+    # ID of the instance
+    IdString id;
+    # Instance identifier
+    string instance;
+    # Core usage count
+    int? coreUsageCount;
+    # Update count
+    int? updates;
+    # JDK version
+    string? jdkVersion;
+    # Created date and time
+    string? createdOn;
+    # Updated date and time
+    string? updatedOn;
+    # Custom created date and time
+    string? customCreatedOn;
+    # Custom updated date and time
+    string? customUpdatedOn;
+    json...;
+|};
+
 # Deployed product data.
 public type DeployedProduct record {|
     # ID
@@ -860,6 +908,10 @@ public type DeployedProduct record {|
     string? releasedOn;
     # End of life date of the product
     string? endOfLifeOn;
+    # Instances of the deployed product
+    int instanceCount?;
+    # Details of the instances
+    Instance[]? instances?;
     json...;
 |};
 
@@ -945,6 +997,29 @@ public type UpdatedDeployedProduct record {|
     json...;
 |};
 
+# Request payload for searching deployments.
+public type DeploymentSearchPayload record {|
+    # Filter criteria
+    record {|
+        # Project IDs
+        IdString[] projectIds?;
+        # Consumption based filters
+        ConsumptionFilter consumption?;
+    |} filters?;
+    # Pagination details
+    Pagination pagination?;
+|};
+
+# Consumption filter.
+public type ConsumptionFilter record {|
+    # Indicates whether to filter based on consumption (true to filter)
+    boolean include?;
+    # Start date of consumption
+    Date startDate?;
+    # End date of consumption
+    Date endDate?;
+|};
+
 # Deployment data.
 public type Deployment record {|
     # ID
@@ -963,15 +1038,10 @@ public type Deployment record {|
     ReferenceTableItem? project;
     # Type
     ChoiceListItem? 'type;
-    json...;
-|};
-
-# Request payload for searching deployed products by deployment ID.
-public type DeployedProductSearchPayload record {|
-    # Deployment ID
-    IdString deploymentId;
-    # Pagination details
-    Pagination pagination?;
+    # Count of deployed products associated with the deployment
+    int deployedProductCount?;
+    # Count of instances associated with the deployment
+    int instanceCount?;
     json...;
 |};
 

@@ -30,6 +30,8 @@ public type FeatureFlags record {|
 public type MetadataResponse record {|
     # List of available time zones
     ReferenceItem[] timeZones;
+    # List of available project types
+    ReferenceItem[] projectTypes;
     # Indicate which features are enabled
     FeatureFlags featureFlags;
 |};
@@ -499,6 +501,10 @@ public type Comment record {|
     boolean hasInlineAttachments;
     # List of inline attachments
     entity:InlineAttachment[] inlineAttachments;
+    # First name of the user who created the comment
+    string? createdByFirstName;
+    # Last name of the user who created the comment
+    string? createdByLastName;
 |};
 
 # Comments response with pagination.
@@ -561,6 +567,17 @@ public type AttachmentUpdatePayload record {|
     string? description?;
 |};
 
+# Request payload for searching deployments.
+public type DeploymentSearchPayload record {|
+    # Filter criteria
+    record {|
+        # Consumtion based filters
+        entity:ConsumptionFilter consumption?;
+    |} filters?;
+    # Pagination details
+    entity:Pagination pagination?;
+|};
+
 # Deployment information.
 public type Deployment record {|
     # ID
@@ -579,6 +596,10 @@ public type Deployment record {|
     ReferenceItem? project;
     # Type
     ReferenceItem? 'type;
+    # Count of deployed products associated with the deployment
+    int deployedProductCount?;
+    # Count of instances associated with the deployment
+    int instanceCount?;
 |};
 
 # Deployments response.
@@ -588,6 +609,17 @@ public type DeploymentsResponse record {|
     # Total records count
     int totalRecords;
     *entity:Pagination;
+|};
+
+# Deployed product search payload
+public type DeployedProductSearchPayload record {|
+    # Filters
+    record {
+        # Consumtion based filters
+        entity:ConsumptionFilter consumption?;
+    } filters?;
+    # Pagination details
+    entity:Pagination pagination?;
 |};
 
 # Deployed product data.
@@ -618,6 +650,10 @@ public type DeployedProduct record {|
     string? releasedOn;
     # End of life date of the product
     string? endOfLifeOn;
+    # Instances of the deployed product
+    int instanceCount?;
+    # Details of the instances
+    entity:Instance[]? instances?;
 |};
 
 # Deployed products response.
@@ -1376,4 +1412,14 @@ public type RegistryTokenCreatePayload record {|
     registry:TokenType tokenType;
     # Created for user email
     string createdFor?;
+|};
+
+# Usage and metrics statistics for a project.
+public type UsageStats record {|
+    # Deployment count associated with the project
+    int deploymentCount;
+    # Deployed product count associated with the project
+    int deployedProductCount;
+    # Instance count associated with the project
+    int instanceCount;
 |};

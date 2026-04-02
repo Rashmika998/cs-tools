@@ -18,7 +18,7 @@ import { Box } from "@wso2/oxygen-ui";
 import { type JSX } from "react";
 import SupportStatGrid from "@components/common/stat-grid/SupportStatGrid";
 import type { ChangeRequestStats } from "@models/responses";
-import { CHANGE_REQUEST_STAT_CONFIGS } from "@constants/supportConstants";
+import { CHANGE_REQUEST_STAT_CONFIGS } from "@constants/changeRequestConstants";
 
 export interface ChangeRequestsStatCardsProps {
   isLoading: boolean;

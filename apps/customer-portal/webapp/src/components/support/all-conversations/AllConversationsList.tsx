@@ -40,11 +40,14 @@ import {
 } from "@utils/support";
 import AllConversationsListSkeleton from "./AllConversationsListSkeleton";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
+import EmptyIcon from "@components/common/empty-state/EmptyIcon";
+import SearchNoResultsIcon from "@components/common/empty-state/SearchNoResultsIcon";
 
 export interface AllConversationsListProps {
   conversations: Conversation[];
   isLoading: boolean;
   isError?: boolean;
+  hasListRefinement?: boolean;
   onConversationClick?: (conversation: Conversation) => void;
 }
 
@@ -58,6 +61,7 @@ export default function AllConversationsList({
   conversations,
   isLoading,
   isError = false,
+  hasListRefinement = false,
   onConversationClick,
 }: AllConversationsListProps): JSX.Element {
   const theme = useTheme();
@@ -78,10 +82,49 @@ export default function AllConversationsList({
   }
 
   if (conversations.length === 0) {
+    if (hasListRefinement) {
+      return (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            py: 6,
+          }}
+        >
+          <SearchNoResultsIcon
+            style={{
+              width: 200,
+              maxWidth: "100%",
+              height: "auto",
+              marginBottom: 16,
+            }}
+          />
+          <Typography variant="body1" color="text.secondary">
+            No conversations found. Try adjusting your filters or search query.
+          </Typography>
+        </Box>
+      );
+    }
     return (
-      <Box sx={{ textAlign: "center", py: 6 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          py: 6,
+        }}
+      >
+        <EmptyIcon
+          style={{
+            width: 200,
+            maxWidth: "100%",
+            height: "auto",
+            marginBottom: 16,
+          }}
+        />
         <Typography variant="body1" color="text.secondary">
-          No conversations found.
+          No conversations yet.
         </Typography>
       </Box>
     );

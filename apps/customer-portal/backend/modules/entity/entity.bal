@@ -240,19 +240,15 @@ public isolated function deleteAttachment(string idToken, IdString attachmentId)
     return csEntityClient->/attachments/[attachmentId].delete(generateHeaders(idToken));
 }
 
-# Get products of a deployment.
+# Search products of a deployment.
 #
 # + idToken - ID token for authorization
-# + deploymentId - ID of the deployment
-# + offset - Offset for pagination
-# + 'limit - Limit for pagination
+# + payload - Payload for searching products of a deployment
 # + return - Products response or error
-public isolated function getDeployedProducts(string idToken, string deploymentId, int offset = DEFAULT_OFFSET,
-        int 'limit = DEFAULT_LIMIT) returns DeployedProductsResponse|error {
+public isolated function searchDeployedProducts(string idToken, DeployedProductSearchPayload payload)
+    returns DeployedProductsResponse|error {
 
-    return csEntityClient->/deployed\-products/search.post({deploymentId, pagination: {offset, 'limit}},
-        generateHeaders(idToken)
-    );
+    return csEntityClient->/deployed\-products/search.post(payload, generateHeaders(idToken));
 }
 
 # Create a deployed product.
@@ -278,13 +274,15 @@ public isolated function updateDeployedProduct(string idToken, string deployedPr
     return csEntityClient->/deployed\-products/[deployedProductId].patch(payload, generateHeaders(idToken));
 }
 
-# Get deployments of a project.
+# Search deployments of a project.
 #
 # + idToken - ID token for authorization
-# + projectId - ID of the project
+# + payload - Payload for searching deployments of the project
 # + return - Deployments response or error
-public isolated function getDeployments(string idToken, string projectId) returns DeploymentsResponse|error {
-    return csEntityClient->/deployments/search.post({filters: {projectIds: [projectId]}}, generateHeaders(idToken));
+public isolated function searchDeployments(string idToken, DeploymentSearchPayload payload)
+    returns DeploymentsResponse|error {
+
+    return csEntityClient->/deployments/search.post(payload, generateHeaders(idToken));
 }
 
 # Create a deployment.

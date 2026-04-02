@@ -15,7 +15,7 @@
 // under the License.
 
 import { type JSX, useMemo } from "react";
-import { Box, Grid, Stack } from "@wso2/oxygen-ui";
+import { Box, Grid, Stack, Typography } from "@wso2/oxygen-ui";
 import { useNavigate, useParams } from "react-router";
 import { FileText } from "@wso2/oxygen-ui-icons-react";
 import SupportStatGrid from "@components/common/stat-grid/SupportStatGrid";
@@ -33,7 +33,8 @@ import useGetProjectCases from "@api/useGetProjectCases";
 import useGetChangeRequests from "@api/useGetChangeRequests";
 import { useGetProjectCasesStats } from "@api/useGetProjectCasesStats";
 import { useGetProjectChangeRequestsStats } from "@api/useGetProjectChangeRequestsStats";
-import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
+import { getProjectPermissions } from "@utils/subscriptionUtils";
+import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 
 /**
  * OperationsPage component. Displays operations statistics,
@@ -44,19 +45,26 @@ import { PROJECT_TYPE_LABELS } from "@constants/projectDetailsConstants";
 export default function OperationsPage(): JSX.Element {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: project, isLoading: isProjectLoading } = useGetProjectDetails(
-    projectId || "",
-  );
-  const projectTypeLabel = project?.type?.label;
+  const {
+    data: project,
+    isLoading: isProjectLoading,
+    isError: isProjectDetailsError,
+  } = useGetProjectDetails(projectId || "");
 
-  const isManagedCloudSubscription =
-    projectTypeLabel === PROJECT_TYPE_LABELS.MANAGED_CLOUD_SUBSCRIPTION;
-  const isCloudSupport =
-    projectTypeLabel === PROJECT_TYPE_LABELS.CLOUD_SUPPORT ||
-    projectTypeLabel === PROJECT_TYPE_LABELS.CLOUD_EVALUATION_SUPPORT;
+  const projectFetchSettled = !isProjectLoading;
+  const projectLoadFailed =
+    !!projectId &&
+    projectFetchSettled &&
+    (isProjectDetailsError || project === undefined);
+  const permissionsReady =
+    projectFetchSettled && !!project && !isProjectDetailsError;
 
-  const isServiceRequestEnabled = isManagedCloudSubscription || isCloudSupport;
-  const isChangeRequestEnabled = isManagedCloudSubscription;
+  const projectTypeLabel = permissionsReady ? project?.type?.label : undefined;
+  const permissions = getProjectPermissions(projectTypeLabel);
+
+  const isServiceRequestEnabled = permissions.hasSR;
+  const isChangeRequestEnabled = permissions.hasCR;
+  const operationsPath = `/projects/${projectId}/operations`;
 
   const {
     data: srData,
@@ -123,19 +131,19 @@ export default function OperationsPage(): JSX.Element {
 
   // Avoid an empty stats flash before project type is known (enables correct queries).
   const stats: Partial<Record<OperationsStatKey, number>> | undefined =
-    isProjectLoading || !project
+    !permissionsReady
       ? undefined
       : srReady && crReady
         ? {
-            ...(isServiceRequestEnabled &&
-              activeServiceRequests !== undefined && {
-                activeServiceRequests,
-              }),
-            ...(isChangeRequestEnabled &&
-              activeChangeRequests !== undefined && {
-                activeChangeRequests,
-              }),
-            ...(completedThisMonth > 0 && { completedThisMonth }),
+            ...(isServiceRequestEnabled && {
+              activeServiceRequests: activeServiceRequests ?? 0,
+            }),
+            ...(isChangeRequestEnabled && {
+              activeChangeRequests: activeChangeRequests ?? 0,
+            }),
+            ...((isServiceRequestEnabled || isChangeRequestEnabled) && {
+              completedThisMonth,
+            }),
             ...(isChangeRequestEnabled &&
               scheduledCrCount > 0 && {
                 upcomingChanges: scheduledCrCount,
@@ -148,6 +156,9 @@ export default function OperationsPage(): JSX.Element {
     (isChangeRequestEnabled && isCrStatsError);
 
   const operationsStatConfigs = useMemo(() => {
+    if (!permissionsReady) {
+      return OPERATIONS_STAT_CONFIGS;
+    }
     if (!isServiceRequestEnabled && !isChangeRequestEnabled) {
       return [];
     }
@@ -158,19 +169,32 @@ export default function OperationsPage(): JSX.Element {
         (isChangeRequestEnabled ||
           (c.key !== "activeChangeRequests" && c.key !== "upcomingChanges")),
     );
-  }, [isServiceRequestEnabled, isChangeRequestEnabled]);
+  }, [permissionsReady, isServiceRequestEnabled, isChangeRequestEnabled]);
 
   const overviewGridSize =
     isServiceRequestEnabled && isChangeRequestEnabled
       ? { xs: 12, lg: 6 }
       : { xs: 12, lg: 12 };
 
+  const loadingOverviewGridSize = { xs: 12, lg: 6 };
+
+  if (projectLoadFailed) {
+    return (
+      <Box sx={{ textAlign: "center", py: 6 }}>
+        <ErrorIndicator entityName="project" size="medium" />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Unable to load project details. Please try again later.
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <Stack spacing={3}>
       <Box>
         <SupportStatGrid<OperationsStatKey>
           isLoading={
-            isProjectLoading ||
+            !permissionsReady ||
             (stats === undefined &&
               ((isServiceRequestEnabled && isSrStatsLoading) ||
                 (isChangeRequestEnabled && isCrStatsLoading)))
@@ -181,7 +205,38 @@ export default function OperationsPage(): JSX.Element {
           configs={operationsStatConfigs}
         />
       </Box>
-      {(isServiceRequestEnabled || isChangeRequestEnabled) && (
+      {!permissionsReady ? (
+        <Grid container spacing={3} sx={{ alignItems: "stretch" }}>
+          <Grid size={loadingOverviewGridSize} sx={{ display: "flex" }}>
+            <SupportOverviewCard
+              title="Service Requests"
+              subtitle={`Latest ${OPERATIONS_OVERVIEW_LIST_LIMIT} service requests`}
+              icon={FileText}
+              iconVariant="orange"
+              footerButtons={[]}
+            >
+              <OutstandingCasesList
+                cases={[]}
+                isLoading
+              />
+            </SupportOverviewCard>
+          </Grid>
+          <Grid size={loadingOverviewGridSize} sx={{ display: "flex" }}>
+            <SupportOverviewCard
+              title="Change Requests"
+              subtitle={`Latest ${OPERATIONS_OVERVIEW_LIST_LIMIT} change requests`}
+              icon={FileText}
+              iconVariant="blue"
+              footerButtons={[]}
+            >
+              <OutstandingChangeRequestsList
+                changeRequests={[]}
+                isLoading
+              />
+            </SupportOverviewCard>
+          </Grid>
+        </Grid>
+      ) : (isServiceRequestEnabled || isChangeRequestEnabled) ? (
         <>
           <Grid container spacing={3} sx={{ alignItems: "stretch" }}>
             {isServiceRequestEnabled && (
@@ -204,6 +259,7 @@ export default function OperationsPage(): JSX.Element {
                       onClick: () =>
                         navigate(
                           `/projects/${projectId}/operations/service-requests?createdByMe=true`,
+                          { state: { returnTo: operationsPath } },
                         ),
                     },
                     {
@@ -211,6 +267,7 @@ export default function OperationsPage(): JSX.Element {
                       onClick: () =>
                         navigate(
                           `/projects/${projectId}/operations/service-requests`,
+                          { state: { returnTo: operationsPath } },
                         ),
                     },
                   ]}
@@ -218,12 +275,13 @@ export default function OperationsPage(): JSX.Element {
                 >
                   <OutstandingCasesList
                     cases={serviceRequests}
-                    isLoading={isProjectLoading || isSrLoading}
+                    isLoading={isSrLoading}
                     onCaseClick={
                       projectId
                         ? (c) =>
                             navigate(
                               `/projects/${projectId}/operations/service-requests/${c.id}`,
+                              { state: { returnTo: operationsPath } },
                             )
                         : undefined
                     }
@@ -244,6 +302,7 @@ export default function OperationsPage(): JSX.Element {
                       onClick: () =>
                         navigate(
                           `/projects/${projectId}/operations/change-requests`,
+                          { state: { returnTo: operationsPath } },
                         ),
                     },
                   ]}
@@ -251,12 +310,13 @@ export default function OperationsPage(): JSX.Element {
                 >
                   <OutstandingChangeRequestsList
                     changeRequests={changeRequests}
-                    isLoading={isProjectLoading || isCrLoading}
+                    isLoading={isCrLoading}
                     onItemClick={
                       projectId
                         ? (cr) =>
                             navigate(
                               `/projects/${projectId}/operations/change-requests/${cr.id}`,
+                              { state: { returnTo: operationsPath } },
                             )
                         : undefined
                     }
@@ -266,7 +326,7 @@ export default function OperationsPage(): JSX.Element {
             )}
           </Grid>
         </>
-      )}
+      ) : null}
     </Stack>
   );
 }

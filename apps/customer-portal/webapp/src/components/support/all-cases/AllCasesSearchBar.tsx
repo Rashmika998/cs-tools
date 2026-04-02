@@ -21,6 +21,7 @@ import {
   TextField,
   InputAdornment,
   Divider,
+  Skeleton,
 } from "@wso2/oxygen-ui";
 import {
   Search,
@@ -35,6 +36,7 @@ import type {
   ProjectDeploymentItem,
 } from "@models/responses";
 import AllCasesFilters from "@components/support/all-cases/AllCasesFilters";
+import { countListSearchAndFilters } from "@utils/support";
 
 export interface AllCasesSearchBarProps {
   searchTerm: string;
@@ -52,6 +54,10 @@ export interface AllCasesSearchBarProps {
   onFilterChange: (field: string, value: string) => void;
   onClearFilters: () => void;
   excludeS0?: boolean;
+  isProjectContextLoading?: boolean;
+  onLoadMoreDeployments?: () => void;
+  hasMoreDeployments?: boolean;
+  isFetchingMoreDeployments?: boolean;
 }
 
 /**
@@ -71,12 +77,28 @@ export default function AllCasesSearchBar({
   onFilterChange,
   onClearFilters,
   excludeS0 = false,
+  isProjectContextLoading = false,
+  onLoadMoreDeployments,
+  hasMoreDeployments = false,
+  isFetchingMoreDeployments = false,
 }: AllCasesSearchBarProps): JSX.Element {
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
     onSearchChange(event.target.value);
   };
 
-  const hasActiveFilters = Object.values(filters).some((value) => !!value);
+  const activeFiltersCount = countListSearchAndFilters(searchTerm, filters);
+  const hasActiveFilters = activeFiltersCount > 0;
+
+  if (isProjectContextLoading) {
+    return (
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <Skeleton variant="rounded" height={40} sx={{ flex: 1 }} />
+          <Skeleton variant="rounded" width={100} height={36} />
+        </Box>
+      </Paper>
+    );
+  }
 
   return (
     <Paper sx={{ p: 3, mb: 3 }}>
@@ -115,7 +137,9 @@ export default function AllCasesSearchBar({
             ))
           }
         >
-          {hasActiveFilters ? "Clear Filters" : "Filters"}
+          {hasActiveFilters
+            ? `Clear Filters (${activeFiltersCount})`
+            : "Filters"}
         </Button>
       </Box>
 
@@ -128,6 +152,9 @@ export default function AllCasesSearchBar({
             deployments={deployments}
             onFilterChange={onFilterChange}
             excludeS0={excludeS0}
+            onLoadMoreDeployments={onLoadMoreDeployments}
+            hasMoreDeployments={hasMoreDeployments}
+            isFetchingMoreDeployments={isFetchingMoreDeployments}
           />
         </>
       )}

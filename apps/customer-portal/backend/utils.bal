@@ -196,7 +196,9 @@ public isolated function mapCommentsResponse(entity:CommentsResponse response) r
             createdBy: comment.createdBy,
             isEscalated: comment.isEscalated,
             hasInlineAttachments: comment.hasInlineAttachments,
-            inlineAttachments: comment.inlineAttachments
+            inlineAttachments: comment.inlineAttachments,
+            createdByFirstName: comment.createdByFirstName,
+            createdByLastName: comment.createdByLastName
         };
 
     return {
@@ -256,7 +258,9 @@ public isolated function mapDeployments(entity:DeploymentsResponse response) ret
             description: deployment.description,
             url: deployment.url,
             project: project != () ? {id: project.id, label: project.name} : (),
-            'type: 'type != () ? {id: 'type.id.toString(), label: 'type.label} : ()
+            'type: 'type != () ? {id: 'type.id.toString(), label: 'type.label} : (),
+            deployedProductCount: deployment.deployedProductCount,
+            instanceCount: deployment.instanceCount
         };
     return {deployments, totalRecords: response.totalRecords, offset: response.offset, 'limit: response.'limit};
 }
@@ -273,6 +277,7 @@ public isolated function mapDeployedProducts(entity:DeployedProductsResponse res
         let entity:ReferenceTableItem? deployment = product.deployment
         let entity:ReferenceTableItem? version = product.version
         let entity:ReferenceTableItem? category = product.category
+        let entity:Instance[]? instances = product?.instances
         select {
             id: product.id,
             createdOn: product.createdOn,
@@ -290,7 +295,20 @@ public isolated function mapDeployedProducts(entity:DeployedProductsResponse res
                 } : (),
             deployment: deployment != () ? {id: deployment.id, label: deployment.name} : (),
             version: version != () ? {id: version.id, label: version.name} : (),
-            category: category != () ? {id: category.id, label: category.name} : ()
+            category: category != () ? {id: category.id, label: category.name} : (),
+            instanceCount: product.instanceCount,
+            instances: instances != () ? from entity:Instance instance in instances
+                    select {
+                        id: instance.id,
+                        instance: instance.instance,
+                        coreUsageCount: instance.coreUsageCount,
+                        updates: instance.updates,
+                        jdkVersion: instance.jdkVersion,
+                        createdOn: instance.createdOn,
+                        updatedOn: instance.updatedOn,
+                        customCreatedOn: instance.customCreatedOn,
+                        customUpdatedOn: instance.customUpdatedOn
+                    } : ()
         };
 
     return {
@@ -891,5 +909,20 @@ public isolated function mapProjectResponse(entity:ProjectResponse response) ret
 public isolated function mapMetadataResponse(entity:MetadataResponse response) returns types:MetadataResponse {
     types:ReferenceItem[] timeZones = from entity:ChoiceListItem item in response.timeZones
         select {id: item.id.toString(), label: item.label};
-    return {timeZones, featureFlags};
+    types:ReferenceItem[] projectTypes = from entity:ReferenceTableItem item in response.projectTypes
+        select {id: item.id, label: item.name};
+    return {timeZones, projectTypes, featureFlags};
+}
+
+# Map usage stats response to the desired structure.
+#
+# + response - Usage stats response from the entity service
+# + return - Mapped usage stats response
+public isolated function mapUsageStats(entity:ProjectStatsResponse response) returns types:UsageStats {
+    // TODO: Add more stats
+    return {
+        deploymentCount: response.deploymentCount,
+        deployedProductCount: response.deployedProductCount,
+        instanceCount: response.instanceCount
+    };
 }
