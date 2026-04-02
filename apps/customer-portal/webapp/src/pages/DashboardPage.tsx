@@ -38,6 +38,10 @@ import {
 import { StatCard } from "@components/dashboard/stats/StatCard";
 import ChartLayout from "@components/dashboard/charts/ChartLayout";
 import CasesTable from "@components/dashboard/cases-table/CasesTable";
+import {
+  computeCrCardIsCardError,
+  computeCrCardIsCardLoading,
+} from "@utils/dashboardUtils";
 
 /**
  * DashboardPage component to display project-specific statistics and overview.
@@ -283,21 +287,23 @@ export default function DashboardPage(): JSX.Element {
   const crBranchState = useMemo(() => {
     const hasCombined = !!combinedCasesStats && !isErrorCombinedCases;
     const hasChange = !!changeRequestStats && !isErrorChangeRequestStats;
-    const isCardLoading = includeCrStats
-      ? !isErrorCombinedCases &&
-        !isErrorChangeRequestStats &&
-        ((!combinedCasesStats && isCombinedCasesLoading) ||
-          (!changeRequestStats && isChangeRequestStatsLoading))
-      : !isErrorCombinedCases &&
-        isCombinedCasesLoading &&
-        !combinedCasesStats;
-    const isCardError = includeCrStats
-      ? !isCardLoading &&
-        (isErrorCombinedCases ||
-          isErrorChangeRequestStats ||
-          !combinedCasesStats ||
-          !changeRequestStats)
-      : !isCardLoading && (isErrorCombinedCases || !combinedCasesStats);
+    const isCardLoading = computeCrCardIsCardLoading(
+      includeCrStats,
+      combinedCasesStats,
+      changeRequestStats,
+      isCombinedCasesLoading,
+      isChangeRequestStatsLoading,
+      isErrorCombinedCases,
+      isErrorChangeRequestStats,
+    );
+    const isCardError = computeCrCardIsCardError(
+      includeCrStats,
+      isCardLoading,
+      combinedCasesStats,
+      changeRequestStats,
+      isErrorCombinedCases,
+      isErrorChangeRequestStats,
+    );
     return { hasCombined, hasChange, isCardLoading, isCardError };
   }, [
     changeRequestStats,

@@ -162,6 +162,26 @@ describe("CasesList", () => {
     ).toBeInTheDocument();
   });
 
+  it("should show refined empty message when filters are active and list is empty", () => {
+    render(
+      <CasesList
+        isLoading={false}
+        data={{ cases: [], totalRecords: 0, offset: 0, limit: 10 } as any}
+        page={0}
+        rowsPerPage={10}
+        onPageChange={mockOnPageChange}
+        onRowsPerPageChange={mockOnRowsPerPageChange}
+        hasListRefinement={true}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "No outstanding cases. Try adjusting your filters.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("should render list of cases", () => {
     render(
       <CasesList

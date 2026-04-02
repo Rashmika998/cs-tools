@@ -56,7 +56,8 @@ export default function SettingsAiAssistant({
     pageSize: 20,
     enabled: !!projectId,
   });
-  const { data: projectDetails } = useGetProjectDetails(projectId);
+  const { data: projectDetails, isLoading: isProjectDetailsLoading } =
+    useGetProjectDetails(projectId);
   const patchProject = usePatchProject(projectId);
   const [noveraOverride, setNoveraOverride] = useState<boolean | null>(null);
   const [kbOverride, setKbOverride] = useState<boolean | null>(null);
@@ -175,6 +176,9 @@ export default function SettingsAiAssistant({
     (noveraEnabled ? 1 : 0) + (noveraEnabled && kbReferencesEnabled ? 1 : 0);
   const disabledCount = 2 - enabledCount;
 
+  const disabledForSwitches =
+    isProjectDetailsLoading || patchProject.isPending;
+
   const indigoMain = colors.indigo?.[600] ?? colors.purple[600];
 
   return (
@@ -287,7 +291,7 @@ export default function SettingsAiAssistant({
                 control={
                   <Switch
                     checked={noveraEnabled}
-                    disabled={patchProject.isPending}
+                    disabled={disabledForSwitches}
                     onChange={(_, checked) => handleNoveraToggle(checked)}
                     color="warning"
                     inputProps={{
@@ -347,9 +351,7 @@ export default function SettingsAiAssistant({
                   control={
                     <Switch
                       checked={kbReferencesEnabled}
-                      disabled={
-                        !noveraEnabled || patchProject.isPending
-                      }
+                      disabled={!noveraEnabled || disabledForSwitches}
                       onChange={(_, checked) => handleKbToggle(checked)}
                       color="warning"
                       inputProps={{
