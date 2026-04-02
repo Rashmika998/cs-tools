@@ -130,7 +130,7 @@ export default function CaseDetailsPage(): JSX.Element {
       projectId={projectId}
       onBack={handleBack}
       onOpenRelatedCase={handleOpenRelatedCase}
-      hideActionRow={isSecurityReportAnalysisRoute}
+      hideActionRow={false}
       showEngineerOnly={isEngagementRoute}
     />
   );
