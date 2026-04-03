@@ -25,6 +25,11 @@ import {
 import type { JSX, UIEvent } from "react";
 import type { SelectChangeEvent } from "@wso2/oxygen-ui";
 import type { FilterField } from "@components/common/filter-panel/FilterPopover";
+import { SelectMenuLoadMoreRow } from "@components/common/select-menu-load-more-row/SelectMenuLoadMoreRow";
+import {
+  EMPTY_DROPDOWN_PLACEHOLDER,
+  paginatedSelectMenuListProps,
+} from "@constants/dropdownConstants";
 
 /**
  * Select-specific FilterField that ensures only select-type fields are passed.
@@ -58,6 +63,7 @@ export default function CasesFilters({
     <Grid container spacing={2} sx={{ mt: 1 }}>
       {filterFields.map((field) => {
         const options = field.options || [];
+        const hasNoOptions = options.length === 0;
 
         return (
           <Grid key={field.id} size={{ xs: 12, sm: 6, md: 2.4 }}>
@@ -69,28 +75,36 @@ export default function CasesFilters({
                 value={filters[field.id] || ""}
                 label={field.label}
                 onChange={handleSelectChange(field.id)}
-                MenuProps={{
-                  MenuListProps: {
-                    onScroll: (e: UIEvent<HTMLElement>) => {
-                      if (
-                        !field.onLoadMore ||
-                        !field.hasMore ||
-                        field.isFetchingMore
-                      ) {
-                        return;
+                MenuProps={
+                  field.onLoadMore
+                    ? {
+                        MenuListProps: paginatedSelectMenuListProps(
+                          (e: UIEvent<HTMLElement>) => {
+                            if (
+                              !field.onLoadMore ||
+                              !field.hasMore ||
+                              field.isFetchingMore
+                            ) {
+                              return;
+                            }
+                            const el = e.currentTarget;
+                            const threshold = 24;
+                            const isNearBottom =
+                              el.scrollHeight - el.scrollTop - el.clientHeight <
+                              threshold;
+                            if (isNearBottom) field.onLoadMore();
+                          },
+                        ),
                       }
-                      const el = e.currentTarget;
-                      const threshold = 24;
-                      const isNearBottom =
-                        el.scrollHeight - el.scrollTop - el.clientHeight <
-                        threshold;
-                      if (isNearBottom) field.onLoadMore();
-                    },
-                  },
-                }}
+                    : undefined
+                }
               >
                 <MenuItem value="">
-                  <Typography variant="body2">All {field.label}</Typography>
+                  <Typography variant="body2">
+                    {hasNoOptions
+                      ? EMPTY_DROPDOWN_PLACEHOLDER
+                      : `All ${field.label}`}
+                  </Typography>
                 </MenuItem>
                 {options.map((option) => {
                   const label = typeof option === "string" ? option : option.label;
@@ -101,6 +115,14 @@ export default function CasesFilters({
                     </MenuItem>
                   );
                 })}
+                <SelectMenuLoadMoreRow
+                  visible={Boolean(
+                    field.onLoadMore &&
+                      field.hasMore &&
+                      field.isFetchingMore &&
+                      options.length > 0,
+                  )}
+                />
               </Select>
             </FormControl>
           </Grid>
