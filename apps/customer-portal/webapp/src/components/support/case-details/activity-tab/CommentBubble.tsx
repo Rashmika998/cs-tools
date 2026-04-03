@@ -38,6 +38,17 @@ import {
 import DOMPurify from "dompurify";
 import ChatMessageCard from "@case-details-activity/ChatMessageCard";
 
+function commentAuthorDisplayName(comment: CaseComment): string {
+  const fromNames = [comment.createdByFirstName, comment.createdByLastName]
+    .filter((p) => p != null && String(p).trim() !== "")
+    .join(" ")
+    .trim();
+  if (fromNames.length > 0) {
+    return fromNames;
+  }
+  return comment.createdBy?.trim() || "Unknown";
+}
+
 export interface CommentBubbleProps {
   comment: CaseComment;
   isCurrentUser: boolean;
@@ -87,10 +98,10 @@ export default function CommentBubble({
       if (email) return email;
     }
     if (!isCurrentUser) {
-      return comment.createdBy || "Unknown";
+      return commentAuthorDisplayName(comment);
     }
     return null;
-  }, [isCurrentUser, comment.createdBy, userDetails]);
+  }, [isCurrentUser, comment, userDetails]);
 
   const initials = useMemo(() => {
     if (isCurrentUser && userDetails) {
@@ -103,10 +114,10 @@ export default function CommentBubble({
       if (email) return getInitials(email);
     }
     if (!isCurrentUser) {
-      return getInitials(comment.createdBy ?? "");
+      return getInitials(commentAuthorDisplayName(comment));
     }
     return "?";
-  }, [isCurrentUser, comment.createdBy, userDetails]);
+  }, [isCurrentUser, comment, userDetails]);
 
   const isRight = isCurrentUser;
 
