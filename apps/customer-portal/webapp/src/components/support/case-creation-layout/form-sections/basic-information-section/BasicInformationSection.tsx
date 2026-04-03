@@ -122,8 +122,13 @@ export function BasicInformationSection({
       ),
     ),
   );
-  const useProductOptionList =
-    Array.isArray(productOptionList) && productOptionList.length > 0;
+  const useProductOptionList = Array.isArray(productOptionList);
+  const hasProductRows = (productOptionList?.length ?? 0) > 0;
+  const showNoProductsHint =
+    useProductOptionList &&
+    !hasProductRows &&
+    !isProductDropdownDisabled &&
+    !isProductLoading;
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -184,7 +189,7 @@ export function BasicInformationSection({
                   value === "" ? "Select Deployment Type..." : value
                 }
                 MenuProps={{
-                  PaperProps: {
+                  MenuListProps: {
                     onScroll: handleDeploymentsMenuScroll,
                   },
                 }}
@@ -236,18 +241,25 @@ export function BasicInformationSection({
                 displayEmpty
                 renderValue={(value) => {
                   if (value === "") {
-                    return isProductDropdownDisabled
-                      ? "Select deployment first"
-                      : "Select Product Version...";
+                    if (isProductDropdownDisabled) {
+                      return "Select deployment first";
+                    }
+                    if (showNoProductsHint) {
+                      return "No products available for this deployment";
+                    }
+                    return "Select Product Version...";
                   }
-                  if (useProductOptionList) {
+                  if (useProductOptionList && hasProductRows) {
                     const opt = productOptionList!.find((o) => o.id === value);
                     return opt?.label ?? value;
+                  }
+                  if (showNoProductsHint) {
+                    return "No products available for this deployment";
                   }
                   return value;
                 }}
                 MenuProps={{
-                  PaperProps: {
+                  MenuListProps: {
                     onScroll: handleProductsMenuScroll,
                   },
                 }}
@@ -255,7 +267,9 @@ export function BasicInformationSection({
                 <MenuItem value="" disabled>
                   {isProductDropdownDisabled
                     ? "Select deployment first"
-                    : "Select Product Version..."}
+                    : showNoProductsHint
+                      ? "No products available for this deployment"
+                      : "Select Product Version..."}
                 </MenuItem>
                 {useProductOptionList
                   ? productOptionList!.map((p) => (
