@@ -67,6 +67,9 @@ export function usePatchCallRequest(
       if (rest.utcTimes != null && rest.utcTimes.length > 0) {
         body.utcTimes = rest.utcTimes;
       }
+      if (rest.durationInMinutes != null) {
+        body.durationInMinutes = rest.durationInMinutes;
+      }
       logger.debug("[usePatchCallRequest] Request payload:", body);
 
       try {

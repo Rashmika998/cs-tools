@@ -15,7 +15,7 @@
 // under the License.
 
 import type { ReactElement } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import RequestCallModal from "@case-details-calls/RequestCallModal";
@@ -61,11 +61,11 @@ describe("RequestCallModal", () => {
     expect(document.getElementById("preferred-time-0")).toBeTruthy();
     expect(screen.getByLabelText(/Meeting Duration/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Reason \*/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Request Call/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Request Call$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Cancel/i })).toBeInTheDocument();
   });
 
-  it("should show Edit Call Request title and hide Meeting Duration when editCall is provided", () => {
+  it("should show Edit Call Request title and Meeting Duration when editCall is provided", () => {
     const editCall = {
       id: "call-1",
       case: { id: "case-1", label: "CS1" },
@@ -87,7 +87,7 @@ describe("RequestCallModal", () => {
       />,
     );
     expect(screen.getByText(/Edit Call Request/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Meeting Duration/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Meeting Duration \*$/i)).toBeInTheDocument();
   });
 
   it("should disable submit button when required fields are empty", () => {
@@ -99,10 +99,10 @@ describe("RequestCallModal", () => {
         onClose={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: /Request Call/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Request Call$/ })).toBeDisabled();
   });
 
-  it("should disable submit when description is empty in reschedule mode", () => {
+  it("should enable submit in reschedule mode when preferred times and duration are set without reason text", async () => {
     const editCall = {
       id: "call-1",
       case: { id: "case-1", label: "CS1" },
@@ -120,9 +120,14 @@ describe("RequestCallModal", () => {
         projectId="proj-1"
         caseId="case-1"
         editCall={editCall}
+        userTimeZone="UTC"
         onClose={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: /Update Call Request/i })).toBeDisabled();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Update Call Request/i }),
+      ).not.toBeDisabled();
+    });
   });
 });

@@ -15,7 +15,7 @@
 // under the License.
 
 import type { ReactElement } from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { usePatchCallRequest } from "@api/usePatchCallRequest";
@@ -83,9 +83,20 @@ describe("ApproveCallRequestModal", () => {
     ).toBeInTheDocument();
   });
 
-  it("should render the preferred time input prefilled from API wall clock", () => {
-    renderWithProviders(<ApproveCallRequestModal {...defaultProps} />);
-    expect(screen.getByDisplayValue("2024-10-29T14:00")).toBeInTheDocument();
+  it("should render the preferred time input prefilled from API wall clock", async () => {
+    const futureCall: CallRequest = {
+      ...mockCall,
+      preferredTimes: ["2027-06-15 14:00:00"],
+    };
+    renderWithProviders(
+      <ApproveCallRequestModal {...defaultProps} call={futureCall} />,
+    );
+    await waitFor(() => {
+      const input = document.getElementById(
+        "approve-preferred-time-0",
+      ) as HTMLInputElement;
+      expect(input?.value).toContain("2027-06-15");
+    });
     expect(screen.getAllByLabelText(/Preferred Time/i).length).toBeGreaterThan(0);
   });
 

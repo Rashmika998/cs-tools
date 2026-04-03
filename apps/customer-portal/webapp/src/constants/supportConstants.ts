@@ -108,7 +108,11 @@ export const CallRequestStatus = {
   PENDING_ON_CUSTOMER: "Pending on Customer",
   REJECTED: "Rejected",
   SCHEDULED: "Scheduled",
+  NOTES_PENDING: "Notes Pending",
 } as const;
+
+/** API call request state id for Notes Pending (hide customer reschedule/cancel). */
+export const CALL_REQUEST_STATE_NOTES_PENDING_ID = "7";
 
 export type CallRequestStatus =
   (typeof CallRequestStatus)[keyof typeof CallRequestStatus];

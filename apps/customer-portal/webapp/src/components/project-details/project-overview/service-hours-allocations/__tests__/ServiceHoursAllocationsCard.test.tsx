@@ -48,10 +48,14 @@ describe("ServiceHoursAllocationsCard", () => {
 
     expect(screen.getByText("Query Hours")).toBeInTheDocument();
     expect(screen.getByText("Onboarding Hours")).toBeInTheDocument();
-    expect(screen.getByText("45/100h (45%)")).toBeInTheDocument();
-    expect(screen.getByText("180/200h (90%)")).toBeInTheDocument();
-    expect(screen.getByText("55h")).toBeInTheDocument();
-    expect(screen.getByText("20h")).toBeInTheDocument();
+    expect(
+      screen.getByText("45 hrs/100 hrs (45%)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("180 hrs/200 hrs (90%)"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("55 hrs")).toBeInTheDocument();
+    expect(screen.getByText("20 hrs")).toBeInTheDocument();
     expect(screen.getByText("Apr 30, 2026")).toBeInTheDocument();
   });
 

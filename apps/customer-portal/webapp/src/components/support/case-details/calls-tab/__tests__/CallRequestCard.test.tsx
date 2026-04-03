@@ -54,6 +54,38 @@ describe("CallRequestCard", () => {
     expect(screen.queryByRole("button", { name: /Reject/i })).not.toBeInTheDocument();
   });
 
+  it("should hide Reschedule and Cancel for Notes Pending state", () => {
+    const notesPendingCall: CallRequest = {
+      ...mockCall,
+      state: { id: "7", label: "Notes Pending" },
+    };
+    render(
+      <CallRequestCard
+        call={notesPendingCall}
+        onEditClick={vi.fn()}
+        onDeleteClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Reschedule/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Cancel/i })).not.toBeInTheDocument();
+  });
+
+  it("should hide Reschedule and Cancel for Customer Rejected state", () => {
+    const customerRejectedCall: CallRequest = {
+      ...mockCall,
+      state: { id: "4", label: "Customer Rejected" },
+    };
+    render(
+      <CallRequestCard
+        call={customerRejectedCall}
+        onEditClick={vi.fn()}
+        onDeleteClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Reschedule/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Cancel/i })).not.toBeInTheDocument();
+  });
+
   it("should show Approve and Reject buttons for 'Pending on Customer' state", () => {
     const pendingOnCustomerCall: CallRequest = {
       ...mockCall,

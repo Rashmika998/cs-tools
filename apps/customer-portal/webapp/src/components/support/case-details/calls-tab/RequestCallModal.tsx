@@ -209,7 +209,8 @@ export default function RequestCallModal({
   const isPending = postCallRequest.isPending || patchCallRequest.isPending;
   const isValid =
     form.preferredDateTimesLocal.every((value) => value.trim() !== "") &&
-    (isEdit || (form.notes.trim() !== "" && form.durationInMinutes > 0));
+    form.durationInMinutes > 0 &&
+    (isEdit || form.notes.trim() !== "");
 
   const handleClose = useCallback(() => {
     setForm(INITIAL_FORM);
@@ -314,6 +315,7 @@ export default function RequestCallModal({
           callRequestId: editCall.id,
           stateKey,
           utcTimes,
+          durationInMinutes: form.durationInMinutes,
         },
         {
           onSuccess: () => {
@@ -375,7 +377,7 @@ export default function RequestCallModal({
           sx={{ mt: 0.5, fontWeight: "normal", fontSize: "0.875rem" }}
         >
           {isEdit
-            ? "Update preferred times for this call request."
+            ? "Update preferred times and meeting duration for this call request."
             : "Schedule a call with our support team."}
         </Typography>
         <IconButton
@@ -473,8 +475,7 @@ export default function RequestCallModal({
           </Box>
         )}
 
-        {!isEdit && (
-          <FormControl fullWidth size="small" sx={{ mt: 1, mb: 2 }}>
+        <FormControl fullWidth size="small" sx={{ mt: 1, mb: 2 }}>
           <InputLabel id="duration-label">Meeting Duration *</InputLabel>
           <Select<number>
             labelId="duration-label"
@@ -491,7 +492,6 @@ export default function RequestCallModal({
             ))}
           </Select>
         </FormControl>
-        )}
 
         {!isEdit && (
           <TextField

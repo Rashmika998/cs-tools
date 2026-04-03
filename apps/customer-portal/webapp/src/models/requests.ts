@@ -227,6 +227,7 @@ export interface PatchCallRequest {
   cancellationReason?: string;
   stateKey: number;
   utcTimes?: string[];
+  durationInMinutes?: number;
 }
 
 // Request body for updating current user profile (PATCH /users/me).

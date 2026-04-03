@@ -35,7 +35,11 @@ import {
   getCallRequestStatusColor,
   resolveColorFromTheme,
 } from "@utils/support";
-import { CallRequestStatus } from "@constants/supportConstants";
+import {
+  CALL_REQUEST_STATE_CUSTOMER_REJECTED,
+  CALL_REQUEST_STATE_NOTES_PENDING_ID,
+  CallRequestStatus,
+} from "@constants/supportConstants";
 
 export interface CallRequestCardProps {
   call: CallRequest;
@@ -81,6 +85,15 @@ export default function CallRequestCard({
     isCancelled || statusLabel === CallRequestStatus.COMPLETED;
   const isPendingOnCustomer =
     statusLabel === CallRequestStatus.PENDING_ON_CUSTOMER;
+  const isNotesPending =
+    call.state?.id === CALL_REQUEST_STATE_NOTES_PENDING_ID ||
+    statusLabel === CallRequestStatus.NOTES_PENDING ||
+    statusLower.includes("notes pending");
+  const isCustomerRejected =
+    call.state?.id === String(CALL_REQUEST_STATE_CUSTOMER_REJECTED) ||
+    statusLabel === CallRequestStatus.REJECTED ||
+    statusLower.includes("customer rejected");
+  const hideCustomerActions = isNotesPending || isCustomerRejected;
   const colorPath = getCallRequestStatusColor(statusLabel);
   const resolvedColor = isCancelled
     ? theme.palette.error.main
@@ -197,7 +210,7 @@ export default function CallRequestCard({
                   Reject
                 </Button>
               </>
-            ) : (
+            ) : hideCustomerActions ? null : (
               <>
                 <Button
                   variant="contained"

@@ -25,29 +25,48 @@ import {
 import { Clock } from "@wso2/oxygen-ui-icons-react";
 import { type JSX } from "react";
 
+export type MissingTimezoneDialogVariant = "informational" | "required";
+
 export interface MissingTimezoneDialogProps {
   open: boolean;
   onClose: () => void;
   /** Called when user clicks the "Set Time Zone" button. */
   onSetTimeZone: () => void;
+  variant?: MissingTimezoneDialogVariant;
 }
 
 /**
  * Dialog shown when the user has no time zone configured on their profile.
  * Prompts the user to open their profile modal to set a time zone.
  *
- * @param {MissingTimezoneDialogProps} props - open, onClose, onSetTimeZone.
+ * @param {MissingTimezoneDialogProps} props - open, onClose, onSetTimeZone, variant.
  * @returns {JSX.Element} The missing timezone dialog.
  */
 export default function MissingTimezoneDialog({
   open,
   onClose,
   onSetTimeZone,
+  variant = "informational",
 }: MissingTimezoneDialogProps): JSX.Element {
+  const isRequired = variant === "required";
+
+  const handleDialogClose = (
+    _event: unknown,
+    reason: "backdropClick" | "escapeKeyDown",
+  ) => {
+    if (
+      isRequired &&
+      (reason === "backdropClick" || reason === "escapeKeyDown")
+    ) {
+      return;
+    }
+    onClose();
+  };
+
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={handleDialogClose}
       maxWidth="xs"
       fullWidth
       aria-labelledby="missing-timezone-dialog-title"
@@ -66,15 +85,17 @@ export default function MissingTimezoneDialog({
           variant="body2"
           color="text.secondary"
         >
-          Your profile does not have a time zone configured. Please set your
-          time zone so call request times are displayed accurately in your
-          local time.
+          {isRequired
+            ? "You must set your time zone before you can request or reschedule a call. Open your profile to choose a time zone."
+            : "Your profile does not have a time zone configured. Please set your time zone so call request times are displayed accurately in your local time."}
         </Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-        <Button variant="outlined" onClick={onClose}>
-          Later
-        </Button>
+        {!isRequired && (
+          <Button variant="outlined" onClick={onClose}>
+            Later
+          </Button>
+        )}
         <Button variant="contained" color="primary" onClick={onSetTimeZone}>
           Set Time Zone
         </Button>

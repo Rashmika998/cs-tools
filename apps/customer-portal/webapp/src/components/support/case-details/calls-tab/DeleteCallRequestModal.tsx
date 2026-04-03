@@ -34,11 +34,12 @@ import {
   type JSX,
 } from "react";
 import type { CallRequest } from "@models/responses";
-import { formatCallRequestPromptScheduledTime } from "@utils/support";
+import { formatUtcToLocal } from "@utils/support";
 
 export interface DeleteCallRequestModalProps {
   open: boolean;
   call: CallRequest | null;
+  userTimeZone?: string;
   onClose: () => void;
   onConfirm: (reason: string) => void;
   isDeleting?: boolean;
@@ -55,6 +56,7 @@ export interface DeleteCallRequestModalProps {
 export default function DeleteCallRequestModal({
   open,
   call,
+  userTimeZone,
   onClose,
   onConfirm,
   isDeleting = false,
@@ -93,12 +95,10 @@ export default function DeleteCallRequestModal({
 
   const canConfirm = reason.trim() !== "";
 
+  const firstPreferredTime = call?.preferredTimes?.find((t) => t?.trim())?.trim();
   const promptWhen =
-    call != null
-      ? formatCallRequestPromptScheduledTime(
-          call.preferredTimes,
-          call.scheduleTime,
-        )
+    userTimeZone && firstPreferredTime
+      ? formatUtcToLocal(firstPreferredTime, "short", false, userTimeZone)
       : "--";
   const cancelDescription =
     call == null
@@ -144,7 +144,7 @@ export default function DeleteCallRequestModal({
         </Typography>
         <TextField
           id="cancel-call-reason"
-          label="Reason *"
+          label="Reason"
           placeholder="Enter reason for cancellation..."
           value={reason}
           onChange={handleReasonChange}

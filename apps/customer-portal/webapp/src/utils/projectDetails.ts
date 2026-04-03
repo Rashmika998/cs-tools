@@ -453,3 +453,69 @@ export const getProductSupportStatusColor = (
       return "default";
   }
 };
+
+/**
+ * Formats decimal service-hours values (API hours) as hours and minutes for display.
+ *
+ * @param {number | null | undefined} hours - Decimal hours from API.
+ * @returns {string} e.g. "1 hr and 30 min", or "Not Available".
+ */
+export function formatServiceHoursDecimalAsHrMin(
+  hours: number | null | undefined,
+): string {
+  if (
+    hours == null ||
+    typeof hours !== "number" ||
+    !Number.isFinite(hours)
+  ) {
+    return "Not Available";
+  }
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const hrPart = h === 0 ? "" : h === 1 ? "1 hr" : `${h} hrs`;
+  const minPart = m === 0 ? "" : m === 1 ? "1 min" : `${m} min`;
+  if (hrPart && minPart) {
+    return `${hrPart} and ${minPart}`;
+  }
+  if (hrPart) {
+    return hrPart;
+  }
+  if (minPart) {
+    return minPart;
+  }
+  return "0 min";
+}
+
+/**
+ * Formats minute values (API minutes) as hours and minutes for display.
+ *
+ * @param {number | null | undefined} minutes - Total minutes from API.
+ * @returns {string} e.g. "1 hr and 4 min", or "Not Available".
+ */
+export function formatMinutesAsHrMin(
+  minutes: number | null | undefined,
+): string {
+  if (
+    minutes == null ||
+    typeof minutes !== "number" ||
+    !Number.isFinite(minutes)
+  ) {
+    return "Not Available";
+  }
+  const totalMinutes = Math.round(minutes);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const hrPart = h === 0 ? "" : h === 1 ? "1 hr" : `${h} hrs`;
+  const minPart = m === 0 ? "" : m === 1 ? "1 min" : `${m} min`;
+  if (hrPart && minPart) {
+    return `${hrPart} and ${minPart}`;
+  }
+  if (hrPart) {
+    return hrPart;
+  }
+  if (minPart) {
+    return minPart;
+  }
+  return "0 min";
+}

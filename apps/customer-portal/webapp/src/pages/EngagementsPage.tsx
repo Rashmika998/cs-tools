@@ -272,7 +272,7 @@ export default function EngagementsPage(): JSX.Element {
               labelId="sort-label"
               id="sort"
               value={sortOrder}
-              label="Sort"
+              label="Order By"
               onChange={(e) =>
                 handleSortChange(e.target.value as "desc" | "asc")
               }

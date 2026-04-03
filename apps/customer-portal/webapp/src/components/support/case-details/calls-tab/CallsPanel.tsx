@@ -86,6 +86,14 @@ export default function CallsPanel({
   const [approveCall, setApproveCall] = useState<CallRequest | null>(null);
   const [rejectCall, setRejectCall] = useState<CallRequest | null>(null);
   const [isMissingTzDialogOpen, setIsMissingTzDialogOpen] = useState(false);
+  const [missingTzVariant, setMissingTzVariant] = useState<
+    "informational" | "required"
+  >("informational");
+  const [pendingCallAfterTz, setPendingCallAfterTz] = useState<
+    | { type: "create" }
+    | { type: "edit"; call: CallRequest }
+    | null
+  >(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [hasShownTzPrompt, setHasShownTzPrompt] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -93,7 +101,8 @@ export default function CallsPanel({
   const [callRequestsPage, setCallRequestsPage] = useState(1);
 
   const { data: projectFilters } = useGetProjectFilters(projectId);
-  const { data: userDetails } = useGetUserDetails();
+  const { data: userDetails, refetch: refetchUserDetails } =
+    useGetUserDetails();
   const userTimeZone = userDetails?.timeZone || undefined;
 
   // Derive filtered state keys from project filters (all non-Canceled states for search body)
@@ -213,9 +222,15 @@ export default function CallsPanel({
   };
 
   const handleOpenModal = () => {
-    setEditCall(null);
     setSuccessMessage(null);
     setErrorMessage(null);
+    if (!userDetails?.timeZone?.trim()) {
+      setPendingCallAfterTz({ type: "create" });
+      setMissingTzVariant("required");
+      setIsMissingTzDialogOpen(true);
+      return;
+    }
+    setEditCall(null);
     setIsModalOpen(true);
   };
   const handleCloseModal = () => {
@@ -223,6 +238,12 @@ export default function CallsPanel({
     setEditCall(null);
   };
   const handleEditClick = (call: CallRequest) => {
+    if (!userDetails?.timeZone?.trim()) {
+      setPendingCallAfterTz({ type: "edit", call });
+      setMissingTzVariant("required");
+      setIsMissingTzDialogOpen(true);
+      return;
+    }
     setEditCall(call);
     setIsModalOpen(true);
   };
@@ -320,7 +341,8 @@ export default function CallsPanel({
   // Prompt once per mount when the user has no timezone set and data is loaded
   useEffect(() => {
     if (hasShownTzPrompt) return;
-    if (userDetails && !userDetails.timeZone) {
+    if (userDetails && !userDetails.timeZone?.trim()) {
+      setMissingTzVariant("required");
       setIsMissingTzDialogOpen(true);
       setHasShownTzPrompt(true);
     }
@@ -391,6 +413,7 @@ export default function CallsPanel({
       <DeleteCallRequestModal
         open={!!deleteCall}
         call={deleteCall}
+        userTimeZone={userTimeZone}
         onClose={handleCloseDeleteModal}
         onConfirm={handleConfirmDelete}
         isDeleting={patchCallRequest.isPending}
@@ -434,6 +457,7 @@ export default function CallsPanel({
 
       <MissingTimezoneDialog
         open={isMissingTzDialogOpen}
+        variant={missingTzVariant}
         onClose={() => setIsMissingTzDialogOpen(false)}
         onSetTimeZone={() => {
           setIsMissingTzDialogOpen(false);
@@ -443,7 +467,25 @@ export default function CallsPanel({
 
       <UserProfileModal
         open={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
+        onClose={() => {
+          setIsProfileModalOpen(false);
+          void refetchUserDetails().then((result) => {
+            const tz = result.data?.timeZone?.trim();
+            if (pendingCallAfterTz && tz) {
+              if (pendingCallAfterTz.type === "create") {
+                setEditCall(null);
+                setIsModalOpen(true);
+              } else {
+                setEditCall(pendingCallAfterTz.call);
+                setIsModalOpen(true);
+              }
+              setPendingCallAfterTz(null);
+            } else if (pendingCallAfterTz && !tz) {
+              setMissingTzVariant("required");
+              setIsMissingTzDialogOpen(true);
+            }
+          });
+        }}
       />
     </Stack>
   );

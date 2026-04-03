@@ -25,7 +25,10 @@ import { Clock } from "@wso2/oxygen-ui-icons-react";
 import type { JSX } from "react";
 
 import type { ProjectDetails } from "@models/responses";
-import { formatProjectDate } from "@utils/projectDetails";
+import {
+  formatProjectDate,
+  formatServiceHoursDecimalAsHrMin,
+} from "@utils/projectDetails";
 import ErrorIndicator from "@components/common/error-indicator/ErrorIndicator";
 
 export interface ServiceHoursAllocationsCardProps {
@@ -44,12 +47,11 @@ function formatHoursDisplay(
   const c = Number(consumed ?? 0);
   const t = Number(total ?? 0);
   const pct = t === 0 ? 0 : Math.round((c / t) * 100);
-  return `${c}/${t}h (${pct}%)`;
+  return `${formatServiceHoursDecimalAsHrMin(c)}/${formatServiceHoursDecimalAsHrMin(t)} (${pct}%)`;
 }
 
 function formatRemaining(value: number | undefined): string {
-  if (value == null || typeof value !== "number") return NOT_AVAILABLE;
-  return `${value}h`;
+  return formatServiceHoursDecimalAsHrMin(value);
 }
 
 /**
