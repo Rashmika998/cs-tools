@@ -188,7 +188,7 @@ backend/
 ### Cases
 
 - `POST /cases` — Create a case (`type`: `case`; `service_request` and `security_report_analysis` are ServiceNow data source only)
-- `GET /cases/{id}` — Get case by ID
+- `GET /cases/{id}` — Get case by ID; `resolvedOn`, `resolutionCode`, `cause`, `resolutionNotes` are populated for resolved/closed ServiceNow cases, `null` otherwise
 - `PATCH /cases/{id}` — Update a case (state, severity, workState, watchList, or assigneeEmail); optional `resolutionCode`, `cause`, `closeNotes` accepted alongside `state: closed` or `state: solution_proposed`
 - `POST /cases/search` — Search cases; filters include `searchQuery`, `types`, `states`, `severities`, `workStates` (`ongoing`/`paused`), `assignedUserIds`, `projectIds`, `deploymentIds`, `engagementTypes`, `issueTypes`, date ranges, `createdBy`, `createdByMe`
 - `POST /cases/{id}/comments` — Create a comment on a case
@@ -274,7 +274,7 @@ backend/
 
 - `POST /incidents/search` — Search incidents; optional `filters` (`searchQuery`, `priorities`, `parentIds`) and `sortBy` (`field`: `createdOn`/`updatedOn`/`openedOn`, `order`) (ServiceNow data source only)
 - `POST /incidents` — Create an incident (`callerId`, `category`, `serviceId`, `impact`, `urgency`, `subject` required; `subcategory`, `serviceOfferingId`, `configurationItemId`, `contactType`, `assignmentGroupId`, `assignedEngineerId`, `watchList`, `additionalComments`, `workNotes`, `parentId`, `parentIncidentId`, `changeRequestId`, `problemId`, `causedById` optional) (ServiceNow data source only)
-- `GET /incidents/{id}` — Get full incident detail by ID (ServiceNow data source only)
+- `GET /incidents/{id}` — Get full incident detail by ID; `resolutionCode`, `resolutionNotes`, `resolvedBy`, `resolvedOn`, `incidentReport` are populated for resolved/closed incidents, `null` otherwise (ServiceNow data source only)
 
 ### Problems
 
