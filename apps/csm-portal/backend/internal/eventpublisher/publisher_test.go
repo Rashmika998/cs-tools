@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/events"
 )
 
 type fakeKafkaProducer struct {
@@ -67,7 +69,7 @@ func TestPublish_Success_DoesNotRecordFailure(t *testing.T) {
 		t.Errorf("publish key = %q, want %q", kafka.gotKey, "CASE-1")
 	}
 
-	var env envelope
+	var env events.Envelope
 	if err := json.Unmarshal(kafka.gotValue, &env); err != nil {
 		t.Fatalf("published value is not valid JSON: %v", err)
 	}

@@ -128,15 +128,19 @@ Backs `entity.EngineeringEntityClient.CreateGitIssue` (a separate internal engin
 | `ENGINEERING_ENTITY_BASE_URL` | Base URL of the engineering entity service (optional) |
 | `ENGINEERING_ENTITY_SCOPES` | Comma-separated OAuth2 scopes (optional) |
 
-### Event Hub (not yet wired in)
+### Event Hub
 
-Backs `internal/eventpublisher.Publisher`, which publishes domain events for `csm-notification-service` to consume (that service is now a pure Kafka consumer — see its own docs) — but `Publisher` is not constructed in `cmd/server/main.go` either, no handler calls it yet. These variables are not read by any code today.
+Two independent things share these variables, both optional (left unset, neither runs — startup is unaffected either way):
+
+- `internal/caseevents`' consumer — **wired into `cmd/server/main.go`**, started whenever `EVENT_HUB_BROKER` is set. Its own consumer group (`EVENT_HUB_CONSUMER_GROUP`) gets a full independent copy of every event on the topic; logs `type`/`entityId` today, the scaffold for real-time frontend push.
+- `internal/eventpublisher.Publisher` — publishes domain events for `csm-notification-service` to consume (that service is now a pure Kafka consumer — see its own docs). **Not yet wired into `cmd/server/main.go`** — no handler calls it yet.
 
 | Variable | Description |
 |---|---|
 | `EVENT_HUB_BROKER` | Kafka bootstrap address: `<namespace>.servicebus.windows.net:9093` (optional) |
 | `EVENT_HUB_CONNECTION_STRING` | The namespace's Shared Access Policy connection string — must be namespace-scoped (no `EntityPath`), not scoped to a single Event Hub (optional) |
 | `EVENT_HUB_TOPIC` | Event Hub (Kafka topic) name, e.g. `case-events` — must match `csm-notification-service`'s own `EVENT_HUB_TOPIC` (optional) |
+| `EVENT_HUB_CONSUMER_GROUP` | Consumer group ID `internal/caseevents`' consumer joins. Optional — defaults to `csm-portal-backend`. Must differ from any other service's group consuming the same topic |
 
 ### Updates service
 
@@ -179,12 +183,17 @@ backend/
 │   │   ├── customer_client.go   # OAuth2 HTTP client for the customer entity service (this repo's entity-service)
 │   │   ├── customer.go          # CustomerEntityClient operations (cases, accounts, projects, ...)
 │   │   └── engineering.go       # EngineeringEntityClient — CreateGitIssue (not yet wired into main.go — no caller)
+│   ├── events/
+│   │   └── events.go            # Envelope{Type, EntityID, Payload} — the case-events wire shape, shared by eventpublisher and caseevents
 │   ├── eventbus/
 │   │   ├── config.go            # Config + SASL/PLAIN setup for Azure Event Hub's Kafka-compatible endpoint
-│   │   ├── producer.go          # Producer — publish a record, wait for ack (no Consumer — this backend never consumes)
+│   │   ├── producer.go          # Producer — publish a record, wait for ack
+│   │   ├── consumer.go          # Consumer — join a named consumer group, poll, commit after Handle returns (no retry/dead-letter — see its doc comment)
 │   │   └── logger.go           # Bridges kafka-go's Logger/ErrorLogger to slog
 │   ├── eventpublisher/
 │   │   └── publisher.go         # Publisher.Publish — builds the envelope csm-notification-service expects, publishes it, records a failure to entity-service if Event Hub doesn't ack (not yet wired into main.go — no caller)
+│   ├── caseevents/
+│   │   └── handler.go           # Handler.Handle — the case-events consumer side, wired into main.go; logs type/entityId today, scaffold for real-time FE push
 │   ├── scim/
 │   │   └── client.go           # OAuth2 HTTP client for the SCIM operations service
 │   ├── updates/

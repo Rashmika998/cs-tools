@@ -30,8 +30,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/caseevents"
 	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/dashboard"
 	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/entity"
+	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/eventbus"
 	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/handler"
 	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/middleware"
 	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/scim"
@@ -105,6 +107,24 @@ func main() {
 	}
 	scimClient := scim.NewClient(scimCfg)
 	usersHandler := handler.NewUsersHandler(scimClient, customerEntityClient)
+
+	// case-events consumer — an independent consumer group (see
+	// internal/eventbus.Consumer's doc comment) reacting to domain events
+	// for whatever needs to see every case update; internal/caseevents.
+	// Handler only logs today, but this is the scaffold real-time FE push
+	// will grow out of. Optional: left unset, this backend doesn't consume
+	// anything, same "not required yet" status as internal/eventpublisher
+	// (the producer side) has.
+	var caseEventsConsumer *eventbus.Consumer
+	if broker := os.Getenv("EVENT_HUB_BROKER"); broker != "" {
+		eventBusCfg := eventbus.Config{
+			Broker:           broker,
+			ConnectionString: mustEnv("EVENT_HUB_CONNECTION_STRING"),
+			Topic:            mustEnv("EVENT_HUB_TOPIC"),
+		}
+		consumerGroup := envOrDefault("EVENT_HUB_CONSUMER_GROUP", "csm-portal-backend")
+		caseEventsConsumer = eventbus.NewConsumer(eventBusCfg, consumerGroup)
+	}
 
 	authCfg := middleware.Config{
 		JWKSEndpoint:          mustEnv("AUTH_JWKS_ENDPOINT"),
@@ -233,8 +253,17 @@ func main() {
 		}
 	}()
 
+	if caseEventsConsumer != nil {
+		go caseEventsConsumer.Run(ctx, caseevents.NewHandler().Handle)
+		slog.Info("case-events consumer started")
+	}
+
 	<-ctx.Done()
 	stop()
+
+	if caseEventsConsumer != nil {
+		caseEventsConsumer.Close()
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

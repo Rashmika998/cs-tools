@@ -30,6 +30,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/events"
 )
 
 // recordFailureTimeout bounds the failure-recording call below — it runs on
@@ -60,15 +62,6 @@ func New(kafka kafkaProducer, entity entityClient) *Publisher {
 	return &Publisher{kafka: kafka, entity: entity}
 }
 
-// envelope is the wire shape csm-notification-service's internal/events.
-// Envelope expects — kept in sync with that type by hand, since the two
-// live in separate Go modules and neither imports the other.
-type envelope struct {
-	Type     string          `json:"type"`
-	EntityID string          `json:"entityId"`
-	Payload  json.RawMessage `json:"payload"`
-}
-
 // Publish builds the envelope for eventType/entityID/payload and publishes
 // it to Event Hub, keyed by entityID (so every event about the same
 // case/incident stays ordered on the same partition — see
@@ -97,8 +90,8 @@ type envelope struct {
 // the failure record, and a durable dedupe check on the consumer side (or
 // entity-service) — a real design addition, not a quick fix, so it's flagged
 // here rather than built speculatively.
-func (p *Publisher) Publish(ctx context.Context, eventType, entityID string, payload json.RawMessage) error {
-	body, err := json.Marshal(envelope{Type: eventType, EntityID: entityID, Payload: payload})
+func (p *Publisher) Publish(ctx context.Context, eventType events.Type, entityID string, payload json.RawMessage) error {
+	body, err := json.Marshal(events.Envelope{Type: eventType, EntityID: entityID, Payload: payload})
 	if err != nil {
 		return fmt.Errorf("eventpublisher: encode envelope: %w", err)
 	}
@@ -113,7 +106,7 @@ func (p *Publisher) Publish(ctx context.Context, eventType, entityID string, pay
 		EntityID  string          `json:"entityId"`
 		Payload   json.RawMessage `json:"payload"`
 		Error     string          `json:"error"`
-	}{EventType: eventType, EntityID: entityID, Payload: payload, Error: pubErr.Error()})
+	}{EventType: string(eventType), EntityID: entityID, Payload: payload, Error: pubErr.Error()})
 	if err != nil {
 		slog.ErrorContext(ctx, "eventpublisher: publish failed and could not encode the failure record", "eventType", eventType, "entityId", entityID, "publishErr", pubErr, "encodeErr", err)
 		return fmt.Errorf("eventpublisher: publish %s for entity %s: %w", eventType, entityID, pubErr)
