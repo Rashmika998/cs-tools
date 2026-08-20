@@ -67,6 +67,16 @@ export function buildCaseSearchFilters(
       values: filters.states.map(beStateFromUi),
     });
   }
+  // `states`/`excludeStates` both target the `state` field but with
+  // different ops (`in`/`notIn`) — two independent entries, same reasoning
+  // as `tags`/`excludeTags` below.
+  if (filters.excludeStates.length > 0) {
+    fieldFilters.push({
+      field: "state",
+      op: "notIn",
+      values: filters.excludeStates.map(beStateFromUi),
+    });
+  }
   if (filters.caseTypes.length > 0) {
     fieldFilters.push({ field: "type", op: "in", values: filters.caseTypes });
   }
@@ -139,6 +149,13 @@ export function buildCaseSearchFilters(
       field: "projectOnboardingStatus",
       op: "in",
       values: filters.onboardingStatuses,
+    });
+  }
+  if (filters.excludeOnboardingStatuses.length > 0) {
+    fieldFilters.push({
+      field: "projectOnboardingStatus",
+      op: "notIn",
+      values: filters.excludeOnboardingStatuses,
     });
   }
   if (filters.slaElapsedPctGte !== null) {

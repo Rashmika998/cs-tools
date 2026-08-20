@@ -173,6 +173,61 @@ describe("WIDGET_RESOURCE_CONFIG.case — previously-dropped fields", () => {
     expect(parsed.states).toEqual(["open", "work_in_progress"]);
   });
 
+  // Regression: reported live against `abt_overall_open_incident`'s
+  // `projectOnboardingStatus notIn ["In-Progress"]` -- the click-through
+  // landed on the Cases list with an "Onboarding: In-progress" INCLUDE chip
+  // (the exact opposite of the widget's own filter), because the values were
+  // read op-blind and dumped into the same field an `in` filter would use.
+  // `state` has the identical backend-supported notIn and was audited to
+  // have the same latent bug, fixed alongside onboarding status.
+  it("projectOnboardingStatus notIn decodes to excludeOnboardingStatuses, never onboardingStatuses (the reported bug)", () => {
+    const href = WIDGET_RESOURCE_CONFIG.case.buildHref({
+      filters: [
+        { field: "projectOnboardingStatus", op: "notIn", values: ["In-Progress"] },
+      ],
+    });
+    const parsed = readCasesFiltersFromUrl(hrefParams(href));
+
+    expect(parsed.excludeOnboardingStatuses).toEqual(["In-Progress"]);
+    expect(parsed.onboardingStatuses).toEqual([]);
+  });
+
+  it("state notIn decodes to excludeStates, never states", () => {
+    const href = WIDGET_RESOURCE_CONFIG.case.buildHref({
+      filters: [{ field: "state", op: "notIn", values: ["closed"] }],
+    });
+    const parsed = readCasesFiltersFromUrl(hrefParams(href));
+
+    expect(parsed.excludeStates).toEqual(["closed"]);
+    expect(parsed.states).toEqual([]);
+  });
+
+  it("state in and state notIn survive together, independently, on the same widget", () => {
+    const href = WIDGET_RESOURCE_CONFIG.case.buildHref({
+      filters: [
+        { field: "state", op: "in", values: ["open", "work_in_progress"] },
+        { field: "state", op: "notIn", values: ["closed"] },
+      ],
+    });
+    const parsed = readCasesFiltersFromUrl(hrefParams(href));
+
+    expect(parsed.states).toEqual(["open", "work_in_progress"]);
+    expect(parsed.excludeStates).toEqual(["closed"]);
+  });
+
+  it("projectOnboardingStatus in and notIn survive together, independently, on the same widget", () => {
+    const href = WIDGET_RESOURCE_CONFIG.case.buildHref({
+      filters: [
+        { field: "projectOnboardingStatus", op: "in", values: ["completed"] },
+        { field: "projectOnboardingStatus", op: "notIn", values: ["In-Progress"] },
+      ],
+    });
+    const parsed = readCasesFiltersFromUrl(hrefParams(href));
+
+    expect(parsed.onboardingStatuses).toEqual(["completed"]);
+    expect(parsed.excludeOnboardingStatuses).toEqual(["In-Progress"]);
+  });
+
   it("hasEscalation:false (isEmpty) round-trips distinctly from isNotEmpty", () => {
     const href = WIDGET_RESOURCE_CONFIG.case.buildHref({
       filters: [{ field: "escalation", op: "isEmpty" }],

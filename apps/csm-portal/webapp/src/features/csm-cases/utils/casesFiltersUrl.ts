@@ -30,6 +30,7 @@ export const DEFAULT_CASES_FILTERS: CasesFilters = {
   search: "",
   severities: [],
   states: [],
+  excludeStates: [],
   caseTypes: [],
   assignees: [],
   workStates: [],
@@ -41,6 +42,7 @@ export const DEFAULT_CASES_FILTERS: CasesFilters = {
   tags: [],
   excludeTags: [],
   onboardingStatuses: [],
+  excludeOnboardingStatuses: [],
   slaElapsedPctGte: null,
   slaElapsedPctLte: null,
   hasEscalation: null,
@@ -154,6 +156,7 @@ export function readCasesFiltersFromUrl(
     search: params.get("search") ?? "",
     severities: parseCsv(params.get("severities"), VALID_SEVERITIES),
     states,
+    excludeStates: parseCsv(params.get("excludeStates"), VALID_STATES),
     caseTypes: parseCsv(params.get("types"), VALID_CASE_TYPES),
     assignees: parseFreeFormCsv(params.get("assignees")),
     workStates,
@@ -165,6 +168,7 @@ export function readCasesFiltersFromUrl(
     tags: parseFreeFormCsv(params.get("tags")),
     excludeTags: parseFreeFormCsv(params.get("excludeTags")),
     onboardingStatuses: parseFreeFormCsv(params.get("onboardingStatuses")),
+    excludeOnboardingStatuses: parseFreeFormCsv(params.get("excludeOnboardingStatuses")),
     slaElapsedPctGte: parseNonNegativeInt(params.get("slaPctGte")),
     slaElapsedPctLte: parseNonNegativeInt(params.get("slaPctLte")),
     hasEscalation: parseEscalationParam(params.get("escalation")),
@@ -195,9 +199,14 @@ export function readCasesFiltersFromUrl(
  * struct, not a generic opaque array, so every op that would otherwise
  * collide on one field name already gets its own dedicated field/param
  * instead —
- *   - `tags` (op:in) vs. `excludeTags` (op:notIn) — two arrays, not one
- *     array plus an op flag, so `in` and `notIn` can never be conflated on
- *     the round trip;
+ *   - `tags` (op:in) vs. `excludeTags` (op:notIn), `states` vs.
+ *     `excludeStates`, and `onboardingStatuses` vs.
+ *     `excludeOnboardingStatuses` — each an in/notIn pair as two arrays, not
+ *     one array plus an op flag, so `in` and `notIn` can never be conflated
+ *     on the round trip. These three are the only case-search fields whose
+ *     backend contract accepts `notIn` at all (see `POST /cases/search`'s
+ *     `caseFilterOpSet`/per-field op table) — every other field is `in`-only
+ *     and has no exclude counterpart to conflate with in the first place;
  *   - `slaElapsedPctGte`/`slaElapsedPctLte`, and the `createdOnGte/Lte`,
  *     `updatedOnGte/Lte`, `closedOnGte/Lte` date-range pairs — one param per
  *     bound, not a shared field with an op suffix;
@@ -218,6 +227,7 @@ export function writeCasesFiltersToUrl(f: CasesFilters): URLSearchParams {
   if (f.search) out.set("search", f.search);
   if (f.severities.length) out.set("severities", f.severities.join(","));
   if (f.states.length) out.set("states", f.states.join(","));
+  if (f.excludeStates.length) out.set("excludeStates", f.excludeStates.join(","));
   if (f.caseTypes.length) out.set("types", f.caseTypes.join(","));
   if (f.assignees.length) out.set("assignees", f.assignees.join(","));
   if (f.workStates.length) out.set("workStates", f.workStates.join(","));
@@ -230,6 +240,9 @@ export function writeCasesFiltersToUrl(f: CasesFilters): URLSearchParams {
   if (f.excludeTags.length) out.set("excludeTags", f.excludeTags.join(","));
   if (f.onboardingStatuses.length) {
     out.set("onboardingStatuses", f.onboardingStatuses.join(","));
+  }
+  if (f.excludeOnboardingStatuses.length) {
+    out.set("excludeOnboardingStatuses", f.excludeOnboardingStatuses.join(","));
   }
   if (f.slaElapsedPctGte !== null) out.set("slaPctGte", String(f.slaElapsedPctGte));
   if (f.slaElapsedPctLte !== null) out.set("slaPctLte", String(f.slaElapsedPctLte));
@@ -260,6 +273,7 @@ export function countActiveFilters(f: CasesFilters): number {
   if (f.search.trim()) n += 1;
   if (f.severities.length) n += 1;
   if (f.states.length) n += 1;
+  if (f.excludeStates.length) n += 1;
   if (f.caseTypes.length) n += 1;
   if (f.assignees.length) n += 1;
   if (f.workStates.length) n += 1;
@@ -271,6 +285,7 @@ export function countActiveFilters(f: CasesFilters): number {
   if (f.tags.length) n += 1;
   if (f.excludeTags.length) n += 1;
   if (f.onboardingStatuses.length) n += 1;
+  if (f.excludeOnboardingStatuses.length) n += 1;
   if (f.slaElapsedPctGte !== null) n += 1;
   if (f.slaElapsedPctLte !== null) n += 1;
   if (f.hasEscalation !== null) n += 1;

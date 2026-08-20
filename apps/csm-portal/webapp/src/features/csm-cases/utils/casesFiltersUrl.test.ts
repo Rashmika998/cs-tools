@@ -151,6 +151,49 @@ describe("op-awareness (regression: the widgetPreviewUrl field~op bug)", () => {
     expect(round.excludeTags).toEqual(["s_dip"]);
   });
 
+  it("`states` (op:in) and `excludeStates` (op:notIn) never conflate on a round trip", () => {
+    const filters: CasesFilters = { ...DEFAULT_CASES_FILTERS, excludeStates: ["closed"] };
+    const round = readCasesFiltersFromUrl(writeCasesFiltersToUrl(filters));
+    expect(round.excludeStates).toEqual(["closed"]);
+    expect(round.states).toEqual([]);
+  });
+
+  it("`states` and `excludeStates` survive together, independently, when both are set", () => {
+    const filters: CasesFilters = {
+      ...DEFAULT_CASES_FILTERS,
+      states: ["open", "work_in_progress"],
+      excludeStates: ["closed"],
+    };
+    const round = readCasesFiltersFromUrl(writeCasesFiltersToUrl(filters));
+    expect(round.states).toEqual(["open", "work_in_progress"]);
+    expect(round.excludeStates).toEqual(["closed"]);
+  });
+
+  // Regression: reported live against a dashboard widget's
+  // `projectOnboardingStatus notIn ["In-Progress"]` -- the click-through
+  // showed an "Onboarding: In-progress" INCLUDE chip/filter, the exact
+  // opposite of the widget's own filter.
+  it("`onboardingStatuses` (op:in) and `excludeOnboardingStatuses` (op:notIn) never conflate on a round trip (the reported bug)", () => {
+    const filters: CasesFilters = {
+      ...DEFAULT_CASES_FILTERS,
+      excludeOnboardingStatuses: ["In-Progress"],
+    };
+    const round = readCasesFiltersFromUrl(writeCasesFiltersToUrl(filters));
+    expect(round.excludeOnboardingStatuses).toEqual(["In-Progress"]);
+    expect(round.onboardingStatuses).toEqual([]);
+  });
+
+  it("`onboardingStatuses` and `excludeOnboardingStatuses` survive together, independently, when both are set", () => {
+    const filters: CasesFilters = {
+      ...DEFAULT_CASES_FILTERS,
+      onboardingStatuses: ["completed"],
+      excludeOnboardingStatuses: ["In-Progress"],
+    };
+    const round = readCasesFiltersFromUrl(writeCasesFiltersToUrl(filters));
+    expect(round.onboardingStatuses).toEqual(["completed"]);
+    expect(round.excludeOnboardingStatuses).toEqual(["In-Progress"]);
+  });
+
   it("a value-less op (`hasEscalation` / escalation isNotEmpty) survives rather than being dropped", () => {
     const filters: CasesFilters = { ...DEFAULT_CASES_FILTERS, hasEscalation: true };
     const href = writeCasesFiltersToUrl(filters);

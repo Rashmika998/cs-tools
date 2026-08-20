@@ -167,72 +167,187 @@ describe("CasesFilterBar — removed bar controls fall back to chips", () => {
 
 
   /**
-   * The CS-team and tag bar controls were removed as clutter, so a chip is now
-   * the ONLY way these filters are visible or clearable after a dashboard
-   * click-through. If these break, a user lands on a filtered list with no way
-   * to see or undo why.
+   * The tag bar controls (and, briefly, CS team's) were removed as clutter,
+   * so a chip is the ONLY way these filters are visible or clearable after a
+   * dashboard click-through. If these break, a user lands on a filtered
+   * list with no way to see or undo why. CS team has its own "Team" bar
+   * control again (see the describe block below) and is deliberately NOT
+   * chipped, to avoid showing the same selection twice.
    */
-  it("renders chips for csTeams/tags/excludeTags now that their bar controls are gone", () => {
+  it("renders chips for tags/excludeTags now that their bar controls are gone", () => {
     const { onChange } = renderBar({
       ...DEFAULT_CASES_FILTERS,
-      csTeams: ["g1"],
       tags: ["micro-gw"],
       excludeTags: ["s_dip"],
     });
 
     expect(screen.getByText("Tag: micro-gw")).toBeInTheDocument();
     expect(screen.getByText("Excluding tag: s_dip")).toBeInTheDocument();
-    // Team name is unresolved here (no teams fetched), so it falls back to the
-    // id rather than hiding the chip.
-    expect(screen.getByText(/CS team: /)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Excluding tag: s_dip").closest(".MuiChip-root")!.querySelector("svg")!);
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ excludeTags: [], tags: ["micro-gw"], csTeams: ["g1"] }),
+      expect.objectContaining({ excludeTags: [], tags: ["micro-gw"] }),
     );
   });
 
-  it("no longer renders the removed CS team / Tags / Exclude tags bar controls", () => {
+  it("does not render a chip for csTeams — it has its own 'Team' bar control", () => {
+    renderBar({ ...DEFAULT_CASES_FILTERS, csTeams: ["g1"] });
+    expect(screen.queryByText(/^CS team:/)).not.toBeInTheDocument();
+  });
+
+  it("no longer renders the removed Tags / Exclude tags bar controls", () => {
     renderBar({ ...DEFAULT_CASES_FILTERS });
-    expect(screen.queryByLabelText(/^CS team$/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Tags$/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Exclude tags$/)).not.toBeInTheDocument();
   });
+
+  // Regression: reported live against a dashboard widget's `state`/
+  // `projectOnboardingStatus notIn` click-through, which showed an INCLUDE
+  // chip (the exact opposite of the widget's own filter) because the
+  // exclusion had nowhere of its own to render. `excludeStates` has no bar
+  // control (same as `excludeTags`), so its chip is the only way to see or
+  // clear it. `excludeOnboardingStatuses` is the same for any value OTHER
+  // than "In-Progress" -- that one specific value gets its own checkbox
+  // (tested separately below).
+  it("renders distinct chips for excludeStates/excludeOnboardingStatuses, never conflated with their include counterparts", () => {
+    const { onChange } = renderBar({
+      ...DEFAULT_CASES_FILTERS,
+      states: ["open"],
+      excludeStates: ["closed"],
+      onboardingStatuses: ["completed"],
+      excludeOnboardingStatuses: ["On-Hold"],
+    });
+
+    expect(screen.getByText("Excluding state: Closed")).toBeInTheDocument();
+    expect(screen.getByText("Onboarding: Completed")).toBeInTheDocument();
+    expect(screen.getByText("Excluding onboarding: On-hold")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByText("Excluding onboarding: On-hold").closest(".MuiChip-root")!
+        .querySelector("svg")!,
+    );
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        excludeOnboardingStatuses: [],
+        onboardingStatuses: ["completed"],
+        excludeStates: ["closed"],
+      }),
+    );
+  });
 });
 
-describe("CasesFilterBar — work-state filter only usable when state is exactly work_in_progress", () => {
+describe("CasesFilterBar — 'Team' control (replaces the removed 'Work state' one)", () => {
+  beforeEach(() => {
+    postMock.mockReset();
+    postMock.mockResolvedValue({
+      teams: [
+        { id: "abt-1", name: "ABT One", family: "cre-abt", creGroupId: "g-1" },
+        { id: "abt-2", name: "ABT Two", family: "cre-abt", creGroupId: "g-2" },
+        // No creGroupId configured -- must not appear as a selectable option.
+        { id: "abt-3", name: "ABT Three", family: "cre-abt" },
+      ],
+    });
+  });
+
+  it("renders team display names as options, backed by creGroupId (what the filter actually matches on)", async () => {
+    renderBar({ ...DEFAULT_CASES_FILTERS });
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Team" }));
+    expect(await screen.findByRole("option", { name: "ABT One" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "ABT Two" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "ABT Three" })).not.toBeInTheDocument();
+  });
+
+  it("selecting a team sets csTeams to its creGroupId, not its registry id", async () => {
+    const { onChange } = renderBar({ ...DEFAULT_CASES_FILTERS });
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Team" }));
+    fireEvent.click(await screen.findByRole("option", { name: "ABT One" }));
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ csTeams: ["g-1"] }));
+  });
+});
+
+describe("CasesFilterBar — 'Hide onboarding in progress' checkbox", () => {
   beforeEach(() => {
     postMock.mockReset();
   });
 
-  it("disables work state when no state is selected", () => {
-    renderBar({ ...DEFAULT_CASES_FILTERS, states: [] });
-    expect(screen.getByRole("combobox", { name: "Work state" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
+  it("is unchecked by default and checking it sets excludeOnboardingStatuses to exactly [\"In-Progress\"]", () => {
+    const { onChange } = renderBar({ ...DEFAULT_CASES_FILTERS });
+    const checkbox = screen.getByRole("checkbox", { name: /hide onboarding in progress/i });
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ excludeOnboardingStatuses: ["In-Progress"] }),
     );
   });
 
-  it("enables work state when work_in_progress is the sole selected state", () => {
-    renderBar({ ...DEFAULT_CASES_FILTERS, states: ["work_in_progress"] });
-    expect(screen.getByRole("combobox", { name: "Work state" })).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-
-  it("disables work state when work_in_progress is selected alongside other states", () => {
-    renderBar({
+  it("is checked when excludeOnboardingStatuses already contains \"In-Progress\", and unchecking it clears just that value", () => {
+    const { onChange } = renderBar({
       ...DEFAULT_CASES_FILTERS,
-      states: ["work_in_progress", "open"],
+      excludeOnboardingStatuses: ["In-Progress"],
+    });
+    const checkbox = screen.getByRole("checkbox", { name: /hide onboarding in progress/i });
+    expect(checkbox).toBeChecked();
+    // The checkbox is the only representation of this value now -- no
+    // redundant chip alongside it.
+    expect(screen.queryByText(/Excluding onboarding/)).not.toBeInTheDocument();
+
+    fireEvent.click(checkbox);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ excludeOnboardingStatuses: [] }),
+    );
+  });
+
+  it("checking it preserves any other excludeOnboardingStatuses value already set (e.g. from a dashboard click-through)", () => {
+    const { onChange } = renderBar({
+      ...DEFAULT_CASES_FILTERS,
+      excludeOnboardingStatuses: ["On-Hold"],
+    });
+    const checkbox = screen.getByRole("checkbox", { name: /hide onboarding in progress/i });
+
+    fireEvent.click(checkbox);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ excludeOnboardingStatuses: ["On-Hold", "In-Progress"] }),
+    );
+  });
+});
+
+describe("CasesFilterBar — work state has no bar control, only a chip", () => {
+  beforeEach(() => {
+    postMock.mockReset();
+  });
+
+  it("no longer renders a Work state bar control", () => {
+    renderBar({ ...DEFAULT_CASES_FILTERS, states: ["work_in_progress"] });
+    expect(screen.queryByRole("combobox", { name: "Work state" })).not.toBeInTheDocument();
+  });
+
+  it("renders a removable chip when workStates is set (e.g. from a saved view or dashboard click-through)", () => {
+    const { onChange } = renderBar({
+      ...DEFAULT_CASES_FILTERS,
+      states: ["work_in_progress"],
       workStates: ["ongoing"],
     });
-    expect(screen.getByRole("combobox", { name: "Work state" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
+
+    expect(screen.getByText("Work state: Ongoing")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByText("Work state: Ongoing").closest(".MuiChip-root")!.querySelector("svg")!,
     );
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ workStates: [] }));
   });
 
+  // The underlying invariant (workStates only means something when
+  // work_in_progress is the *sole* selected state) still matters even
+  // without a bar control to disable -- a stale workStates value from a
+  // saved view/URL must not survive the State control widening past
+  // work_in_progress alone.
   it("clears workStates when a second state is added alongside work_in_progress", () => {
     const { onChange } = renderBar({
       ...DEFAULT_CASES_FILTERS,

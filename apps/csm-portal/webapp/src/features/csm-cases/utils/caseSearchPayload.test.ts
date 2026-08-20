@@ -81,6 +81,55 @@ describe("buildCaseSearchFilters — new advanced-filter fields", () => {
     ]);
   });
 
+  it("emits state op:in and state op:notIn as two independent entries", () => {
+    const filters: CasesFilters = {
+      ...DEFAULT_CASES_FILTERS,
+      states: ["open"],
+      excludeStates: ["closed"],
+    };
+    expect(filterOf(filters, "state")).toEqual([
+      { field: "state", op: "in", values: ["open"] },
+      { field: "state", op: "notIn", values: ["closed"] },
+    ]);
+  });
+
+  it("does NOT invert excludeStates into an `in` entry", () => {
+    const filters: CasesFilters = { ...DEFAULT_CASES_FILTERS, excludeStates: ["closed"] };
+    const stateEntries = filterOf(filters, "state");
+    expect(stateEntries).toEqual([{ field: "state", op: "notIn", values: ["closed"] }]);
+    expect(stateEntries?.some((e) => e.op === "in")).toBe(false);
+  });
+
+  it("emits projectOnboardingStatus op:in and op:notIn as two independent entries", () => {
+    const filters: CasesFilters = {
+      ...DEFAULT_CASES_FILTERS,
+      onboardingStatuses: ["completed"],
+      excludeOnboardingStatuses: ["In-Progress"],
+    };
+    expect(filterOf(filters, "projectOnboardingStatus")).toEqual([
+      { field: "projectOnboardingStatus", op: "in", values: ["completed"] },
+      { field: "projectOnboardingStatus", op: "notIn", values: ["In-Progress"] },
+    ]);
+  });
+
+  it("does NOT invert excludeOnboardingStatuses into an `in` entry (the reported bug)", () => {
+    // Regression: reported live against a dashboard widget's
+    // `projectOnboardingStatus notIn ["In-Progress"]` -- the click-through
+    // showed an "Onboarding: In-progress" INCLUDE chip, the exact opposite
+    // of the widget's own filter. This asserts the payload builder itself
+    // never produces an `in` entry when only excludeOnboardingStatuses is set
+    // (see widgetResourceConfig.test.ts for the click-through-side fix).
+    const filters: CasesFilters = {
+      ...DEFAULT_CASES_FILTERS,
+      excludeOnboardingStatuses: ["In-Progress"],
+    };
+    const entries = filterOf(filters, "projectOnboardingStatus");
+    expect(entries).toEqual([
+      { field: "projectOnboardingStatus", op: "notIn", values: ["In-Progress"] },
+    ]);
+    expect(entries?.some((e) => e.op === "in")).toBe(false);
+  });
+
   it("emits taskSLABusinessElapsedPercent gte and lte as separate entries", () => {
     const filters: CasesFilters = {
       ...DEFAULT_CASES_FILTERS,

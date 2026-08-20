@@ -208,14 +208,23 @@ function caseFilterEntry(
  * any non-empty `assignedUserId` maps to the `@me` sentinel rather than an
  * (unresolvable) literal UUID.
  *
- * `tag`'s two ops (`in`/`notIn`) map to the two distinct `CasesFilters`
- * fields `tags`/`excludeTags` — never a single field plus an inferred op —
- * so a `notIn` widget filter can never decode as `tags` (an inclusion) the
- * way the equivalent bug shipped once in the dashboard preview URL (see
- * `casesFiltersUrl.ts`'s `writeCasesFiltersToUrl` doc comment for the full
- * story). Likewise `escalation`'s value-less `isEmpty`/`isNotEmpty` map to
- * the explicit tri-state `hasEscalation` (`false`/`true`), never silently
- * defaulted when absent (`undefined`, i.e. not touched in `out`).
+ * `tag`, `state`, and `projectOnboardingStatus` — the only 3 case-search
+ * fields whose backend contract accepts `notIn` at all (`case_filters.go`'s
+ * per-field op table) — each have their two ops mapped to two distinct
+ * `CasesFilters` fields (`tags`/`excludeTags`, `states`/`excludeStates`,
+ * `onboardingStatuses`/`excludeOnboardingStatuses`) via `caseFilterEntry`
+ * matched on field *and* op together, never a single field read op-blind via
+ * `caseFilterValues` plus an inferred op. A `notIn` widget filter on any of
+ * these can then never silently decode as its own opposite (an inclusion of
+ * exactly the values it meant to exclude) — which is exactly the bug once
+ * reported against a live `projectOnboardingStatus notIn` widget click-through,
+ * and the same bug the dashboard preview URL shipped once for `tag` (see
+ * `casesFiltersUrl.ts`'s `writeCasesFiltersToUrl` doc comment for that full
+ * story). Every other field this function reads is `in`-only per that same
+ * op table, so reading it op-blind carries no equivalent risk. Likewise
+ * `escalation`'s value-less `isEmpty`/`isNotEmpty` map to the explicit
+ * tri-state `hasEscalation` (`false`/`true`), never silently defaulted when
+ * absent (`undefined`, i.e. not touched in `out`).
  */
 function translateCaseDashboardFilters(
   filters: Record<string, unknown>,
@@ -223,8 +232,18 @@ function translateCaseDashboardFilters(
   const out: Partial<CasesFilters> = {};
   const fieldFilters = asCaseFieldFilters(filters.filters);
 
-  const states = caseFilterValues(fieldFilters, "state");
+  // `state` in vs. notIn -> two distinct CasesFilters fields, same reasoning
+  // as `tag` below: `state` is one of only 3 case-search fields whose
+  // backend contract accepts `notIn` at all (`state`, `tag`,
+  // `projectOnboardingStatus` — see `case_filters.go`'s per-field op table),
+  // so a `notIn` widget filter must never be read op-blind and decoded as
+  // an inclusion of the very states it meant to exclude.
+  const states = caseFilterEntry(fieldFilters, "state", "in")?.values;
   if (states && states.length > 0) out.states = states as CasesFilters["states"];
+  const excludeStates = caseFilterEntry(fieldFilters, "state", "notIn")?.values;
+  if (excludeStates && excludeStates.length > 0) {
+    out.excludeStates = excludeStates as CasesFilters["excludeStates"];
+  }
   const severities = caseFilterValues(fieldFilters, "severity");
   if (severities && severities.length > 0) {
     out.severities = severities
@@ -258,9 +277,26 @@ function translateCaseDashboardFilters(
   const excludeTags = caseFilterEntry(fieldFilters, "tag", "notIn")?.values;
   if (excludeTags && excludeTags.length > 0) out.excludeTags = excludeTags;
 
-  const onboardingStatuses = caseFilterValues(fieldFilters, "projectOnboardingStatus");
+  // `projectOnboardingStatus` in vs. notIn -> same in/notIn split as `state`
+  // and `tag` above (the third and last field the backend accepts `notIn`
+  // on). This is the field the click-through sign-flip bug was originally
+  // reported against: a widget's `notIn` was silently decoding as an
+  // inclusion of exactly the onboarding statuses it meant to exclude.
+  const onboardingStatuses = caseFilterEntry(
+    fieldFilters,
+    "projectOnboardingStatus",
+    "in",
+  )?.values;
   if (onboardingStatuses && onboardingStatuses.length > 0) {
     out.onboardingStatuses = onboardingStatuses;
+  }
+  const excludeOnboardingStatuses = caseFilterEntry(
+    fieldFilters,
+    "projectOnboardingStatus",
+    "notIn",
+  )?.values;
+  if (excludeOnboardingStatuses && excludeOnboardingStatuses.length > 0) {
+    out.excludeOnboardingStatuses = excludeOnboardingStatuses;
   }
 
   const slaGte = caseFilterEntry(fieldFilters, "taskSLABusinessElapsedPercent", "gte")
