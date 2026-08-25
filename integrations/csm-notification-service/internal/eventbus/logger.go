@@ -35,8 +35,9 @@ import (
 // logError) is where kafka-go actually reports problems, so routing it to
 // slog.Error and Logger to slog.Debug matches kafka-go's own intended
 // severity split — genuine problems stay visible by default (this
-// service's configured log level is Info), routine chatter is available
-// when explicitly needed (e.g. troubleshooting a connection issue) without
+// service's log level defaults to Info — see middleware.ConfigureLogger's
+// LOG_LEVEL handling), routine chatter is available when explicitly needed
+// (e.g. troubleshooting a connection issue, via LOG_LEVEL=debug) without
 // having to filter or classify individual message strings ourselves.
 func logDebug(msg string, args ...any) {
 	slog.Debug(fmt.Sprintf(msg, args...))

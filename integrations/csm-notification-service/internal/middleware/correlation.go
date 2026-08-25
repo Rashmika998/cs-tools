@@ -117,7 +117,21 @@ func (h ctxHandler) WithGroup(name string) slog.Handler {
 // also redirects log.std's output through the new handler, and if the inner
 // handler were the old defaultHandler (which itself writes to log.std) a cycle
 // would form. Call once at startup before any log statements.
+//
+// LOG_LEVEL (optional, defaults to Info — this service's normal level) can be
+// set to "debug" to additionally surface internal/eventbus's logDebug output —
+// kafka-go's own routine join/sync/heartbeat/commit protocol chatter, bridged
+// there but silently dropped at the default Info level (see logDebug's doc
+// comment). Not meant to stay on permanently (it's several lines a second
+// during any rebalance); flip it on for one deploy when troubleshooting a
+// consumer-group issue (e.g. unexpected Unknown Member ID/Group Load In
+// Progress errors) to see exactly what kafka-go's client did leading up to
+// it, then flip it back.
 func ConfigureLogger() {
-	inner := slog.NewTextHandler(os.Stderr, nil)
+	level := slog.LevelInfo
+	if strings.EqualFold(os.Getenv("LOG_LEVEL"), "debug") {
+		level = slog.LevelDebug
+	}
+	inner := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
 	slog.SetDefault(slog.New(ctxHandler{inner: inner}))
 }

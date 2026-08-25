@@ -28,7 +28,7 @@ The only route this service exposes is `GET /health` (Choreo's liveness probe), 
 - `CorrelationID` (`internal/middleware/correlation.go`): reads `X-CSM-Correlation-ID` from the incoming request or generates a UUID v4; ensures the ID carries a `cns-` prefix (CSM Notification Service) either way, without double-prefixing an ID that already has it; stores the ID in context for the slog handler; echoes the ID in the response header
 - `Logger` (`internal/middleware/logger.go`): logs every completed request (method, path, status, elapsed) via slog
 
-`middleware.ConfigureLogger()` must be called at startup — it wraps the default slog handler so every `slog.*Context(r.Context(), …)` call automatically includes `correlationID=<id>` when the context carries one.
+`middleware.ConfigureLogger()` must be called at startup — it wraps the default slog handler so every `slog.*Context(r.Context(), …)` call automatically includes `correlationID=<id>` when the context carries one. It also reads `LOG_LEVEL` (optional, defaults to `info`): set to `debug` to raise the handler's level so `internal/eventbus`'s `logDebug`-bridged kafka-go protocol chatter (join/sync/heartbeat/commit) actually reaches the log, instead of being silently dropped at the default `info` level — meant for one troubleshooting deploy (e.g. tracking down an unexpected `Unknown Member ID`/`Group Load In Progress` consumer-group error), not to stay on permanently.
 
 ## Notification channels
 

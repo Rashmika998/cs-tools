@@ -160,6 +160,7 @@ This engine's own narrow `sla_clocks` client talks to the same entity-service as
 | Variable | Description |
 |---|---|
 | `PORT` | Server listen port — a plain number, not an address (default `8080`) |
+| `LOG_LEVEL` | Set to `debug` to also surface `internal/eventbus`'s kafka-go protocol trace (join/sync/heartbeat/commit chatter), otherwise dropped. Several lines/sec during a rebalance — meant for a one-off troubleshooting deploy, not to stay on. Optional — defaults to `info` |
 
 ## Project Structure
 
