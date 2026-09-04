@@ -341,7 +341,7 @@ func main() {
 		// exists.
 		slaProducer = eventbus.NewProducer(eventBusCfg)
 
-		slaEngine := slaengine.NewEngine(slaEntityClient, slaengine.NewWakeIndex(redisClient), slaProducer)
+		slaEngine := slaengine.NewEngine(slaEntityClient, slaengine.NewWakeIndex(redisClient), slaProducer, googleChatClient, linkResolver, defaultChatProduct)
 
 		slaConsumerGroup := envOrDefault("SLA_CONSUMER_GROUP", "csm-notification-service-sla")
 		slaConsumerCount := envInt("SLA_CONSUMER_COUNT", 1)

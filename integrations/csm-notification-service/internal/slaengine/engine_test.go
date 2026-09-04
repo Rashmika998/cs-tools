@@ -30,6 +30,7 @@ import (
 type registerCall struct {
 	caseID, clockType string
 	startedAt, dueAt  time.Time
+	req               RegisterClockRequest
 }
 
 type tierCall struct{ caseID, clockType, tier string }
@@ -48,8 +49,8 @@ type fakeEntityClock struct {
 	tierErr            error
 }
 
-func (f *fakeEntityClock) RegisterClock(_ context.Context, caseID, clockType string, startedAt, dueAt time.Time) error {
-	f.registerCalls = append(f.registerCalls, registerCall{caseID, clockType, startedAt, dueAt})
+func (f *fakeEntityClock) RegisterClock(_ context.Context, req RegisterClockRequest) error {
+	f.registerCalls = append(f.registerCalls, registerCall{req.CaseID, req.ClockType, req.StartedAt, req.DueAt, req})
 	return f.registerErr
 }
 

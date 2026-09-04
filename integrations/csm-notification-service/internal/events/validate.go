@@ -178,7 +178,7 @@ func Validate(entityID string, t Type, raw json.RawMessage) error {
 		if err := decodeStrict(raw, &p); err != nil {
 			return err
 		}
-		if p.CaseID == "" || len(p.Durations) == 0 {
+		if p.CaseID == "" || len(p.Durations) == 0 || p.CaseTitle == "" {
 			return fmt.Errorf("events: missing required field for %s", t)
 		}
 		for clockType, dur := range p.Durations {
@@ -195,6 +195,15 @@ func Validate(entityID string, t Type, raw json.RawMessage) error {
 			// like any other malformed record.
 			if d, err := time.ParseDuration(dur); err != nil || d <= 0 {
 				return fmt.Errorf("events: %s duration %q for clock type %q is not a valid positive duration", t, dur, clockType)
+			}
+		}
+		// Each AvoidWeekendDueDate entry must name a clock type Durations
+		// actually has an entry for — same "one bad entry fails the whole
+		// event" posture validRecipients uses, rather than silently
+		// ignoring a typo'd/stale clock-type name.
+		for _, clockType := range p.AvoidWeekendDueDate {
+			if _, ok := p.Durations[clockType]; !ok {
+				return fmt.Errorf("events: %s avoidWeekendDueDate entry %q does not match any durations clock type", t, clockType)
 			}
 		}
 		if p.CaseID != entityID {

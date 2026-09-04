@@ -5402,6 +5402,23 @@ type SLAClock struct {
 	Reached50On  *time.Time `json:"reached50On"`
 	Reached75On  *time.Time `json:"reached75On"`
 	Reached100On *time.Time `json:"reached100On"`
+	// The eight fields below are display-only, populated once at
+	// registration time from the case's own state then — not re-derived
+	// later, so State/Priority in particular can go stale relative to the
+	// case's actual current values by the time a breach fires. Nothing here
+	// participates in scheduling or breach logic; they exist purely so
+	// GET .../sla-clocks/{clockType} can supply everything
+	// csm-notification-service's slaengine needs to build a Google Chat
+	// breach card without a second lookup at tick time, since that service
+	// has no other way to reach case data.
+	CaseNumber string `json:"caseNumber,omitempty"`
+	WSO2CaseID string `json:"wso2CaseId,omitempty"`
+	CaseTitle  string `json:"caseTitle,omitempty"`
+	CaseType   string `json:"caseType,omitempty"`
+	Product    string `json:"product,omitempty"`
+	Team       string `json:"team,omitempty"`
+	Priority   string `json:"priority,omitempty"`
+	State      string `json:"state,omitempty"`
 }
 
 // RegisterSLAClockRequest is the request body for
@@ -5416,6 +5433,17 @@ type RegisterSLAClockRequest struct {
 	ClockType string    `json:"clockType"`
 	StartedAt time.Time `json:"startedAt"`
 	DueAt     time.Time `json:"dueAt"`
+	// The eight fields below are optional display data — see SLAClock's own
+	// doc comment for what they're for and why they're a point-in-time
+	// snapshot, not kept live.
+	CaseNumber string `json:"caseNumber,omitempty"`
+	WSO2CaseID string `json:"wso2CaseId,omitempty"`
+	CaseTitle  string `json:"caseTitle,omitempty"`
+	CaseType   string `json:"caseType,omitempty"`
+	Product    string `json:"product,omitempty"`
+	Team       string `json:"team,omitempty"`
+	Priority   string `json:"priority,omitempty"`
+	State      string `json:"state,omitempty"`
 }
 
 // SLATierStatus is the value of SetSLAClockTierRequest.Status.

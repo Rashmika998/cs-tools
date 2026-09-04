@@ -76,10 +76,19 @@ func NewRouter(db *pgxpool.Pool, cfg *config.Config) (http.Handler, service.Even
 	}
 
 	// sla_clocks has no ServiceNow equivalent either, and is gated on the pool
-	// for the same reason as event_publish_failures above.
+	// for the same reason as event_publish_failures above. Named (not
+	// inlined) since NewServiceNowCaseService below also needs it, for its
+	// own direct, in-process pause/resume/completion calls (see that
+	// service's own applyCaseStateSLAEffects/applyResponseSLAOnComment) —
+	// both already treat a nil SLAClockService as "unconfigured, skip",
+	// the same posture every other optional-when-no-database dependency in
+	// this file has.
+	var slaClockService service.SLAClockService
 	var slaClockHandler *handler.SLAClockHandler
 	if db != nil {
-		slaClockHandler = handler.NewSLAClockHandler(service.NewSLAClockService(repository.NewSLAClockRepository(db)))
+		slaClockRepo := repository.NewSLAClockRepository(db)
+		slaClockService = service.NewSLAClockService(slaClockRepo)
+		slaClockHandler = handler.NewSLAClockHandler(slaClockService)
 	}
 
 	// scheduled_task_run has no ServiceNow equivalent either — same
@@ -176,11 +185,20 @@ func NewRouter(db *pgxpool.Pool, cfg *config.Config) (http.Handler, service.Even
 	}
 	deployedProductHandler := handler.NewDeployedProductHandler(activeDeployedProductSvc)
 
+	// Constructed here (rather than down near snUserHandler below) so
+	// NewServiceNowCaseService can also take it — see that constructor's
+	// own doc comment for what it uses it for (a direct, in-process role
+	// lookup backing applyResponseSLAOnComment, not routed through HTTP).
+	var snUserService service.SNUserService
+	if cfg.DataSource == config.DataSourceServiceNow {
+		snUserService = service.NewServiceNowUserService(serviceNowIntegrationServiceClient)
+	}
+
 	caseRepo := repository.NewCaseRepository(db)
 	pgCaseSvc := service.NewCaseService(caseRepo, userRepo)
 	var activeCaseSvc service.CaseService
 	if cfg.DataSource == config.DataSourceServiceNow {
-		activeCaseSvc = service.NewServiceNowCaseService(serviceNowIntegrationServiceClient, pgCaseSvc, eventPublisher)
+		activeCaseSvc = service.NewServiceNowCaseService(serviceNowIntegrationServiceClient, pgCaseSvc, eventPublisher, slaClockService, snUserService, cfg.SupportEngineerRole)
 	} else {
 		activeCaseSvc = pgCaseSvc
 	}
@@ -298,7 +316,7 @@ func NewRouter(db *pgxpool.Pool, cfg *config.Config) (http.Handler, service.Even
 
 	var snUserHandler *handler.SNUserHandler
 	if cfg.DataSource == config.DataSourceServiceNow {
-		snUserHandler = handler.NewSNUserHandler(service.NewServiceNowUserService(serviceNowIntegrationServiceClient))
+		snUserHandler = handler.NewSNUserHandler(snUserService)
 	}
 
 	// Tasks are a ServiceNow-only entity, but the routes are registered for both

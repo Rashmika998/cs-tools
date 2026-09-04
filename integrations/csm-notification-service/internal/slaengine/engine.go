@@ -22,16 +22,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/eventbus"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/events"
+	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/notifications"
+	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/recipientlinks"
 )
 
 // entityClock abstracts EntityClient for testability.
 type entityClock interface {
-	RegisterClock(ctx context.Context, caseID, clockType string, startedAt, dueAt time.Time) error
+	RegisterClock(ctx context.Context, req RegisterClockRequest) error
 	GetClock(ctx context.Context, caseID, clockType string) (Clock, error)
 	SetTierReachedIfUnset(ctx context.Context, caseID, clockType, tier string) (reachedAt time.Time, alreadyReached bool, err error)
 }
@@ -48,6 +51,19 @@ type eventPublisher interface {
 	Publish(ctx context.Context, key, value []byte) error
 }
 
+// chatSender abstracts notifications.GoogleChatClient's SendSLABreachAlert
+// for testability.
+type chatSender interface {
+	SendSLABreachAlert(ctx context.Context, product, clockType, tier, caseNumber, wso2CaseID, caseTitle, caseType, productName, team, severity, state, openedAt, caseLink string) error
+}
+
+// linkResolver abstracts recipientlinks.Resolver's CSMLink for testability
+// — the only method this engine needs from it (unlike
+// internal/dispatch's own, larger linkResolver interface).
+type linkResolver interface {
+	CSMLink(caseID string) string
+}
+
 // tiers is the fixed set of elapsed-duration percentages this engine tracks
 // per clock — 50%, 75%, 100% of the way from startedAt to dueAt. Not
 // configurable: a real per-severity policy (see events.SLAClockRegisterPayload's
@@ -58,16 +74,26 @@ var tiers = []string{"50", "75", "100"}
 
 // Engine is the SLA timer engine: Handle registers clocks (the consumer
 // side, wired into its own eventbus.Consumer — see cmd/server/main.go),
-// RunTicker/Tick scan the wake index and publish tier-crossing events.
+// RunTicker/Tick scan the wake index, publish tier-crossing events, and —
+// on a genuine breach — send a Google Chat alert directly (see
+// sendBreachAlert; not routed through internal/dispatch).
 type Engine struct {
 	entity entityClock
 	wake   wakeIndex
 	pub    eventPublisher
+	chat   chatSender
+	links  linkResolver
+	// defaultChatProduct is sendBreachAlert's fallback when a clock's own
+	// stored Product (from registration) is empty — same
+	// "publisher didn't say" fallback reasoning as
+	// dispatch.Dispatcher.defaultChatProduct, reusing the same configured
+	// DEFAULT_CHAT_PRODUCT value (see cmd/server/main.go).
+	defaultChatProduct string
 }
 
 // NewEngine constructs an Engine.
-func NewEngine(entity *EntityClient, wake *WakeIndex, pub *eventbus.Producer) *Engine {
-	return &Engine{entity: entity, wake: wake, pub: pub}
+func NewEngine(entity *EntityClient, wake *WakeIndex, pub *eventbus.Producer, chat *notifications.GoogleChatClient, links *recipientlinks.Resolver, defaultChatProduct string) *Engine {
+	return &Engine{entity: entity, wake: wake, pub: pub, chat: chat, links: links, defaultChatProduct: defaultChatProduct}
 }
 
 // Handle implements eventbus.Handle for the SLA engine's own consumer group.
@@ -92,7 +118,7 @@ func (e *Engine) Handle(ctx context.Context, record eventbus.Record) error {
 	if err := json.Unmarshal(env.Payload, &p); err != nil {
 		return fmt.Errorf("slaengine: decode sla.clock.register payload: %w", err)
 	}
-	return e.registerClocks(ctx, p.CaseID, p.Durations)
+	return e.registerClocks(ctx, p)
 }
 
 // registerClocks (re)creates every named clock and its 50/75/100% wake
@@ -104,32 +130,54 @@ func (e *Engine) Handle(ctx context.Context, record eventbus.Record) error {
 // validRecipients: one bad entry fails the whole event, not just that one
 // clock) — the time.ParseDuration re-check below is defensive belt-and-
 // suspenders, not a reachable path through Handle's own call chain.
-func (e *Engine) registerClocks(ctx context.Context, caseID string, durations map[string]string) error {
+func (e *Engine) registerClocks(ctx context.Context, p events.SLAClockRegisterPayload) error {
 	var errs []error
-	for clockType, durStr := range durations {
+	for clockType, durStr := range p.Durations {
 		d, err := time.ParseDuration(durStr)
 		if err != nil {
-			slog.ErrorContext(ctx, "slaengine: invalid sla clock duration, skipping", "caseId", caseID, "clockType", clockType, "duration", durStr, "err", err)
+			slog.ErrorContext(ctx, "slaengine: invalid sla clock duration, skipping", "caseId", p.CaseID, "clockType", clockType, "duration", durStr, "err", err)
 			continue
 		}
 
 		startedAt := time.Now()
 		dueAt := startedAt.Add(d)
-		if err := e.entity.RegisterClock(ctx, caseID, clockType, startedAt, dueAt); err != nil {
-			errs = append(errs, fmt.Errorf("register clock %s/%s: %w", caseID, clockType, err))
+		if slices.Contains(p.AvoidWeekendDueDate, clockType) {
+			dueAt = avoidWeekend(dueAt)
+		}
+		if err := e.entity.RegisterClock(ctx, RegisterClockRequest{
+			CaseID: p.CaseID, ClockType: clockType, StartedAt: startedAt, DueAt: dueAt,
+			CaseNumber: p.CaseNumber, WSO2CaseID: p.WSO2CaseID, CaseTitle: p.CaseTitle,
+			CaseType: p.CaseType, Product: p.Product, Team: p.Team, Priority: p.Priority,
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("register clock %s/%s: %w", p.CaseID, clockType, err))
 			continue
 		}
 
 		for _, tier := range tiers {
 			at := tierTime(startedAt, d, tier)
-			member := wakeMember(caseID, clockType, tier)
+			member := wakeMember(p.CaseID, clockType, tier)
 			if err := e.wake.AddWake(ctx, member, at); err != nil {
 				errs = append(errs, fmt.Errorf("add wake entry %s: %w", member, err))
 			}
 		}
-		slog.InfoContext(ctx, "slaengine: registered sla clock", "caseId", caseID, "clockType", clockType, "dueAt", dueAt.Format(time.RFC3339))
+		slog.InfoContext(ctx, "slaengine: registered sla clock", "caseId", p.CaseID, "clockType", clockType, "dueAt", dueAt.Format(time.RFC3339))
 	}
 	return errors.Join(errs...)
+}
+
+// avoidWeekend rolls due forward to the next Monday, same time-of-day, if
+// it falls on a Saturday or Sunday — see events.SLAClockRegisterPayload's
+// own AvoidWeekendDueDate doc comment for what this approximates ("1
+// Business Week") and why it's applied here rather than in entity-service.
+func avoidWeekend(due time.Time) time.Time {
+	switch due.Weekday() {
+	case time.Saturday:
+		return due.AddDate(0, 0, 2)
+	case time.Sunday:
+		return due.AddDate(0, 0, 1)
+	default:
+		return due
+	}
 }
 
 // tierTime returns the instant tier is reached, given a clock that started
@@ -255,11 +303,53 @@ func (e *Engine) processDueMember(ctx context.Context, member string) error {
 		return fmt.Errorf("publish sla.tier_reached %s/%s/%s: %w", caseID, clockType, tier, err)
 	}
 
+	if err := e.sendBreachAlert(ctx, clock, caseID, clockType, tier); err != nil {
+		// Same ordering/retry reasoning as the Kafka publish above: a failed
+		// send here leaves the wake entry in place, so the next tick's own
+		// SetTierReachedIfUnset call will see alreadyReached=true and skip
+		// re-publishing sla.tier_reached (already durably recorded above)
+		// but still retry the Chat send — the same accepted
+		// possible-duplicate-of-the-already-succeeded-step trade-off this
+		// package's Tick doc comment already documents for the Kafka publish
+		// itself, just now also covering this second, independent effect.
+		return fmt.Errorf("send sla breach alert %s/%s/%s: %w", caseID, clockType, tier, err)
+	}
+
 	if err := e.wake.RemoveWake(ctx, member); err != nil {
 		return fmt.Errorf("remove wake entry %s after successful publish (at reachedAt %s): %w", member, reachedAt.Format(time.RFC3339), err)
 	}
 	slog.InfoContext(ctx, "slaengine: sla tier reached", "caseId", caseID, "clockType", clockType, "tier", tier)
 	return nil
+}
+
+// sendBreachAlert builds and sends the Google Chat breach card for one
+// tier crossing, using clock's own display fields (populated once at
+// registration — see events.SLAClockRegisterPayload's doc comment) so no
+// second lookup is needed here. product falls back to
+// e.defaultChatProduct when the clock's own stored Product is empty, same
+// reasoning as dispatch.Dispatcher's own Product fallback.
+func (e *Engine) sendBreachAlert(ctx context.Context, clock Clock, caseID, clockType, tier string) error {
+	product := clock.Product
+	if product == "" {
+		product = e.defaultChatProduct
+	}
+	if product == "" {
+		slog.WarnContext(ctx, "slaengine: sla breach alert not sent, no Google Chat product configured", "caseId", caseID, "clockType", clockType)
+		return nil
+	}
+	caseNumber := clock.CaseNumber
+	if caseNumber == "" {
+		// clock.CaseNumber can be empty for a clock registered before this
+		// display-data feature existed, or if the publisher omitted it —
+		// fall back to the raw case id so the card still has something to
+		// show rather than a blank "Case ID :" line.
+		caseNumber = caseID
+	}
+	var openedAt string
+	if !clock.StartedOn.IsZero() {
+		openedAt = clock.StartedOn.UTC().Format("2006-01-02 15:04:05") + " (UTC)"
+	}
+	return e.chat.SendSLABreachAlert(ctx, product, clockType, tier, caseNumber, clock.WSO2CaseID, clock.CaseTitle, clock.CaseType, clock.Product, clock.Team, clock.Priority, clock.State, openedAt, e.links.CSMLink(caseID))
 }
 
 // RunTicker calls Tick every interval until ctx is done. Run from its own

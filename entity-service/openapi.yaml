@@ -14020,11 +14020,12 @@ components:
     SLAClock:
       description: >
         A durable SLA timer running against a case. clockType is
-        caller-defined, not a fixed enum — which clock types exist and what
-        duration each gets is a policy decision made entirely by whatever
-        publishes the triggering sla.clock.register event; this service only
-        stores the result. Has no ServiceNow equivalent — always backed by
-        Postgres.
+        caller-defined, not a fixed enum, though only "response"/
+        "workaround"/"resolution" are actually used — see
+        internal/service/sla_policy.go for the duration policy. Has no
+        ServiceNow equivalent — always backed by Postgres. The eight
+        display fields (caseNumber through state) are populated once at
+        registration and are a point-in-time snapshot, not kept live.
       type: object
       properties:
         caseId:
@@ -14053,6 +14054,22 @@ components:
           type: string
           format: date-time
           nullable: true
+        caseNumber:
+          type: string
+        wso2CaseId:
+          type: string
+        caseTitle:
+          type: string
+        caseType:
+          type: string
+        product:
+          type: string
+        team:
+          type: string
+        priority:
+          type: string
+        state:
+          type: string
 
     RegisterSLAClockRequest:
       type: object
@@ -14067,6 +14084,22 @@ components:
         dueAt:
           type: string
           format: date-time
+        caseNumber:
+          type: string
+        wso2CaseId:
+          type: string
+        caseTitle:
+          type: string
+        caseType:
+          type: string
+        product:
+          type: string
+        team:
+          type: string
+        priority:
+          type: string
+        state:
+          type: string
 
     SetSLAClockTierRequest:
       type: object
