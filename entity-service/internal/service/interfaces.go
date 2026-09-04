@@ -130,6 +130,15 @@ type SLAClockService interface {
 	// reached timestamp. A ValidationError is returned for an unrecognized
 	// tier or status; a NotFoundError if no such clock has been registered.
 	SetSLAClockTierReached(ctx context.Context, caseID, clockType, tier string, req domain.SetSLAClockTierRequest) (domain.SetSLAClockTierReachedResponse, error)
+	// Pause/Resume set or clear the clock's paused_at — called directly,
+	// in-process, from snCaseService's case-state handling (see
+	// sn_case_service.go's applyCaseStateSLAEffects), not exposed over HTTP:
+	// no caller outside this service needs them. Both are idempotent
+	// (pausing an already-paused clock, or resuming an already-running
+	// one, is a no-op that still returns the current row) and return a
+	// NotFoundError if no such clock has been registered.
+	Pause(ctx context.Context, caseID, clockType string) (domain.SLAClock, error)
+	Resume(ctx context.Context, caseID, clockType string) (domain.SLAClock, error)
 }
 
 // ScheduledTaskRunService defines the operations available on the

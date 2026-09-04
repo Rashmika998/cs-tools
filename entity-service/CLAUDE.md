@@ -345,12 +345,27 @@ no ServiceNow equivalent and is always backed by Postgres regardless of
 `DATA_SOURCE`, so `caseId` is a plain string, not a foreign key — a
 ServiceNow-backed case has no local `cases` row to reference.
 
-`clockType` is deliberately **not** a fixed enum: this service has no SLA
-duration policy (no priority field on a case, nothing mapping severity to a
-duration) — which clock types exist, and how long each runs, is entirely up to
-whatever publishes the event that triggers registration. Registering a clock
+`clockType` is deliberately **not** a fixed enum, but only three values are
+actually used: `response`, `workaround`, `resolution` — see
+`internal/service/sla_policy.go`'s `slaDurations`, which maps a case's raw
+severity to each applicable clock's duration per WSO2's own
+[support policy](https://wso2.com/licenses/support-policy/6.0) (Enterprise
+plan). `LOW` severity's entry has only `response` — the policy defines no
+fixed Workaround/Resolution SLA at that tier ("best efforts"), so those two
+clocks are never registered for a `LOW`-severity case at all. `slaDurations`
+also has a small note-worthy exception: `MEDIUM`'s `resolution` duration
+approximates the policy's "1 Business Week" as a flat 7 days, then
+`csm-notification-service`'s slaengine (which computes the actual due
+timestamp, not this service) rolls that forward off a weekend if it would
+otherwise land on one — see `slaAvoidWeekendClockTypes` and
+`events.SLAClockRegisterPayload.AvoidWeekendDueDate`. Registering a clock
 that already exists for a `(caseId, clockType)` pair resets it from scratch
-(`RegisterSLAClock`) rather than adjusting it in place.
+(`RegisterSLAClock`) rather than adjusting it in place — including its
+eight display-only fields (case number/WSO2 case id/title/type/product/
+team/priority/state, a point-in-time snapshot from registration, added in
+migration `000014`), populated so `csm-notification-service`'s slaengine
+can build a Google Chat breach card from one `GetClock` call with no second
+lookup — this service is the only thing with case data to give it.
 
 Exposed at `POST /cases/{caseId}/sla-clocks` (register/reset),
 `GET /cases/{caseId}/sla-clocks/{clockType}` (read one), and
@@ -362,7 +377,10 @@ need a breaking change) to mark a `50`/`75`/`100` tier reached, idempotently
 not an error, plus `alreadyReached: true` so the caller can tell the two
 cases apart (the underlying `UPDATE ... WHERE ... IS NULL` already decides
 atomically which caller "really" set it; `alreadyReached` is just that
-outcome surfaced instead of discarded).
+outcome surfaced instead of discarded). `SLAClockService.Pause`/`.Resume`
+(set/clear `pausedAt`) have **no HTTP route at all** — `sn_case_service.go`
+is their only caller, in-process (see below), so an HTTP surface for them
+would be pure speculative API surface nothing outside this service needs.
 
 **`alreadyReached` reflects the database claim only, not whether any
 caller's own reaction (e.g. publishing a notification) to winning that
@@ -384,9 +402,49 @@ sole caller today is
 and ticker) — this service only stores the result of that scheduling, it does
 not compute or track wake times itself.
 
-No `case_service.go`/`sn_case_service.go` method calls any of this yet — case
-creation/update do not register a clock. Wiring that in requires deciding the
-SLA duration policy first (see above), which is out of scope here.
+`sn_case_service.go` is the only caller today (Postgres-backed cases have no
+SLA tracking — this is ServiceNow-only, same as most of this file):
+
+- **`CreateCase`** publishes `sla.clock.register` (`publishSLAClockRegister`,
+  folded directly into the existing `publishCaseCreated` — sharing its
+  `GetCaseByID` fetch and its `s.publisher == nil` guard, since registration
+  is inherently Kafka-based too) for every clock `slaDurations` has an entry
+  for at the case's severity. Deliberately runs **before**
+  `publishCaseCreated`'s own watch-list check: that check only gates the
+  `case.created` *email*, and SLA tracking must happen regardless of
+  whether the case has watchers.
+- **`CreateCaseComment`** calls `applyResponseSLAOnComment` for every
+  customer-visible comment (`req.Type == domain.CommentTypeComment` — work
+  notes/activity entries don't count). This service has no auth/identity
+  layer of its own (the `x-user-id-token` it forwards is opaque), so
+  "is this comment's author a support engineer" is answered by resolving
+  the comment's author (`resolveCommentAuthor`, the same lookup
+  `publishCommentAdded` already needs for its own display name) and
+  checking their ServiceNow role via `SNUserService.SearchUsers` filtered
+  by email, against the **configurable** `SUPPORT_ENGINEER_ROLE` env var
+  (deliberately no committed default — organisation-specific vocabulary,
+  same reasoning `apps/csm-portal/backend`'s own `CSM_TEAM_REGISTRY` uses).
+  A match claims all three tiers (`50`/`75`/`100`) of the `response` clock
+  at once via `SetSLAClockTierReached` — claiming all three, not just
+  `100`, is what suppresses a later spurious breach alert: when
+  `csm-notification-service`'s slaengine eventually reaches the wake-index
+  entries this clock's registration created, its own `SetTierReachedIfUnset`
+  call sees each already claimed and quietly drops the wake entry instead
+  of publishing a breach.
+- **`UpdateCase`** calls `applyCaseStateSLAEffects` after every genuine
+  state-changing PATCH, using the new state alone (no "old state" needed —
+  see that function's own doc comment for why). `Awaiting Info`/
+  `Solution Proposed` pauses `workaround`+`resolution`; any other state
+  resumes both; `Closed` completes `resolution` the same
+  claim-all-three-tiers way as `response` above, and pauses (not
+  completes) `workaround` — **`workaround` has no completion trigger wired
+  up at all yet** (see the `// TODO` in `applyCaseStateSLAEffects`; it
+  needs a "workaround provided" signal this domain model doesn't have).
+
+All three are deliberately **independent of `s.publisher`** except
+registration itself (inherently Kafka-based) — pause/resume/completion are
+pure in-process DB writes via `SLAClockService`, so a deployment without
+Event Hub configured must not lose them as a side effect of that.
 
 ## Scheduled task runs
 

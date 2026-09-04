@@ -278,16 +278,46 @@ type IncidentCreatedPayload struct {
 // in Durations via entity-service's POST /cases/{caseId}/sla-clocks. Each
 // Durations value is a Go duration string (e.g. "2h"), added to the
 // publish-time "now" to compute the clock's due time — the exact durations
-// to use per clock type is a policy decision this service has no way to
-// make itself (no SLA duration policy exists in entity-service either, as of
-// this event type's introduction); it's the caller's responsibility to
-// derive them (e.g. from case severity) and supply them directly, mirroring
+// to use per clock type is a policy decision entity-service makes (see its
+// own internal/service/sla_policy.go) and supplies here directly, mirroring
 // how the SLA timer engine POC this was ported from treated durations as a
-// caller-supplied stand-in for that not-yet-decided policy. CaseID must
-// match the envelope's EntityID, same requirement as the case.* types.
+// caller-supplied stand-in for that policy. CaseID must match the
+// envelope's EntityID, same requirement as the case.* types.
+//
+// AvoidWeekendDueDate names the subset of Durations' keys whose computed
+// due date must not land on a Saturday/Sunday — currently only ever
+// "resolution", for a MEDIUM-severity case's "1 Business Week" SLA (see
+// entity-service's sla_policy.go). internal/slaengine.registerClocks is
+// what actually performs the roll-forward, since only it knows the real
+// startedAt/dueAt at consume time; entity-service can only signal which
+// clock type needs it.
+//
+// CaseCreatedAt is an RFC3339 timestamp of the case's actual creation time
+// — internal/slaengine.registerClocks uses it (not consume-time "now") as
+// each clock's startedAt, so a delayed publish or consumer backlog doesn't
+// start the SLA clock late; an empty or unparsable value falls back to
+// consume-time "now" there.
+//
+// The remaining fields are purely for display in a Google Chat breach
+// card (see internal/slaengine.Engine.sendBreachAlert) and are stored
+// verbatim on the registered sla_clocks row so that card can be built from
+// one GetClock call at tick time, with no second lookup — this service has
+// no other way to reach case data. They're a point-in-time snapshot from
+// registration, not kept live; State/Priority in particular can go stale
+// by the time a breach actually fires.
 type SLAClockRegisterPayload struct {
-	CaseID    string            `json:"caseId"`
-	Durations map[string]string `json:"durations"`
+	CaseID              string            `json:"caseId"`
+	Durations           map[string]string `json:"durations"`
+	CaseCreatedAt       string            `json:"caseCreatedAt,omitempty"`
+	AvoidWeekendDueDate []string          `json:"avoidWeekendDueDate,omitempty"`
+	CaseNumber          string            `json:"caseNumber,omitempty"`
+	WSO2CaseID          string            `json:"wso2CaseId,omitempty"`
+	CaseTitle           string            `json:"caseTitle,omitempty"`
+	CaseType            string            `json:"caseType,omitempty"`
+	Product             string            `json:"product,omitempty"`
+	Team                string            `json:"team,omitempty"`
+	Priority            string            `json:"priority,omitempty"`
+	State               string            `json:"state,omitempty"`
 }
 
 // SLATierReachedPayload is TypeSLATierReached's payload — published by

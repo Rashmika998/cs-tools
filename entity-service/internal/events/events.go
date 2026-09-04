@@ -37,6 +37,15 @@ const (
 	TypeCaseAcknowledged Type = "case.acknowledged"
 	TypeSeverityChanged  Type = "case.severity_changed"
 	TypeIncidentCreated  Type = "incident.created"
+	// TypeSLAClockRegister belongs to csm-notification-service's own
+	// internal/slaengine, not its internal/dispatch — see
+	// SLAClockRegisterPayload's own doc comment. Published once, from
+	// sn_case_service.go's publishCaseCreated; unlike every payload above,
+	// there is no separate "tier reached"/breach event type here —
+	// csm-notification-service's slaengine owns that half of the mechanism
+	// entirely (it also sends the Google Chat breach alert directly,
+	// without a second event round-trip through this topic).
+	TypeSLAClockRegister Type = "sla.clock.register"
 )
 
 // Envelope is the wire shape of every record on the case-events topic.
@@ -230,4 +239,40 @@ type CaseCreatedPayload struct {
 type IncidentCreatedPayload struct {
 	Title            string `json:"title"`
 	ShortDescription string `json:"shortDescription"`
+}
+
+// SLAClockRegisterPayload is the Payload shape for TypeSLAClockRegister —
+// mirrors csm-notification-service's own SLAClockRegisterPayload exactly;
+// keep the two in sync by hand, same reasoning as every payload above.
+// Durations is a Go duration string (e.g. "2h") per clock type
+// ("response"/"workaround"/"resolution" — see internal/service/
+// sla_policy.go), added to CaseCreatedAt (not the publish/consume-time
+// "now" — a delayed publish or consumer backlog must not start the SLA
+// clock late) by csm-notification-service's slaengine to compute each
+// clock's due time. CaseCreatedAt is an RFC3339 timestamp; an empty or
+// unparsable value falls back to consume-time "now" (see slaengine's own
+// registerClocks). AvoidWeekendDueDate names the subset of those clock
+// types whose computed due date must not land on a Saturday/Sunday
+// (currently only ever "resolution", for MEDIUM severity's "1 Business
+// Week" SLA — see sla_policy.go's slaAvoidWeekendClockTypes) —
+// csm-notification-service's slaengine is what actually performs that
+// roll-forward, since only it knows the real startedAt/dueAt at consume
+// time. The remaining fields (including State — the case's own state at
+// registration time, UPPER_SNAKE_CASE, e.g. "WORK_IN_PROGRESS") are purely
+// for display in a Google Chat breach card and are stored verbatim on the
+// registered sla_clocks row — see domain.SLAClock's own doc comment for
+// why they're a point-in-time snapshot, not kept live.
+type SLAClockRegisterPayload struct {
+	CaseID              string            `json:"caseId"`
+	Durations           map[string]string `json:"durations"`
+	CaseCreatedAt       string            `json:"caseCreatedAt,omitempty"`
+	AvoidWeekendDueDate []string          `json:"avoidWeekendDueDate,omitempty"`
+	CaseNumber          string            `json:"caseNumber,omitempty"`
+	WSO2CaseID          string            `json:"wso2CaseId,omitempty"`
+	CaseTitle           string            `json:"caseTitle,omitempty"`
+	CaseType            string            `json:"caseType,omitempty"`
+	Product             string            `json:"product,omitempty"`
+	Team                string            `json:"team,omitempty"`
+	Priority            string            `json:"priority,omitempty"`
+	State               string            `json:"state,omitempty"`
 }

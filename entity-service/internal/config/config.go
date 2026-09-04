@@ -70,6 +70,16 @@ type Config struct {
 	// constructs EventPublisherService when both this is true AND
 	// EventHubBroker is set.
 	EventPublishingEnabled bool
+	// SupportEngineerRole is the ServiceNow role name (e.g. an org-specific
+	// "sn_*" role) whose presence on a case comment's resolved author marks
+	// that comment as a qualifying support-engineer response — see
+	// sn_case_service.go's applyResponseSLAOnComment. Deliberately no
+	// committed default: this is organisation-specific vocabulary, the same
+	// reasoning apps/csm-portal/backend's own CSM_TEAM_REGISTRY uses for not
+	// shipping one. Left unset, that function simply can't confirm
+	// engineer-authorship and skips (logged) — not fatal, not required by
+	// Validate.
+	SupportEngineerRole string
 }
 
 // Load reads configuration from environment variables and returns a populated
@@ -94,6 +104,7 @@ func Load() *Config {
 		EventHubConnectionString:                 os.Getenv("EVENT_HUB_CONNECTION_STRING"),
 		EventHubTopic:                            os.Getenv("EVENT_HUB_TOPIC"),
 		EventPublishingEnabled:                   os.Getenv("EVENT_PUBLISHING_ENABLED") == "true",
+		SupportEngineerRole:                      os.Getenv("SUPPORT_ENGINEER_ROLE"),
 	}
 }
 

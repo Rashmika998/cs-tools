@@ -20,8 +20,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -71,6 +73,18 @@ const publishCaseAcknowledgedTimeout = 5 * time.Second
 // status-change block) already supplies the "before" CaseView this publish
 // needs.
 const publishSeverityChangedTimeout = 5 * time.Second
+
+// applyResponseSLATimeout bounds applyResponseSLAOnComment's own author
+// resolution (SearchCaseComments) + role lookup (SearchUsers) +
+// SetSLAClockTierReached calls — same reasoning as publishCaseCreatedTimeout,
+// though this one isn't a publish at all (see that function's own doc
+// comment for why it's independent of s.publisher/Event Hub entirely).
+const applyResponseSLATimeout = 5 * time.Second
+
+// applyCaseStateSLATimeout bounds applyCaseStateSLAEffects' own
+// Pause/Resume/SetSLAClockTierReached calls — same reasoning as
+// applyResponseSLATimeout.
+const applyCaseStateSLATimeout = 5 * time.Second
 
 // watchListEmails extracts the non-empty emails from a case's watch list —
 // Recipients for every case.* event this file publishes is the case's
@@ -808,13 +822,36 @@ type snCaseService struct {
 	// config.Config.EventHubBroker) — every call site must check before
 	// using it. See publishCaseCreated.
 	publisher EventPublisherService
+	// slaClocks/userSvc/supportEngineerRole back the SLA-tracking additions
+	// in this file (publishCaseCreated's registration step,
+	// applyResponseSLAOnComment, applyCaseStateSLAEffects) — see each
+	// function's own doc comment. slaClocks is nil when this service is
+	// running with DATA_SOURCE=servicenow and no database configured (see
+	// config.Config.HasDatabase/routes.go's own comment on slaClockService)
+	// — every call site must check before using it, same as publisher.
+	// userSvc is only ever consulted once supportEngineerRole is non-empty
+	// (see applyResponseSLAOnComment), so it is never dereferenced while
+	// nil in practice. supportEngineerRole may be "" (see
+	// config.Config.SupportEngineerRole's own doc comment), which
+	// applyResponseSLAOnComment treats as "can't confirm engineer
+	// authorship, skip" rather than an error.
+	slaClocks           SLAClockService
+	userSvc             SNUserService
+	supportEngineerRole string
 }
 
 // NewSNCaseService constructs a CaseService that delegates SearchCases to the
 // Choreo API and all write/read-by-id operations to pgFallback. publisher may
 // be nil (see snCaseService.publisher's doc comment).
-func NewServiceNowCaseService(client *integrationservice.Client, pgFallback CaseService, publisher EventPublisherService) CaseService {
-	return &snCaseService{client: client, pgFallback: pgFallback, publisher: publisher}
+func NewServiceNowCaseService(client *integrationservice.Client, pgFallback CaseService, publisher EventPublisherService, slaClocks SLAClockService, userSvc SNUserService, supportEngineerRole string) CaseService {
+	return &snCaseService{
+		client:              client,
+		pgFallback:          pgFallback,
+		publisher:           publisher,
+		slaClocks:           slaClocks,
+		userSvc:             userSvc,
+		supportEngineerRole: supportEngineerRole,
+	}
 }
 
 // snIssueTypeID maps domain CaseIssueType to the ServiceNow issue-type choice-list value.
@@ -1044,6 +1081,14 @@ func (s *snCaseService) publishCaseCreated(ctx context.Context, req domain.Creat
 		return
 	}
 
+	// SLA-clock registration runs here — sharing this function's own
+	// s.publisher==nil guard (registration is inherently Kafka-based, same
+	// as every publish in this file) and its GetCaseByID fetch above — but
+	// deliberately BEFORE the watcher-count check below: that check only
+	// gates the case.created *email*, and SLA tracking must happen
+	// regardless of whether the case has watchers to notify.
+	s.publishSLAClockRegister(ctx, cv, req, caseID)
+
 	recipients := watchListUserEmails(cv.WatchList)
 	if len(recipients) == 0 {
 		slog.InfoContext(ctx, "sn create case: case.created not published, case has no watchers to email", "caseId", caseID)
@@ -1085,37 +1130,108 @@ func (s *snCaseService) publishCaseCreated(ctx context.Context, req domain.Creat
 	}
 }
 
-// resolveCommentAuthorNameSearchLimit bounds resolveCommentAuthorName's
-// lookup — the new comment is essentially certain to be within this many
-// of the case's most recent comments regardless of SearchCaseComments' own
-// sort order (undocumented, not controllable by this service), since it
-// was just created moments before this call runs.
-const resolveCommentAuthorNameSearchLimit = 20
+// publishSLAClockRegister best-effort publishes sla.clock.register for a
+// newly created case's applicable SLA clocks — called from
+// publishCaseCreated (see its own doc comment for why this runs before that
+// function's watcher-count check, sharing its s.publisher==nil guard and
+// its GetCaseByID enrichment instead of a second fetch).
+//
+// Which clock types get registered, and their durations, come from
+// sla_policy.go's slaDurations, keyed by cv.Severity — LOW severity's entry
+// only has a "response" duration (WSO2's support policy defines no fixed
+// Workaround/Resolution SLA for it, "best efforts"), so only that one clock
+// gets registered for a LOW-severity case. A severity with no policy entry
+// at all (shouldn't happen given domain.CaseSeverity's own fixed set, but
+// defensively handled rather than assumed) skips publishing entirely,
+// logged as a warning rather than silently registering nothing.
+//
+// Durations are encoded as Go duration strings (time.Duration.String(),
+// e.g. "24h0m0s") — csm-notification-service's slaengine parses them back
+// via time.ParseDuration and adds them to CaseCreatedAt (the case's actual
+// creation time, not publish/consume-time "now" — see
+// events.SLAClockRegisterPayload.CaseCreatedAt's own doc comment) to
+// compute each clock's actual due timestamp; this function never computes
+// an absolute due time itself. AvoidWeekendDueDate carries sla_policy.go's
+// slaAvoidWeekendClockTypes for cv.Severity — see that map's own doc
+// comment for what it's for.
+//
+// Like every other publish in this file, a failed Publish call below is
+// only durably recorded in event_publish_failures (searchable/resolvable),
+// not automatically retried or reconciled — see
+// EventPublisherService.Publish's own KNOWN GAP doc comment. That's an
+// existing, accepted limitation shared by every case.*/incident.* event
+// this service publishes, not something specific to SLA registration.
+func (s *snCaseService) publishSLAClockRegister(ctx context.Context, cv domain.CaseView, req domain.CreateCaseRequest, caseID string) {
+	durations, ok := slaDurations[cv.Severity]
+	if !ok || len(durations) == 0 {
+		slog.WarnContext(ctx, "sn create case: sla.clock.register not published, no SLA duration policy for severity", "caseId", caseID, "severity", cv.Severity)
+		return
+	}
+	durationStrings := make(map[string]string, len(durations))
+	for clockType, d := range durations {
+		durationStrings[clockType] = d.String()
+	}
 
-// resolveCommentAuthorName looks up commentID's author display name via
+	payload, err := json.Marshal(events.SLAClockRegisterPayload{
+		CaseID:              caseID,
+		Durations:           durationStrings,
+		CaseCreatedAt:       cv.CreatedOn.Format(time.RFC3339),
+		AvoidWeekendDueDate: slaAvoidWeekendClockTypes[cv.Severity],
+		CaseNumber:          cv.Number,
+		WSO2CaseID:          cv.InternalID,
+		CaseTitle:           cv.Subject,
+		CaseType:            strings.ToUpper(req.Type),
+		Product:             caseProductName(cv),
+		Team:                caseTeamName(cv),
+		Priority:            strings.ToUpper(string(cv.Severity)),
+		State:               strings.ToUpper(string(cv.State)),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "sn create case: encode sla.clock.register payload failed", "caseId", caseID, "error", err)
+		return
+	}
+	if err := s.publisher.Publish(ctx, events.TypeSLAClockRegister, caseID, payload); err != nil {
+		// Not logging err itself — see publishCaseCreated's matching log
+		// line for why.
+		slog.ErrorContext(ctx, "sn create case: publish sla.clock.register failed", "caseId", caseID)
+	}
+}
+
+// resolveCommentAuthorSearchLimit bounds resolveCommentAuthor's lookup —
+// the new comment is essentially certain to be within this many of the
+// case's most recent comments regardless of SearchCaseComments' own sort
+// order (undocumented, not controllable by this service), since it was
+// just created moments before this call runs.
+const resolveCommentAuthorSearchLimit = 20
+
+// resolveCommentAuthor looks up commentID's resolved author (name, email,
+// and — when ServiceNow's comment record carried one — id) via
 // SearchCaseComments — see publishCommentAdded's doc comment for why this
-// re-fetch is needed at all. Returns "" if the comment isn't found in the
-// first resolveCommentAuthorNameSearchLimit results, or if the search
-// itself fails; either way the caller logs and skips publishing rather
-// than sending an event with a fabricated or missing author name.
-func (s *snCaseService) resolveCommentAuthorName(ctx context.Context, caseID, commentID string) string {
-	pagination := domain.Pagination{Limit: resolveCommentAuthorNameSearchLimit}
+// re-fetch is needed at all. Returns nil if the comment isn't found in the
+// first resolveCommentAuthorSearchLimit results, or if the search itself
+// fails; either way the caller logs and skips its own reaction rather than
+// proceeding with a fabricated or missing author. Used by both
+// publishCommentAdded (author display name, for the comment-added email)
+// and applyResponseSLAOnComment (author email, to look up their
+// ServiceNow role).
+func (s *snCaseService) resolveCommentAuthor(ctx context.Context, caseID, commentID string) *domain.UserReference {
+	pagination := domain.Pagination{Limit: resolveCommentAuthorSearchLimit}
 	if err := normalizePagination(&pagination); err != nil {
-		return ""
+		return nil
 	}
 	resp, err := s.SearchCaseComments(ctx, domain.SearchCaseCommentsRequest{
 		CaseID:     caseID,
 		Pagination: pagination,
 	})
 	if err != nil {
-		return ""
+		return nil
 	}
 	for _, c := range resp.Comments {
 		if c.ID == commentID && c.CreatedBy != nil {
-			return c.CreatedBy.Name
+			return c.CreatedBy
 		}
 	}
-	return ""
+	return nil
 }
 
 // publishCommentAdded best-effort publishes a case.comment_added event
@@ -1164,14 +1280,14 @@ func (s *snCaseService) publishCommentAdded(ctx context.Context, req domain.Crea
 		return
 	}
 
-	authorName := s.resolveCommentAuthorName(ctx, req.CaseID, commentID)
-	if authorName == "" {
+	author := s.resolveCommentAuthor(ctx, req.CaseID, commentID)
+	if author == nil || author.Name == "" {
 		slog.InfoContext(ctx, "sn create comment: case.comment_added not published, could not resolve comment author's display name", "caseId", req.CaseID)
 		return
 	}
 
 	payload, err := json.Marshal(events.CommentAddedPayload{
-		Name:           authorName,
+		Name:           author.Name,
 		ProjectID:      cv.ProjectDetails.ID,
 		CaseID:         req.CaseID,
 		CaseNumber:     cv.Number,
@@ -1190,6 +1306,77 @@ func (s *snCaseService) publishCommentAdded(ctx context.Context, req domain.Crea
 		// Not logging err itself — see publishCaseCreated's matching log
 		// line for why.
 		slog.ErrorContext(ctx, "sn create comment: publish case.comment_added failed", "caseId", req.CaseID)
+	}
+}
+
+// applyResponseSLAOnComment marks the case's "response" SLA clock complete
+// (all three tiers — 50/75/100 — claimed at once via
+// SetSLAClockTierReached, idempotently) when the new comment is a
+// customer-visible reply (req.Type == domain.CommentTypeComment — work
+// notes and system activity entries don't count as a response) from a
+// user holding s.supportEngineerRole.
+//
+// This is a pure in-process DB operation, deliberately NOT gated on
+// s.publisher — unlike every publishXxx function in this file, it never
+// touches Event Hub at all, so a deployment without Event Hub configured
+// must not lose SLA tracking as a side effect. Claiming all three tiers at
+// once (not just "100") is what suppresses a later, spurious breach alert:
+// when csm-notification-service's slaengine eventually reaches the
+// wake-index entries this clock's registration created for 50%/75%/100%
+// elapsed, its own SetTierReachedIfUnset call will see each already
+// claimed and skip publishing — the exact same alreadyReached mechanism
+// that already prevents a duplicate real breach alert, reused here for
+// "this was satisfied early, not breached" instead. Calling this on every
+// qualifying comment (not just literally the first) is intentional and
+// harmless: SetSLAClockTierReached is itself idempotent, so only the
+// first call for a given tier actually claims it.
+//
+// entity-service has no auth/identity layer of its own (the
+// x-user-id-token it forwards is opaque), so "is this comment's author a
+// support engineer" can't be answered from anything in this request — it's
+// answered by resolving the comment's author (resolveCommentAuthor, the
+// same lookup publishCommentAdded already needs for its own display name)
+// and checking their ServiceNow role via s.userSvc.SearchUsers, filtered
+// by the author's email. s.supportEngineerRole being "" (unconfigured — see
+// config.Config.SupportEngineerRole's own doc comment) means this can
+// never be confirmed, so this skips entirely rather than guessing.
+func (s *snCaseService) applyResponseSLAOnComment(ctx context.Context, req domain.CreateCaseCommentRequest, commentID string) {
+	if req.Type != domain.CommentTypeComment || s.supportEngineerRole == "" || s.slaClocks == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, applyResponseSLATimeout)
+	defer cancel()
+
+	author := s.resolveCommentAuthor(ctx, req.CaseID, commentID)
+	if author == nil || author.Email == "" {
+		slog.InfoContext(ctx, "sn create comment: response SLA not evaluated, could not resolve comment author's email", "caseId", req.CaseID)
+		return
+	}
+
+	usersResp, err := s.userSvc.SearchUsers(ctx, domain.SearchUsersRequest{
+		Pagination: domain.Pagination{Limit: 1},
+		Filters:    domain.SearchUsersFilters{Emails: []string{author.Email}},
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "sn create comment: response SLA not evaluated, user role lookup failed", "caseId", req.CaseID)
+		return
+	}
+
+	isSupportEngineer := false
+	for _, u := range usersResp.Users {
+		if slices.Contains(u.Roles, s.supportEngineerRole) {
+			isSupportEngineer = true
+			break
+		}
+	}
+	if !isSupportEngineer {
+		return
+	}
+
+	for _, tier := range []string{"50", "75", "100"} {
+		if _, err := s.slaClocks.SetSLAClockTierReached(ctx, req.CaseID, slaClockTypeResponse, tier, domain.SetSLAClockTierRequest{Status: domain.SLATierStatusReached}); err != nil {
+			logSLAClockOpFailed(ctx, "sn create comment: mark response sla clock tier reached failed", req.CaseID, slaClockTypeResponse, err)
+		}
 	}
 }
 
@@ -1246,6 +1433,93 @@ func (s *snCaseService) publishStatusChanged(ctx context.Context, caseID, newSta
 		// Not logging err itself — see publishCaseCreated's matching log
 		// line for why.
 		slog.ErrorContext(ctx, "sn update case: publish case.status_changed failed", "caseId", caseID)
+	}
+}
+
+// logSLAClockOpFailed logs an SLA clock mutation's failure — at Info, not
+// Error, when it's a *apierror.NotFoundError: that specifically means no
+// such clock was ever registered for this case (e.g. a LOW-severity case,
+// which never gets a "workaround"/"resolution" clock at all — see
+// sla_policy.go's slaDurations), an expected, harmless outcome on every
+// state transition for such a case, not a real failure worth alerting on.
+// Anything else logs at Error, matching every other best-effort publish
+// helper's own failure logging in this file.
+func logSLAClockOpFailed(ctx context.Context, msg, caseID, clockType string, err error) {
+	var notFound *apierror.NotFoundError
+	if errors.As(err, &notFound) {
+		slog.InfoContext(ctx, msg+": no such sla clock registered", "caseId", caseID, "clockType", clockType)
+		return
+	}
+	slog.ErrorContext(ctx, msg, "caseId", caseID, "clockType", clockType)
+}
+
+// applyCaseStateSLAEffects pauses/resumes/completes the case's "workaround"
+// and "resolution" SLA clocks in reaction to a state-changing PATCH — a
+// pure in-process DB operation, deliberately independent of
+// publishStatusChanged/s.publisher (see this function's call site in
+// UpdateCase for why: pause/resume/completion must keep working even in a
+// deployment that hasn't configured Event Hub, since nothing here actually
+// needs it). Skips entirely when s.slaClocks is nil — a deployment running
+// DATA_SOURCE=servicenow with no database configured (see
+// config.Config.HasDatabase) has nowhere to store SLA clocks at all.
+//
+//   - CaseStateAwaitingInfo/CaseStateSolutionProposed: pause both clocks —
+//     the case is waiting on the customer, not actively being worked, so
+//     neither should keep counting toward a breach.
+//   - CaseStateClosed: resume both (so paused_at doesn't stay stuck at a
+//     non-null value on a row that's now done), then complete "resolution"
+//     the same way applyResponseSLAOnComment completes "response" — claim
+//     all three tiers (50/75/100) at once via SetSLAClockTierReached, which
+//     suppresses any later wake-index entry for it from firing a spurious
+//     breach alert (see that function's own doc comment for the mechanism).
+//     "workaround" is only paused here, not completed:
+//     TODO: workaround SLA has no completion trigger wired up yet — it
+//     needs a "workaround provided" signal that doesn't exist anywhere in
+//     this domain model today, distinct from the case simply closing.
+//     Pausing on close is a stopgap so it stops counting/alerting past
+//     closure, not a substitute for real completion.
+//   - Anything else (e.g. back to CaseStateWorkInProgress): resume both —
+//     the case is active again.
+//
+// Every step is idempotent (Pause/Resume/SetSLAClockTierReached all are),
+// so no no-op pre-check is needed here: a caller re-PATCHing the case's own
+// current state just redundantly re-applies the same effect.
+func (s *snCaseService) applyCaseStateSLAEffects(ctx context.Context, caseID string, state domain.CaseState) {
+	if s.slaClocks == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, applyCaseStateSLATimeout)
+	defer cancel()
+
+	switch state {
+	case domain.CaseStateAwaitingInfo, domain.CaseStateSolutionProposed:
+		if _, err := s.slaClocks.Pause(ctx, caseID, slaClockTypeWorkaround); err != nil {
+			logSLAClockOpFailed(ctx, "sn update case: pause workaround sla clock failed", caseID, slaClockTypeWorkaround, err)
+		}
+		if _, err := s.slaClocks.Pause(ctx, caseID, slaClockTypeResolution); err != nil {
+			logSLAClockOpFailed(ctx, "sn update case: pause resolution sla clock failed", caseID, slaClockTypeResolution, err)
+		}
+	case domain.CaseStateClosed:
+		if _, err := s.slaClocks.Resume(ctx, caseID, slaClockTypeResolution); err != nil {
+			logSLAClockOpFailed(ctx, "sn update case: resume resolution sla clock failed", caseID, slaClockTypeResolution, err)
+		}
+		for _, tier := range []string{"50", "75", "100"} {
+			if _, err := s.slaClocks.SetSLAClockTierReached(ctx, caseID, slaClockTypeResolution, tier, domain.SetSLAClockTierRequest{Status: domain.SLATierStatusReached}); err != nil {
+				logSLAClockOpFailed(ctx, "sn update case: mark resolution sla clock tier reached failed", caseID, slaClockTypeResolution, err)
+			}
+		}
+		// workaround: paused, not completed — see this function's own doc
+		// comment TODO above.
+		if _, err := s.slaClocks.Pause(ctx, caseID, slaClockTypeWorkaround); err != nil {
+			logSLAClockOpFailed(ctx, "sn update case: pause workaround sla clock failed", caseID, slaClockTypeWorkaround, err)
+		}
+	default:
+		if _, err := s.slaClocks.Resume(ctx, caseID, slaClockTypeWorkaround); err != nil {
+			logSLAClockOpFailed(ctx, "sn update case: resume workaround sla clock failed", caseID, slaClockTypeWorkaround, err)
+		}
+		if _, err := s.slaClocks.Resume(ctx, caseID, slaClockTypeResolution); err != nil {
+			logSLAClockOpFailed(ctx, "sn update case: resume resolution sla clock failed", caseID, slaClockTypeResolution, err)
+		}
 	}
 }
 
@@ -1735,6 +2009,7 @@ func (s *snCaseService) CreateCaseComment(ctx context.Context, req domain.Create
 		},
 	}
 	s.publishCommentAdded(ctx, req, result.Comment.ID)
+	s.applyResponseSLAOnComment(ctx, req, result.Comment.ID)
 	return result, nil
 }
 
@@ -2661,6 +2936,17 @@ func (s *snCaseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReq
 
 	if publishStatusChange && snResp.Case.State != nil {
 		s.publishStatusChanged(ctx, req.ID, snResp.Case.State.Label, caseBeforeUpdate)
+	}
+	// Deliberately independent of publishStatusChange (which is also gated
+	// on s.publisher != nil) — see applyCaseStateSLAEffects' own doc
+	// comment for why pause/resume/completion must not depend on Event Hub
+	// being configured. req.State != nil alone (not the no-op-detecting
+	// publishStatusChange flag) is enough: Pause/Resume/
+	// SetSLAClockTierReached are all idempotent, so a caller re-PATCHing
+	// the case's own current state just redundantly re-applies the same
+	// effect harmlessly.
+	if req.State != nil && snResp.Case.State != nil {
+		s.applyCaseStateSLAEffects(ctx, req.ID, resp.Case.State)
 	}
 	if publishCaseAssign {
 		assigneeName := *req.AssigneeEmail
