@@ -130,7 +130,34 @@ func (e *Engine) Handle(ctx context.Context, record eventbus.Record) error {
 // validRecipients: one bad entry fails the whole event, not just that one
 // clock) — the time.ParseDuration re-check below is defensive belt-and-
 // suspenders, not a reachable path through Handle's own call chain.
+//
+// KNOWN GAP: this is not idempotent under at-least-once Kafka redelivery.
+// A redelivered sla.clock.register for a case already in progress (paused,
+// partway through a tier, etc.) recomputes startedAt/dueAt from scratch and
+// re-registers, which — because RegisterClock always resets on conflict —
+// clears paused_at/reached_*_at and restarts the clock, and also reseeds
+// wake entries that may duplicate ones already scheduled from the original
+// delivery. Closing this needs durable event idempotency (an event ID
+// threaded through the envelope and checked before registering/seeding
+// wakes, the same durable-dedup gap event_publisher_service.go's own
+// KNOWN GAP comment describes for publish acknowledgement) — a real design
+// addition, not built speculatively here.
 func (e *Engine) registerClocks(ctx context.Context, p events.SLAClockRegisterPayload) error {
+	// startedAt is the case's actual creation time, not consume-time "now" —
+	// a delayed publish or consumer backlog must not start the SLA clock
+	// late (see events.SLAClockRegisterPayload.CaseCreatedAt's own doc
+	// comment). Falls back to "now" when absent (older/malformed producer)
+	// or unparsable, logged so a persistently-empty/bad value is visible
+	// rather than silently masked forever.
+	startedAt := time.Now()
+	if p.CaseCreatedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, p.CaseCreatedAt); err == nil {
+			startedAt = parsed
+		} else {
+			slog.WarnContext(ctx, "slaengine: sla.clock.register caseCreatedAt not RFC3339, falling back to now", "caseId", p.CaseID, "caseCreatedAt", p.CaseCreatedAt, "err", err)
+		}
+	}
+
 	var errs []error
 	for clockType, durStr := range p.Durations {
 		d, err := time.ParseDuration(durStr)
@@ -139,7 +166,6 @@ func (e *Engine) registerClocks(ctx context.Context, p events.SLAClockRegisterPa
 			continue
 		}
 
-		startedAt := time.Now()
 		dueAt := startedAt.Add(d)
 		if slices.Contains(p.AvoidWeekendDueDate, clockType) {
 			dueAt = avoidWeekend(dueAt)
@@ -148,13 +174,19 @@ func (e *Engine) registerClocks(ctx context.Context, p events.SLAClockRegisterPa
 			CaseID: p.CaseID, ClockType: clockType, StartedAt: startedAt, DueAt: dueAt,
 			CaseNumber: p.CaseNumber, WSO2CaseID: p.WSO2CaseID, CaseTitle: p.CaseTitle,
 			CaseType: p.CaseType, Product: p.Product, Team: p.Team, Priority: p.Priority,
+			State: p.State,
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("register clock %s/%s: %w", p.CaseID, clockType, err))
 			continue
 		}
 
+		// Tier wakes are scheduled from dueAt.Sub(startedAt), not the raw
+		// duration d — the two differ whenever avoidWeekend above rolled
+		// dueAt forward, and scheduling from d alone would fire the 100%
+		// wake before the clock's own persisted dueAt.
+		actualDuration := dueAt.Sub(startedAt)
 		for _, tier := range tiers {
-			at := tierTime(startedAt, d, tier)
+			at := tierTime(startedAt, actualDuration, tier)
 			member := wakeMember(p.CaseID, clockType, tier)
 			if err := e.wake.AddWake(ctx, member, at); err != nil {
 				errs = append(errs, fmt.Errorf("add wake entry %s: %w", member, err))
@@ -195,23 +227,25 @@ func tierTime(startedAt time.Time, d time.Duration, tier string) time.Time {
 
 // Tick scans the wake index for members due at or before now, and for each:
 // checks the clock isn't paused, records the tier reached (idempotently),
-// publishes events.TypeSLATierReached, and only then removes the wake
-// entry — in that order, so a publish failure leaves the wake entry in
-// place and retries on the next tick instead of silently losing it (the
+// publishes events.TypeSLATierReached, sends the Google Chat breach alert,
+// and only then removes the wake entry — in that order, so a failure at
+// either the publish or the Chat send leaves the wake entry in place and
+// retries on the next tick instead of silently losing it (the
 // entity-service write already happened and is itself idempotent, so
 // re-attempting it on a retry is harmless).
 //
-// ACCEPTED TRADE-OFF: processDueMember gates publishing on
-// SetTierReachedIfUnset's alreadyReached (skip if some earlier call already
-// claimed the tier) — a deliberate choice, made with eyes open to what it
-// costs. alreadyReached only reports whether the database claim succeeded,
-// not whether a notification was ever actually delivered: if the caller
-// that won the claim then fails to publish (Event Hub rejects the publish,
-// or this process crashes between the database write and the publish
-// call), a later rediscovery of that same tier will see alreadyReached=true
-// and skip publishing — the notification is then permanently lost, not
-// just delayed. That risk is judged acceptable here because a publish
-// failure to Azure Event Hub is rare, and clean, duplicate-free rediscovery
+// ACCEPTED TRADE-OFF: processDueMember gates the Kafka publish (not the
+// Chat send — see below) on SetTierReachedIfUnset's alreadyReached (skip
+// RE-publishing if some earlier call already claimed the tier) — a
+// deliberate choice, made with eyes open to what it costs. alreadyReached
+// only reports whether the database claim succeeded, not whether the
+// publish was ever actually delivered: if the caller that won the claim
+// then fails to publish (Event Hub rejects the publish, or this process
+// crashes between the database write and the publish call), a later
+// rediscovery of that same tier will see alreadyReached=true and skip
+// re-publishing — that one Kafka event is then permanently lost, not just
+// delayed. That risk is judged acceptable here because a publish failure
+// to Azure Event Hub is rare, and clean, duplicate-free rediscovery
 // matters routinely, not just on the rare occasion a replica races
 // another: a planned (not yet built) fallback for when Redis itself is
 // unreachable — falling back to asking entity-service directly which
@@ -220,6 +254,11 @@ func tierTime(startedAt time.Time, d time.Duration, tier string) time.Time {
 // of those would duplicate-publish on every recovery, not just
 // occasionally; that routine cost is what actually motivated keeping this
 // gating rather than the rare multi-replica race alone.
+//
+// The Chat send is deliberately NOT gated on alreadyReached — it's
+// unconditionally retried every tick until it succeeds, since a duplicate
+// breach card is a much smaller cost than a permanently silent one, unlike
+// the Kafka publish above.
 //
 // If this trade-off ever stops being acceptable (e.g. Event Hub reliability
 // turns out worse in practice, or this service starts running multiple
@@ -244,11 +283,12 @@ func (e *Engine) Tick(ctx context.Context, now time.Time) error {
 
 // processDueMember handles one due wake-index member: checks the clock
 // isn't paused, claims the tier as reached on entity-service, and skips
-// publishing (just drops the wake entry) if that claim reports
+// RE-publishing events.TypeSLATierReached if that claim reports
 // alreadyReached — see Tick's own doc comment for the trade-off this
-// accepts. Otherwise it publishes events.TypeSLATierReached and only then
-// removes the wake entry, so a publish failure on this specific call
-// leaves the entry in place for the next tick to retry.
+// accepts. It always attempts the Chat breach send, regardless of
+// alreadyReached, and only removes the wake entry once that send succeeds
+// — so either a publish failure or a Chat-send failure on this specific
+// call leaves the entry in place for the next tick to retry.
 func (e *Engine) processDueMember(ctx context.Context, member string) error {
 	caseID, clockType, tier, ok := parseWakeMember(member)
 	if !ok {
@@ -261,6 +301,17 @@ func (e *Engine) processDueMember(ctx context.Context, member string) error {
 		return fmt.Errorf("get clock %s/%s: %w", caseID, clockType, err)
 	}
 	if clock.PausedOn != nil {
+		// KNOWN GAP: this wake entry is dropped outright, not rescheduled.
+		// entity-service's pause/resume (see its own applyCaseStateSLAEffects)
+		// never extends due_at by the paused duration, and resuming a clock
+		// publishes nothing back to this service — there is today no signal
+		// that would let this engine re-add a wake entry once the case
+		// becomes active again. A clock paused past one of its tier times
+		// therefore permanently loses that tier's alert, even after resume.
+		// Closing this needs a new cross-service signal on resume (e.g. a
+		// dedicated event triggering re-registration with an extended
+		// deadline) — a real design addition, not a quick fix, so it's
+		// flagged here rather than built speculatively.
 		slog.InfoContext(ctx, "slaengine: clock is paused, dropping wake entry", "caseId", caseID, "clockType", clockType)
 		return e.wake.RemoveWake(ctx, member)
 	}
@@ -269,9 +320,27 @@ func (e *Engine) processDueMember(ctx context.Context, member string) error {
 	if err != nil {
 		return fmt.Errorf("set tier reached %s/%s/%s: %w", caseID, clockType, tier, err)
 	}
-	if alreadyReached {
+
+	if !alreadyReached {
+		envelope := events.Envelope{
+			Type:     events.TypeSLATierReached,
+			EntityID: caseID,
+		}
+		payload, err := json.Marshal(events.SLATierReachedPayload{CaseID: caseID, ClockType: clockType, Tier: tier})
+		if err != nil {
+			return fmt.Errorf("encode sla.tier_reached payload: %w", err)
+		}
+		envelope.Payload = payload
+		body, err := json.Marshal(envelope)
+		if err != nil {
+			return fmt.Errorf("encode sla.tier_reached envelope: %w", err)
+		}
+		if err := e.pub.Publish(ctx, []byte(caseID), body); err != nil {
+			return fmt.Errorf("publish sla.tier_reached %s/%s/%s: %w", caseID, clockType, tier, err)
+		}
+	} else {
 		// A deliberate, accepted trade-off — see this function's own doc
-		// comment above for the full reasoning: this skips publishing on
+		// comment above for the full reasoning: this skips RE-publishing on
 		// the rare chance that the caller who won the claim already
 		// published but this caller can't tell that from "claimed but
 		// never got to publish." Chosen because a duplicate-free rediscovery
@@ -279,39 +348,18 @@ func (e *Engine) processDueMember(ctx context.Context, member string) error {
 		// otherwise duplicate on every recovery), while the residual risk
 		// this accepts — a publish to Event Hub failing, or this process
 		// crashing between the database write and the publish call — is
-		// judged rare enough to live with.
-		slog.InfoContext(ctx, "slaengine: tier already reached by another caller, dropping stale wake entry without republishing",
+		// judged rare enough to live with. This does NOT skip the Chat send
+		// below: unlike the Kafka publish, sending the same breach card
+		// twice is a much smaller cost than never sending it at all, so it's
+		// always retried until it succeeds.
+		slog.InfoContext(ctx, "slaengine: tier already reached by another caller, skipping republish but still retrying chat alert",
 			"caseId", caseID, "clockType", clockType, "tier", tier, "reachedAt", reachedAt.Format(time.RFC3339))
-		return e.wake.RemoveWake(ctx, member)
-	}
-
-	envelope := events.Envelope{
-		Type:     events.TypeSLATierReached,
-		EntityID: caseID,
-	}
-	payload, err := json.Marshal(events.SLATierReachedPayload{CaseID: caseID, ClockType: clockType, Tier: tier})
-	if err != nil {
-		return fmt.Errorf("encode sla.tier_reached payload: %w", err)
-	}
-	envelope.Payload = payload
-	body, err := json.Marshal(envelope)
-	if err != nil {
-		return fmt.Errorf("encode sla.tier_reached envelope: %w", err)
-	}
-
-	if err := e.pub.Publish(ctx, []byte(caseID), body); err != nil {
-		return fmt.Errorf("publish sla.tier_reached %s/%s/%s: %w", caseID, clockType, tier, err)
 	}
 
 	if err := e.sendBreachAlert(ctx, clock, caseID, clockType, tier); err != nil {
-		// Same ordering/retry reasoning as the Kafka publish above: a failed
-		// send here leaves the wake entry in place, so the next tick's own
-		// SetTierReachedIfUnset call will see alreadyReached=true and skip
-		// re-publishing sla.tier_reached (already durably recorded above)
-		// but still retry the Chat send — the same accepted
-		// possible-duplicate-of-the-already-succeeded-step trade-off this
-		// package's Tick doc comment already documents for the Kafka publish
-		// itself, just now also covering this second, independent effect.
+		// Leaves the wake entry in place so the next tick retries this Chat
+		// send — regardless of alreadyReached, since the branch above only
+		// ever gates the Kafka publish, not this call.
 		return fmt.Errorf("send sla breach alert %s/%s/%s: %w", caseID, clockType, tier, err)
 	}
 

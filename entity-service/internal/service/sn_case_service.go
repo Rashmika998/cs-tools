@@ -1147,11 +1147,20 @@ func (s *snCaseService) publishCaseCreated(ctx context.Context, req domain.Creat
 //
 // Durations are encoded as Go duration strings (time.Duration.String(),
 // e.g. "24h0m0s") — csm-notification-service's slaengine parses them back
-// via time.ParseDuration and adds them to its own publish-consume-time
-// "now" to compute each clock's actual due timestamp; this function never
-// computes an absolute due time itself. AvoidWeekendDueDate carries
-// sla_policy.go's slaAvoidWeekendClockTypes for cv.Severity — see that
-// map's own doc comment for what it's for.
+// via time.ParseDuration and adds them to CaseCreatedAt (the case's actual
+// creation time, not publish/consume-time "now" — see
+// events.SLAClockRegisterPayload.CaseCreatedAt's own doc comment) to
+// compute each clock's actual due timestamp; this function never computes
+// an absolute due time itself. AvoidWeekendDueDate carries sla_policy.go's
+// slaAvoidWeekendClockTypes for cv.Severity — see that map's own doc
+// comment for what it's for.
+//
+// Like every other publish in this file, a failed Publish call below is
+// only durably recorded in event_publish_failures (searchable/resolvable),
+// not automatically retried or reconciled — see
+// EventPublisherService.Publish's own KNOWN GAP doc comment. That's an
+// existing, accepted limitation shared by every case.*/incident.* event
+// this service publishes, not something specific to SLA registration.
 func (s *snCaseService) publishSLAClockRegister(ctx context.Context, cv domain.CaseView, req domain.CreateCaseRequest, caseID string) {
 	durations, ok := slaDurations[cv.Severity]
 	if !ok || len(durations) == 0 {
@@ -1166,6 +1175,7 @@ func (s *snCaseService) publishSLAClockRegister(ctx context.Context, cv domain.C
 	payload, err := json.Marshal(events.SLAClockRegisterPayload{
 		CaseID:              caseID,
 		Durations:           durationStrings,
+		CaseCreatedAt:       cv.CreatedOn.Format(time.RFC3339),
 		AvoidWeekendDueDate: slaAvoidWeekendClockTypes[cv.Severity],
 		CaseNumber:          cv.Number,
 		WSO2CaseID:          cv.InternalID,
@@ -1174,6 +1184,7 @@ func (s *snCaseService) publishSLAClockRegister(ctx context.Context, cv domain.C
 		Product:             caseProductName(cv),
 		Team:                caseTeamName(cv),
 		Priority:            strings.ToUpper(string(cv.Severity)),
+		State:               strings.ToUpper(string(cv.State)),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "sn create case: encode sla.clock.register payload failed", "caseId", caseID, "error", err)

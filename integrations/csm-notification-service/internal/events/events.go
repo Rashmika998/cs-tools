@@ -292,6 +292,12 @@ type IncidentCreatedPayload struct {
 // startedAt/dueAt at consume time; entity-service can only signal which
 // clock type needs it.
 //
+// CaseCreatedAt is an RFC3339 timestamp of the case's actual creation time
+// — internal/slaengine.registerClocks uses it (not consume-time "now") as
+// each clock's startedAt, so a delayed publish or consumer backlog doesn't
+// start the SLA clock late; an empty or unparsable value falls back to
+// consume-time "now" there.
+//
 // The remaining fields are purely for display in a Google Chat breach
 // card (see internal/slaengine.Engine.sendBreachAlert) and are stored
 // verbatim on the registered sla_clocks row so that card can be built from
@@ -302,6 +308,7 @@ type IncidentCreatedPayload struct {
 type SLAClockRegisterPayload struct {
 	CaseID              string            `json:"caseId"`
 	Durations           map[string]string `json:"durations"`
+	CaseCreatedAt       string            `json:"caseCreatedAt,omitempty"`
 	AvoidWeekendDueDate []string          `json:"avoidWeekendDueDate,omitempty"`
 	CaseNumber          string            `json:"caseNumber,omitempty"`
 	WSO2CaseID          string            `json:"wso2CaseId,omitempty"`
@@ -310,6 +317,7 @@ type SLAClockRegisterPayload struct {
 	Product             string            `json:"product,omitempty"`
 	Team                string            `json:"team,omitempty"`
 	Priority            string            `json:"priority,omitempty"`
+	State               string            `json:"state,omitempty"`
 }
 
 // SLATierReachedPayload is TypeSLATierReached's payload — published by

@@ -73,6 +73,20 @@ type SLAClockRepository interface {
 	// csm-notification-service's slaengine only ever reads paused_at (via
 	// Get, before firing a tier), never writes it. Returns a
 	// *apierror.NotFoundError if no such clock has been registered.
+	//
+	// KNOWN GAP: due_at is never adjusted here. A clock paused for any
+	// stretch of time resumes with the same due_at it had before, so the
+	// time spent paused is not added back — combined with
+	// csm-notification-service's slaengine dropping (not rescheduling) a
+	// wake entry that comes due while paused (see that package's own
+	// processDueMember), a clock paused past one of its tier times can
+	// permanently lose that tier's alert even after resuming. Fixing this
+	// properly needs entity-service to extend due_at by the paused duration
+	// AND a way to tell csm-notification-service to requeue wake entries on
+	// resume (no such signal exists today — pause/resume are deliberately
+	// in-process-only, see snCaseService.applyCaseStateSLAEffects) — a real
+	// design addition, not a quick fix, so it's flagged here rather than
+	// built speculatively.
 	SetPaused(ctx context.Context, caseID, clockType string, paused bool) (domain.SLAClock, error)
 }
 

@@ -167,6 +167,7 @@ type RegisterClockRequest struct {
 	Product    string
 	Team       string
 	Priority   string
+	State      string
 }
 
 // RegisterClock calls POST /cases/{caseId}/sla-clocks.
@@ -182,10 +183,12 @@ func (c *EntityClient) RegisterClock(ctx context.Context, req RegisterClockReque
 		Product    string    `json:"product,omitempty"`
 		Team       string    `json:"team,omitempty"`
 		Priority   string    `json:"priority,omitempty"`
+		State      string    `json:"state,omitempty"`
 	}{
 		ClockType: req.ClockType, StartedAt: req.StartedAt, DueAt: req.DueAt,
 		CaseNumber: req.CaseNumber, WSO2CaseID: req.WSO2CaseID, CaseTitle: req.CaseTitle,
 		CaseType: req.CaseType, Product: req.Product, Team: req.Team, Priority: req.Priority,
+		State: req.State,
 	})
 	if err != nil {
 		return fmt.Errorf("slaengine: encode RegisterClock request: %w", err)

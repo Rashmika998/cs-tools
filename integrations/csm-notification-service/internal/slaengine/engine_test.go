@@ -109,8 +109,31 @@ func (f *fakePublisher) Publish(_ context.Context, key, value []byte) error {
 	return f.err
 }
 
+type chatCall struct {
+	product, clockType, tier, caseNumber string
+}
+
+// fakeChatSender is a hand-written fake for chatSender — Tick's happy path
+// (and, since the Chat-retry fix, its alreadyReached path too) always
+// reaches Engine.sendBreachAlert, so every Tick-exercising test needs one
+// wired in even when it isn't asserting on the Chat send itself.
+type fakeChatSender struct {
+	calls []chatCall
+	err   error
+}
+
+func (f *fakeChatSender) SendSLABreachAlert(_ context.Context, product, clockType, tier, caseNumber, _, _, _, _, _, _, _, _, _ string) error {
+	f.calls = append(f.calls, chatCall{product, clockType, tier, caseNumber})
+	return f.err
+}
+
+// fakeLinkResolver is a hand-written fake for linkResolver.
+type fakeLinkResolver struct{}
+
+func (fakeLinkResolver) CSMLink(caseID string) string { return "https://example.test/cases/" + caseID }
+
 func newTestEngine(entity entityClock, wake wakeIndex, pub eventPublisher) *Engine {
-	return &Engine{entity: entity, wake: wake, pub: pub}
+	return &Engine{entity: entity, wake: wake, pub: pub, chat: &fakeChatSender{}, links: fakeLinkResolver{}, defaultChatProduct: "Test Product"}
 }
 
 func TestEngine_Handle_IgnoresOtherEventTypes(t *testing.T) {
