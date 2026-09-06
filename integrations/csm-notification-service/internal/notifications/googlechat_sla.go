@@ -148,7 +148,7 @@ func (c *GoogleChatClient) SendSLABreachAlert(ctx context.Context, product, cloc
 		lines = append(lines, caseAlertLine(`<b>Product :</b> %s`, productName))
 	}
 	if team != "" {
-		lines = append(lines, caseAlertLine(`<b>Team :</b> %s`, team))
+		lines = append(lines, caseAlertLine(`<b>Team :</b> <b>%s</b>`, team))
 	}
 	lines = append(lines, caseAlertLine(`<b>Priority :</b> <font color="%s">%s</font>`, severityColor, severityLabel))
 	if state != "" {
@@ -157,7 +157,7 @@ func (c *GoogleChatClient) SendSLABreachAlert(ctx context.Context, product, cloc
 	if openedAt != "" {
 		lines = append(lines, caseAlertLine(`<b>Opened At :</b> %s`, openedAt))
 	}
-	lines = append(lines, caseAlertLine(`<b>SLA Percentage :</b> <font color="%s">%s%%</font>`, slaBreachColor(tier), tier))
+	lines = append(lines, caseAlertLine(`<b>SLA Percentage :</b> <font color="%s"><b>%s%%</b></font>`, slaBreachColor(tier), tier))
 	text := strings.Join(lines, "<br>")
 
 	msg := chatCardMessage{
