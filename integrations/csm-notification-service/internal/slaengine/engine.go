@@ -228,44 +228,58 @@ func tierTime(startedAt time.Time, d time.Duration, tier string) time.Time {
 // Tick scans the wake index for members due at or before now, and for each:
 // checks the clock isn't paused, records the tier reached (idempotently),
 // publishes events.TypeSLATierReached, sends the Google Chat breach alert,
-// and only then removes the wake entry — in that order, so a failure at
-// either the publish or the Chat send leaves the wake entry in place and
-// retries on the next tick instead of silently losing it (the
-// entity-service write already happened and is itself idempotent, so
-// re-attempting it on a retry is harmless).
+// and only then removes the wake entry — in that order, so a publish
+// failure leaves the wake entry in place and retries on the next tick
+// instead of silently losing it (the entity-service write already happened
+// and is itself idempotent, so re-attempting it on a retry is harmless).
 //
-// ACCEPTED TRADE-OFF: processDueMember gates the Kafka publish (not the
-// Chat send — see below) on SetTierReachedIfUnset's alreadyReached (skip
-// RE-publishing if some earlier call already claimed the tier) — a
-// deliberate choice, made with eyes open to what it costs. alreadyReached
-// only reports whether the database claim succeeded, not whether the
-// publish was ever actually delivered: if the caller that won the claim
-// then fails to publish (Event Hub rejects the publish, or this process
-// crashes between the database write and the publish call), a later
-// rediscovery of that same tier will see alreadyReached=true and skip
-// re-publishing — that one Kafka event is then permanently lost, not just
-// delayed. That risk is judged acceptable here because a publish failure
-// to Azure Event Hub is rare, and clean, duplicate-free rediscovery
-// matters routinely, not just on the rare occasion a replica races
-// another: a planned (not yet built) fallback for when Redis itself is
-// unreachable — falling back to asking entity-service directly which
-// tiers are overdue — would, once Redis recovers, rediscover whatever
-// stale wake entries survived the outage. Without this gating, every one
-// of those would duplicate-publish on every recovery, not just
-// occasionally; that routine cost is what actually motivated keeping this
-// gating rather than the rare multi-replica race alone.
+// ACCEPTED TRADE-OFF: processDueMember gates BOTH the Kafka publish AND the
+// Chat send on SetTierReachedIfUnset's alreadyReached (skip both if some
+// earlier call already claimed the tier) — a deliberate choice, made with
+// eyes open to what it costs, and NOT simply "retry the Chat send anyway":
+// alreadyReached=true is ambiguous between two very different callers, and
+// this engine has no way to tell them apart:
 //
-// The Chat send is deliberately NOT gated on alreadyReached — it's
-// unconditionally retried every tick until it succeeds, since a duplicate
-// breach card is a much smaller cost than a permanently silent one, unlike
-// the Kafka publish above.
+//  1. This same tier, claimed by an earlier tick of this engine itself,
+//     whose publish or Chat send then failed — a genuine retry case.
+//  2. This tier claimed early by an entirely different, in-process caller —
+//     entity-service's applyResponseSLAOnComment (a qualifying support
+//     engineer comment) or applyCaseStateSLAEffects (case closed) — which
+//     claims all three tiers at once specifically so THIS wake index's
+//     later firing is a silent no-op, not a breach alert. Sending a Chat
+//     card here would be a false "SLA at risk/violated" alert for an SLA
+//     that was actually satisfied in time.
 //
-// If this trade-off ever stops being acceptable (e.g. Event Hub reliability
-// turns out worse in practice, or this service starts running multiple
-// replicas), the real fix is a durable delivery/outbox state tracked
-// separately from the reached-claim, with a lease or expiry so a failed
-// attempt's slot can still be retried by someone else — not built, and a
-// real addition, not a quick one.
+// An earlier version of this function sent the Chat alert unconditionally
+// on alreadyReached=true, reasoning that a duplicate card is cheaper than a
+// permanently lost one — that reasoning only holds for case 1 above, and
+// broke case 2 outright: a support engineer's timely, qualifying comment
+// after the 50% mark but before 75% still produced a "75% at risk" Chat
+// alert, because entity-service's early tier-claim (case 2) looks
+// identical to this engine's own retry claim (case 1) from here. Reverted:
+// alreadyReached now skips both the publish and the Chat send, the same as
+// before that change — accepting that a genuine Chat-send failure (case 1)
+// is not retried and that specific alert can be permanently lost, since
+// that risk is smaller and rarer than routinely false-alerting every
+// legitimate early completion (case 2).
+//
+// A publish failure to Azure Event Hub, or a Chat send failure, is rare;
+// clean, duplicate-free rediscovery matters routinely, not just on the rare
+// occasion a replica races another: a planned (not yet built) fallback for
+// when Redis itself is unreachable — falling back to asking entity-service
+// directly which tiers are overdue — would, once Redis recovers,
+// rediscover whatever stale wake entries survived the outage. Without this
+// gating, every one of those would duplicate-publish/duplicate-alert on
+// every recovery, not just occasionally; that routine cost is what
+// actually motivated keeping this gating rather than the rare
+// multi-replica race alone.
+//
+// If this trade-off ever stops being acceptable, the real fix is a durable
+// delivery/outbox state tracked separately from the reached-claim (so case
+// 1's retry and case 2's early-completion-suppression can actually be told
+// apart), with a lease or expiry so a failed attempt's slot can still be
+// retried by someone else — not built, and a real design addition, not a
+// quick one.
 func (e *Engine) Tick(ctx context.Context, now time.Time) error {
 	members, err := e.wake.DueMembers(ctx, now)
 	if err != nil {
@@ -283,12 +297,15 @@ func (e *Engine) Tick(ctx context.Context, now time.Time) error {
 
 // processDueMember handles one due wake-index member: checks the clock
 // isn't paused, claims the tier as reached on entity-service, and skips
-// RE-publishing events.TypeSLATierReached if that claim reports
-// alreadyReached — see Tick's own doc comment for the trade-off this
-// accepts. It always attempts the Chat breach send, regardless of
-// alreadyReached, and only removes the wake entry once that send succeeds
-// — so either a publish failure or a Chat-send failure on this specific
-// call leaves the entry in place for the next tick to retry.
+// both publishing (just drops the wake entry) and the Chat breach send if
+// that claim reports alreadyReached — see Tick's own doc comment for why
+// the Chat send is gated here too, not just the publish (an in-process
+// early completion on entity-service's side looks identical to this
+// engine's own retry from here, and must never produce a false alert).
+// Otherwise it publishes events.TypeSLATierReached, sends the Chat alert,
+// and only then removes the wake entry, so a publish failure or a
+// Chat-send failure on this specific call leaves the entry in place for
+// the next tick to retry.
 func (e *Engine) processDueMember(ctx context.Context, member string) error {
 	caseID, clockType, tier, ok := parseWakeMember(member)
 	if !ok {
@@ -321,45 +338,49 @@ func (e *Engine) processDueMember(ctx context.Context, member string) error {
 		return fmt.Errorf("set tier reached %s/%s/%s: %w", caseID, clockType, tier, err)
 	}
 
-	if !alreadyReached {
-		envelope := events.Envelope{
-			Type:     events.TypeSLATierReached,
-			EntityID: caseID,
-		}
-		payload, err := json.Marshal(events.SLATierReachedPayload{CaseID: caseID, ClockType: clockType, Tier: tier})
-		if err != nil {
-			return fmt.Errorf("encode sla.tier_reached payload: %w", err)
-		}
-		envelope.Payload = payload
-		body, err := json.Marshal(envelope)
-		if err != nil {
-			return fmt.Errorf("encode sla.tier_reached envelope: %w", err)
-		}
-		if err := e.pub.Publish(ctx, []byte(caseID), body); err != nil {
-			return fmt.Errorf("publish sla.tier_reached %s/%s/%s: %w", caseID, clockType, tier, err)
-		}
-	} else {
+	if alreadyReached {
 		// A deliberate, accepted trade-off — see this function's own doc
-		// comment above for the full reasoning: this skips RE-publishing on
-		// the rare chance that the caller who won the claim already
-		// published but this caller can't tell that from "claimed but
-		// never got to publish." Chosen because a duplicate-free rediscovery
-		// path matters routinely (the planned Redis-outage fallback would
-		// otherwise duplicate on every recovery), while the residual risk
-		// this accepts — a publish to Event Hub failing, or this process
-		// crashing between the database write and the publish call — is
-		// judged rare enough to live with. This does NOT skip the Chat send
-		// below: unlike the Kafka publish, sending the same breach card
-		// twice is a much smaller cost than never sending it at all, so it's
-		// always retried until it succeeds.
-		slog.InfoContext(ctx, "slaengine: tier already reached by another caller, skipping republish but still retrying chat alert",
+		// comment above and Tick's own doc comment for the full reasoning.
+		// alreadyReached=true is ambiguous between "this engine's own retry"
+		// and "an in-process early completion on entity-service's side
+		// (a qualifying support engineer comment, or a case closing)" — the
+		// two are indistinguishable from here, and the latter must never
+		// produce a Chat alert for an SLA that was actually satisfied in
+		// time, so this skips BOTH the Kafka publish and the Chat send
+		// rather than assuming the safer-looking "just don't republish, but
+		// still alert" — that assumption was tried and found to send false
+		// breach alerts for legitimate early completions.
+		slog.InfoContext(ctx, "slaengine: tier already reached by another caller, dropping stale wake entry without republishing or alerting",
 			"caseId", caseID, "clockType", clockType, "tier", tier, "reachedAt", reachedAt.Format(time.RFC3339))
+		return e.wake.RemoveWake(ctx, member)
+	}
+
+	envelope := events.Envelope{
+		Type:     events.TypeSLATierReached,
+		EntityID: caseID,
+	}
+	payload, err := json.Marshal(events.SLATierReachedPayload{CaseID: caseID, ClockType: clockType, Tier: tier})
+	if err != nil {
+		return fmt.Errorf("encode sla.tier_reached payload: %w", err)
+	}
+	envelope.Payload = payload
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		return fmt.Errorf("encode sla.tier_reached envelope: %w", err)
+	}
+	if err := e.pub.Publish(ctx, []byte(caseID), body); err != nil {
+		return fmt.Errorf("publish sla.tier_reached %s/%s/%s: %w", caseID, clockType, tier, err)
 	}
 
 	if err := e.sendBreachAlert(ctx, clock, caseID, clockType, tier); err != nil {
-		// Leaves the wake entry in place so the next tick retries this Chat
-		// send — regardless of alreadyReached, since the branch above only
-		// ever gates the Kafka publish, not this call.
+		// Same ordering/retry reasoning as the Kafka publish above: a failed
+		// send here leaves the wake entry in place, so the next tick's own
+		// SetTierReachedIfUnset call will see alreadyReached=true and skip
+		// both re-publishing and re-alerting (per the branch above) — a
+		// genuine Chat-send failure on this specific call is therefore not
+		// retried and can be permanently lost. Accepted for the same reason
+		// the Kafka publish failure above is: it's rarer and smaller than
+		// routinely false-alerting every legitimate early completion.
 		return fmt.Errorf("send sla breach alert %s/%s/%s: %w", caseID, clockType, tier, err)
 	}
 
