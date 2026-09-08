@@ -42,28 +42,21 @@ const (
 	// CaseBillableStatusChangedPayload's own doc comment for what it's for
 	// and why the two data sources aren't symmetric here.
 	//
-	// TODO: nothing consumes this yet. The intended reaction — bulk-flip
-	// every time card on the case to match Payload.IsBillable — needs a
-	// time_cards table/repo/service on the Postgres data source first (it
-	// has none today; time cards are ServiceNow-only, see
-	// internal/service/sn_time_card_service.go), plus a consumer (in
-	// entity-service itself, or a new dedicated one, following
-	// csm-notification-service's internal/slaengine as the closest
-	// precedent for "a consumer that reacts to a case-events record by
-	// writing back N records to entity-service"). That consumer MUST use
-	// its own dedicated consumer group, not share csm-notification-service's
-	// dispatch.Dispatcher's — its eventbus.Consumer.Run processes one
-	// record at a time, fully sequentially/blocking (fetch, handle, commit,
-	// repeat), so a slow bulk update over "several time cards," each its
-	// own HTTP round trip, would delay unrelated email/Chat delivery on
-	// that same consumer instance. This is exactly why slaengine already
-	// has its own SLA_CONSUMER_GROUP/SLA_CONSUMER_COUNT instead of being
-	// folded into dispatch's — follow that precedent, don't add a case to
-	// dispatch.Handle's switch for this. Publishing this event is
-	// therefore currently commented out at its one call site
-	// (case_service.go's UpdateCase) — the detection logic is real and
-	// live, only the actual Publish call is inert, so there's nothing to
-	// enable here until that consumer exists.
+	// TODO: the consumer group plumbing exists on the
+	// csm-notification-service side (its own dedicated consumer group,
+	// internal/billablestatus.Engine — not folded into dispatch.Dispatcher's
+	// group, since eventbus.Consumer.Run processes one record at a time,
+	// fully sequentially/blocking, and a bulk update over "several time
+	// cards" must not delay unrelated email/Chat delivery on the same
+	// consumer instance), but its Handle only logs today — the actual
+	// reaction (bulk-flip every time card on the case to match
+	// Payload.IsBillable) needs a time_cards table/repo/service on this
+	// data source first (it has none today; time cards are
+	// ServiceNow-only, see internal/service/sn_time_card_service.go).
+	// Publishing this event is therefore still commented out at its one
+	// call site (case_service.go's UpdateCase) — the detection logic is
+	// real and live, only the actual Publish call is inert, so there's
+	// nothing for that consumer to receive yet either.
 	TypeCaseBillableStatusChanged Type = "case.billable_status_changed"
 	// TypeSLAClockRegister belongs to csm-notification-service's own
 	// internal/slaengine, not its internal/dispatch — see

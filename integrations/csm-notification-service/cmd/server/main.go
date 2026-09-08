@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/billablestatus"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/dispatch"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/entity"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/eventbus"
@@ -351,6 +352,19 @@ func main() {
 		go slaEngine.RunTicker(ctx, tickInterval)
 	}
 
+	// billablestatus has no Redis/state dependency at all (unlike slaEngine
+	// above) — it's a plain Kafka consumer, so it's started unconditionally,
+	// not gated behind the REDIS_URL/REDIS_ADDR check. Its own dedicated
+	// consumer group, not dispatcher's — see that package's own doc comment
+	// for why. Its Handle is currently log-only (see the package doc
+	// comment): entity-service's own Publish call for events.
+	// TypeCaseBillableStatusChanged is itself still commented out, so this
+	// consumer group exists ahead of having anything to actually do yet.
+	billableStatusEngine := billablestatus.NewEngine()
+	billableStatusConsumerGroup := envOrDefault("BILLABLE_STATUS_CONSUMER_GROUP", "csm-notification-service-billable-status")
+	billableStatusConsumerCount := envInt("BILLABLE_STATUS_CONSUMER_COUNT", 1)
+	billableStatusConsumers := startConsumers(ctx, "billable-status", eventBusCfg, billableStatusConsumerGroup, billableStatusConsumerCount, billableStatusEngine.Handle, toDeadLetter)
+
 	<-ctx.Done()
 	stop()
 
@@ -361,6 +375,9 @@ func main() {
 		c.Close()
 	}
 	for _, c := range slaConsumers {
+		c.Close()
+	}
+	for _, c := range billableStatusConsumers {
 		c.Close()
 	}
 	if slaProducer != nil {

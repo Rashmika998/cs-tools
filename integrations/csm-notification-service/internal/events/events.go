@@ -59,26 +59,28 @@ const (
 	// TypeCaseBillableStatusChanged is Postgres-data-source-only on the
 	// entity-service side, and — like TypeSLAClockRegister/TypeSLATierReached
 	// above — not an email/Chat trigger, so dispatch.Handle's switch has no
-	// real case for it either, just the same no-op treatment. Unlike those
-	// two, nothing in this service (or anywhere else) actually publishes or
-	// consumes it yet: entity-service's own Publish call for it is
-	// deliberately commented out (no time_cards table/repo/service exists
-	// on its Postgres data source yet, the prerequisite for the intended
-	// reaction — bulk-flipping every time card's billable flag for the
-	// case). Declared here anyway, kept in sync by hand with
-	// entity-service's own internal/events/events.go, so the two schemas
-	// never drift even while this type is otherwise dormant.
+	// case for it either. Unlike those two, it isn't even handled by
+	// dispatch's own no-op case: internal/billablestatus.Engine consumes it
+	// instead, on its own dedicated consumer group (see
+	// cmd/server/main.go's BILLABLE_STATUS_CONSUMER_GROUP/_COUNT) — the
+	// same reasoning internal/slaengine's SLA_CONSUMER_GROUP/
+	// SLA_CONSUMER_COUNT already established: eventbus.Consumer.Run
+	// processes one record at a time, fully sequentially (fetch, handle,
+	// commit, repeat), so a future bulk update over "several time cards,"
+	// each its own HTTP round trip to entity-service, must not delay
+	// unrelated email/Chat delivery on dispatch's own consumer instance.
 	//
-	// TODO: when a consumer for this is built, give it its own dedicated
-	// consumer group (its own eventbus.Consumer, its own group/count env
-	// vars) — the same reasoning internal/slaengine's SLA_CONSUMER_GROUP/
-	// SLA_CONSUMER_COUNT already established for exactly this class of
-	// reaction, not a case added to dispatch.Handle's switch.
-	// eventbus.Consumer.Run processes one record at a time, fully
-	// sequentially (fetch, handle, commit, repeat) — a bulk update over
-	// "several time cards," each its own HTTP round trip to entity-service,
-	// would otherwise delay unrelated email/Chat delivery on the same
-	// consumer instance.
+	// TODO: internal/billablestatus.Engine.Handle only logs today — the
+	// actual reaction (bulk-flipping every time card's billable flag for
+	// the case) needs a Postgres time_cards table/repo/service on
+	// entity-service first (it has none today; time cards are
+	// ServiceNow-only there). entity-service's own Publish call for this
+	// event is itself still commented out for the same reason, so this
+	// consumer group exists ahead of ever actually receiving one — see
+	// that type's own doc comment in entity-service's copy of this file.
+	// Declared here anyway, kept in sync by hand with entity-service's own
+	// internal/events/events.go, so the two schemas never drift even while
+	// this type is otherwise dormant.
 	TypeCaseBillableStatusChanged Type = "case.billable_status_changed"
 )
 
