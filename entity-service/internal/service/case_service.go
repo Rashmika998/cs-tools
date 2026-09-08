@@ -870,8 +870,71 @@ func (s *caseService) GetAttachment(_ context.Context, _ string) (domain.Attachm
 	return domain.Attachment{}, &apierror.ServiceUnavailableError{Msg: "attachments are only supported for the ServiceNow data source"}
 }
 
-func (s *caseService) AddCaseTag(_ context.Context, _, _ string) (domain.Tag, error) {
+// AddCaseTag implements CaseService.
+//
+// TEMPORARY: case tags have no real Postgres storage yet — no case_tags
+// table/migration/repository exists on this data source, so this remains a
+// stub that reports the tag itself as unsupported (matching the two
+// sibling stubs below). The one exception, added ahead of real tag
+// storage at explicit request: a "patch" label on a case currently at LOW
+// severity (S4) is a special-case override of
+// detectBillableStatusChange's normal "entering S4 makes time cards
+// billable" rule — see detectPatchTagBillableOverride's own doc comment.
+// That check runs (and logs its result) even though the tag itself is
+// never actually persisted here, so the override logic is real and
+// demonstrable ahead of full Postgres tag support — wire this into a real
+// AddCaseTag once case_tags exists, rather than leaving it stranded here.
+func (s *caseService) AddCaseTag(ctx context.Context, caseID, label string) (domain.Tag, error) {
+	s.detectPatchTagBillableOverride(ctx, caseID, label)
 	return domain.Tag{}, &apierror.ServiceUnavailableError{Msg: "case tags are only supported for the ServiceNow data source"}
+}
+
+// detectPatchTagBillableOverride is a special-case override of
+// detectBillableStatusChange's normal "entering LOW/S4 severity makes time
+// cards billable" rule: a case tagged "patch" while at LOW severity should
+// have its time cards non-billable regardless — WSO2 still covers a patch
+// under support even for an otherwise best-efforts S4 case. Label matching
+// is case/whitespace-insensitive, same reasoning as this codebase's other
+// free-text label lookups (e.g. slaSeverityLabelAndColor in
+// csm-notification-service). Unlike detectBillableStatusChange, this is
+// one-directional: removing the tag (or adding any other label) never
+// reverses it — this only ever forces isBillable=false, never back to
+// true, since there's no natural "un-patch" event to react to.
+//
+// Same commented-out-publish posture as detectBillableStatusChange: logs
+// only, since there is still no time_cards consumer to act on
+// events.TypeCaseBillableStatusChanged (see that type's own doc comment).
+func (s *caseService) detectPatchTagBillableOverride(ctx context.Context, caseID, label string) {
+	if !strings.EqualFold(strings.TrimSpace(label), "patch") {
+		return
+	}
+
+	cv, err := s.repo.GetCaseByID(ctx, caseID)
+	if err != nil {
+		slog.ErrorContext(ctx, "add case tag: patch billable override not evaluated, get case failed", "caseId", caseID)
+		return
+	}
+	if cv.Severity != domain.CaseSeverityLow {
+		return
+	}
+
+	// TODO: enable once a consumer exists for events.TypeCaseBillableStatusChanged
+	// (bulk-flipping every time card's IsBillable for caseId) — see that
+	// type's own doc comment for what's still missing.
+	//
+	// payload, err := json.Marshal(events.CaseBillableStatusChangedPayload{CaseID: caseID, IsBillable: false})
+	// if err != nil {
+	// 	slog.ErrorContext(ctx, "add case tag: encode case.billable_status_changed payload failed", "caseId", caseID, "error", err)
+	// 	return
+	// }
+	// if s.publisher == nil {
+	// 	return
+	// }
+	// if err := s.publisher.Publish(ctx, events.TypeCaseBillableStatusChanged, caseID, payload); err != nil {
+	// 	slog.ErrorContext(ctx, "add case tag: publish case.billable_status_changed failed", "caseId", caseID)
+	// }
+
+	slog.InfoContext(ctx, "add case tag: patch tag on an S4 case, time cards should be non-billable, event hub publish not yet enabled", "caseId", caseID, "isBillable", false)
 }
 
 func (s *caseService) RemoveCaseTag(_ context.Context, _, _ string) error {

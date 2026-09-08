@@ -120,6 +120,19 @@ EventPublisherService` field for this (nil the same way `snCaseService`'s
 own `publisher` can be), wired from `routes.go`'s existing `eventPublisher`
 var.
 
+**Special case, same inert posture**: `caseService.AddCaseTag` calls
+`detectPatchTagBillableOverride`, which forces `isBillable=false` (logged
+only, same as above) when a case tagged `"patch"` (case/whitespace-
+insensitive) is currently at LOW severity — WSO2 still covers a patch under
+support even for an otherwise best-efforts S4 case, overriding the normal
+"entering S4 makes time cards billable" rule. One-directional: removing the
+tag never reverses it. **TEMPORARY**: case tags have no real Postgres
+storage at all yet (no `case_tags` table/repo — `AddCaseTag`/`RemoveCaseTag`/
+`SearchTags` are ServiceNow-only, see `sn_case_service.go`'s own real
+implementations), so this override runs and logs ahead of the tag itself
+ever actually being persisted on this data source — added at explicit
+request, to be wired into a real `AddCaseTag` once `case_tags` exists.
+
 - **`snCaseService.CreateCase`** publishes `case.created` via a private
   `publishCaseCreated` helper, called after the SN create call succeeds.
   Rather than building the payload from `req`/the create response (which
