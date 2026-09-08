@@ -50,7 +50,16 @@ const (
 	// entity-service itself, or a new dedicated one, following
 	// csm-notification-service's internal/slaengine as the closest
 	// precedent for "a consumer that reacts to a case-events record by
-	// writing back N records to entity-service"). Publishing this event is
+	// writing back N records to entity-service"). That consumer MUST use
+	// its own dedicated consumer group, not share csm-notification-service's
+	// dispatch.Dispatcher's — its eventbus.Consumer.Run processes one
+	// record at a time, fully sequentially/blocking (fetch, handle, commit,
+	// repeat), so a slow bulk update over "several time cards," each its
+	// own HTTP round trip, would delay unrelated email/Chat delivery on
+	// that same consumer instance. This is exactly why slaengine already
+	// has its own SLA_CONSUMER_GROUP/SLA_CONSUMER_COUNT instead of being
+	// folded into dispatch's — follow that precedent, don't add a case to
+	// dispatch.Handle's switch for this. Publishing this event is
 	// therefore currently commented out at its one call site
 	// (case_service.go's UpdateCase) — the detection logic is real and
 	// live, only the actual Publish call is inert, so there's nothing to

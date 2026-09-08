@@ -68,6 +68,17 @@ const (
 	// case). Declared here anyway, kept in sync by hand with
 	// entity-service's own internal/events/events.go, so the two schemas
 	// never drift even while this type is otherwise dormant.
+	//
+	// TODO: when a consumer for this is built, give it its own dedicated
+	// consumer group (its own eventbus.Consumer, its own group/count env
+	// vars) — the same reasoning internal/slaengine's SLA_CONSUMER_GROUP/
+	// SLA_CONSUMER_COUNT already established for exactly this class of
+	// reaction, not a case added to dispatch.Handle's switch.
+	// eventbus.Consumer.Run processes one record at a time, fully
+	// sequentially (fetch, handle, commit, repeat) — a bulk update over
+	// "several time cards," each its own HTTP round trip to entity-service,
+	// would otherwise delay unrelated email/Chat delivery on the same
+	// consumer instance.
 	TypeCaseBillableStatusChanged Type = "case.billable_status_changed"
 )
 
