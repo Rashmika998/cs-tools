@@ -44,7 +44,7 @@ const (
 	//
 	// TODO: the consumer group plumbing exists on the
 	// csm-notification-service side (its own dedicated consumer group,
-	// internal/billablestatus.Engine — not folded into dispatch.Dispatcher's
+	// internal/timecardengine.Engine — not folded into dispatch.Dispatcher's
 	// group, since eventbus.Consumer.Run processes one record at a time,
 	// fully sequentially/blocking, and a bulk update over "several time
 	// cards" must not delay unrelated email/Chat delivery on the same

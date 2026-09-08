@@ -329,7 +329,7 @@ func (d *Dispatcher) Handle(ctx context.Context, record eventbus.Record) error {
 		// just not this consumer's concern.
 		return nil
 	case events.TypeCaseBillableStatusChanged:
-		// internal/billablestatus's own consumer group (a different group
+		// internal/timecardengine's own consumer group (a different group
 		// ID, so it gets its own full copy of this same topic) is what
 		// reacts to this one — same shape as the SLA case above, just with
 		// its handler currently log-only rather than a real reaction (see

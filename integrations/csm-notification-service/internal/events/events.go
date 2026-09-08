@@ -60,9 +60,9 @@ const (
 	// entity-service side, and — like TypeSLAClockRegister/TypeSLATierReached
 	// above — not an email/Chat trigger, so dispatch.Handle's switch has no
 	// case for it either. Unlike those two, it isn't even handled by
-	// dispatch's own no-op case: internal/billablestatus.Engine consumes it
+	// dispatch's own no-op case: internal/timecardengine.Engine consumes it
 	// instead, on its own dedicated consumer group (see
-	// cmd/server/main.go's BILLABLE_STATUS_CONSUMER_GROUP/_COUNT) — the
+	// cmd/server/main.go's TIME_CARD_CONSUMER_GROUP/_COUNT) — the
 	// same reasoning internal/slaengine's SLA_CONSUMER_GROUP/
 	// SLA_CONSUMER_COUNT already established: eventbus.Consumer.Run
 	// processes one record at a time, fully sequentially (fetch, handle,
@@ -70,7 +70,7 @@ const (
 	// each its own HTTP round trip to entity-service, must not delay
 	// unrelated email/Chat delivery on dispatch's own consumer instance.
 	//
-	// TODO: internal/billablestatus.Engine.Handle only logs today — the
+	// TODO: internal/timecardengine.Engine.Handle only logs today — the
 	// actual reaction (bulk-flipping every time card's billable flag for
 	// the case) needs a Postgres time_cards table/repo/service on
 	// entity-service first (it has none today; time cards are

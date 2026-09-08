@@ -32,7 +32,6 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/billablestatus"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/dispatch"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/entity"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/eventbus"
@@ -40,6 +39,7 @@ import (
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/notifications"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/recipientlinks"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/slaengine"
+	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/timecardengine"
 )
 
 func main() {
@@ -352,7 +352,7 @@ func main() {
 		go slaEngine.RunTicker(ctx, tickInterval)
 	}
 
-	// billablestatus has no Redis/state dependency at all (unlike slaEngine
+	// timecardengine has no Redis/state dependency at all (unlike slaEngine
 	// above) — it's a plain Kafka consumer, so it's started unconditionally,
 	// not gated behind the REDIS_URL/REDIS_ADDR check. Its own dedicated
 	// consumer group, not dispatcher's — see that package's own doc comment
@@ -360,10 +360,10 @@ func main() {
 	// comment): entity-service's own Publish call for events.
 	// TypeCaseBillableStatusChanged is itself still commented out, so this
 	// consumer group exists ahead of having anything to actually do yet.
-	billableStatusEngine := billablestatus.NewEngine()
-	billableStatusConsumerGroup := envOrDefault("BILLABLE_STATUS_CONSUMER_GROUP", "csm-notification-service-billable-status")
-	billableStatusConsumerCount := envInt("BILLABLE_STATUS_CONSUMER_COUNT", 1)
-	billableStatusConsumers := startConsumers(ctx, "billable-status", eventBusCfg, billableStatusConsumerGroup, billableStatusConsumerCount, billableStatusEngine.Handle, toDeadLetter)
+	timeCardEngine := timecardengine.NewEngine()
+	timeCardConsumerGroup := envOrDefault("TIME_CARD_CONSUMER_GROUP", "csm-notification-service-time-card")
+	timeCardConsumerCount := envInt("TIME_CARD_CONSUMER_COUNT", 1)
+	timeCardConsumers := startConsumers(ctx, "time-card", eventBusCfg, timeCardConsumerGroup, timeCardConsumerCount, timeCardEngine.Handle, toDeadLetter)
 
 	<-ctx.Done()
 	stop()
@@ -377,7 +377,7 @@ func main() {
 	for _, c := range slaConsumers {
 		c.Close()
 	}
-	for _, c := range billableStatusConsumers {
+	for _, c := range timeCardConsumers {
 		c.Close()
 	}
 	if slaProducer != nil {
