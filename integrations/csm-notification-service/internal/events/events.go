@@ -55,6 +55,20 @@ const (
 	// the one place every event Type this service touches is registered.
 	TypeSLAClockRegister Type = "sla.clock.register"
 	TypeSLATierReached   Type = "sla.tier_reached"
+
+	// TypeCaseBillableStatusChanged is Postgres-data-source-only on the
+	// entity-service side, and — like TypeSLAClockRegister/TypeSLATierReached
+	// above — not an email/Chat trigger, so dispatch.Handle's switch has no
+	// real case for it either, just the same no-op treatment. Unlike those
+	// two, nothing in this service (or anywhere else) actually publishes or
+	// consumes it yet: entity-service's own Publish call for it is
+	// deliberately commented out (no time_cards table/repo/service exists
+	// on its Postgres data source yet, the prerequisite for the intended
+	// reaction — bulk-flipping every time card's billable flag for the
+	// case). Declared here anyway, kept in sync by hand with
+	// entity-service's own internal/events/events.go, so the two schemas
+	// never drift even while this type is otherwise dormant.
+	TypeCaseBillableStatusChanged Type = "case.billable_status_changed"
 )
 
 // KnownTypes lists every Type this service accepts, in the order they're
@@ -62,7 +76,7 @@ const (
 // that enumerate valid values.
 var KnownTypes = []Type{
 	TypeCaseCreated, TypeCommentAdded, TypeStatusChanged, TypeCaseAssigned, TypeCaseAcknowledged, TypeSeverityChanged, TypeIncidentCreated,
-	TypeSLAClockRegister, TypeSLATierReached,
+	TypeSLAClockRegister, TypeSLATierReached, TypeCaseBillableStatusChanged,
 }
 
 // Envelope is the wire shape of every record on the event bus: Payload's
@@ -329,4 +343,14 @@ type SLATierReachedPayload struct {
 	CaseID    string `json:"caseId"`
 	ClockType string `json:"clockType"`
 	Tier      string `json:"tier"`
+}
+
+// CaseBillableStatusChangedPayload is the Payload shape for
+// TypeCaseBillableStatusChanged — mirrors entity-service's own
+// CaseBillableStatusChangedPayload exactly; see that type's own doc comment
+// for why LOW severity is the one thing this reacts to and why IsBillable
+// is precomputed there rather than left for a consumer to re-derive.
+type CaseBillableStatusChangedPayload struct {
+	CaseID     string `json:"caseId"`
+	IsBillable bool   `json:"isBillable"`
 }

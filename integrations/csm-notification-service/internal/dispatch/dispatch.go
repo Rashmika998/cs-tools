@@ -328,6 +328,18 @@ func (d *Dispatcher) Handle(ctx context.Context, record eventbus.Record) error {
 		// consumer's retries and dead-letter an event that was never broken,
 		// just not this consumer's concern.
 		return nil
+	case events.TypeCaseBillableStatusChanged:
+		// Not a real no-op for the same reason as the SLA types above —
+		// there is no OTHER consumer group reacting to this one at all yet
+		// (entity-service's own Publish call for it is still commented
+		// out — see that type's own doc comment). Declared and validated
+		// here purely to keep this service's schema in sync with
+		// entity-service's, same reasoning as TypeSLAClockRegister's own
+		// doc comment. Same "return nil, not an error" requirement applies
+		// regardless: if this ever does start getting published before a
+		// real consumer exists, erroring here would still burn this
+		// consumer's retries and dead-letter an event that isn't broken.
+		return nil
 	default:
 		return fmt.Errorf("dispatch: unknown event type %q", env.Type)
 	}
