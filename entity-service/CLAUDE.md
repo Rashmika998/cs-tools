@@ -120,18 +120,23 @@ EventPublisherService` field for this (nil the same way `snCaseService`'s
 own `publisher` can be), wired from `routes.go`'s existing `eventPublisher`
 var.
 
-**Special case, same inert posture**: `caseService.AddCaseTag` calls
-`detectPatchTagBillableOverride`, which forces `isBillable=false` (logged
-only, same as above) when a case tagged `"patch"` (case/whitespace-
-insensitive) is currently at LOW severity — WSO2 still covers a patch under
-support even for an otherwise best-efforts S4 case, overriding the normal
-"entering S4 makes time cards billable" rule. One-directional: removing the
-tag never reverses it. **TEMPORARY**: case tags have no real Postgres
-storage at all yet (no `case_tags` table/repo — `AddCaseTag`/`RemoveCaseTag`/
-`SearchTags` are ServiceNow-only, see `sn_case_service.go`'s own real
-implementations), so this override runs and logs ahead of the tag itself
-ever actually being persisted on this data source — added at explicit
-request, to be wired into a real `AddCaseTag` once `case_tags` exists.
+**Special case, detects and logs only — no behavior change yet**:
+`caseService.AddCaseTag` calls `detectPatchTagBillableOverride`, which
+*detects and logs* (nothing more) when a case tagged `"patch"`
+(case/whitespace-insensitive) is currently at LOW severity — the eventual
+intent is that WSO2 still covers a patch under support even for an
+otherwise best-efforts S4 case, so such a case's time cards should one day
+become non-billable regardless (one-directionally: removing the tag would
+never reverse it), overriding the normal "entering S4 makes time cards
+billable" rule. **Today this changes nothing**: no time card's billable
+status is altered, no event is published, and no tag is ever persisted.
+**TEMPORARY**: case tags have no real Postgres storage at all yet (no
+`case_tags` table/repo — `AddCaseTag`/`RemoveCaseTag`/`SearchTags` are
+ServiceNow-only, see `sn_case_service.go`'s own real implementations), so
+`AddCaseTag` on this data source still always returns a 503 regardless of
+this detection — added at explicit request, ahead of both real tag storage
+and a real time-card reaction, so the rule's logic is demonstrable now and
+easy to wire up for real once both exist.
 
 - **`snCaseService.CreateCase`** publishes `case.created` via a private
   `publishCaseCreated` helper, called after the SN create call succeeds.
