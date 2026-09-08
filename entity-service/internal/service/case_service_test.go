@@ -61,7 +61,7 @@ func (s *stubCaseRepo) SearchCaseComments(ctx context.Context, req domain.Search
 	}
 	panic("not implemented")
 }
-func (s *stubCaseRepo) UpdateCase(context.Context, domain.UpdateCaseRequest) (domain.Case, error) {
+func (s *stubCaseRepo) UpdateCase(context.Context, domain.UpdateCaseRequest) (domain.Case, domain.CaseSeverity, error) {
 	panic("not implemented")
 }
 func (s *stubCaseRepo) CreateCaseAttachment(ctx context.Context, req domain.CreateAttachmentRequest) (domain.Attachment, error) {

@@ -410,19 +410,12 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 		return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "workState contains invalid value: " + string(*req.WorkState)}
 	}
 
-	// Read the pre-update severity only when this request can actually
-	// change it — detectBillableStatusChange needs a before/after pair to
-	// tell a genuine LOW-boundary crossing from any other severity change.
-	var oldSeverity domain.CaseSeverity
-	if req.Severity != nil {
-		before, err := s.repo.GetCaseByID(ctx, req.ID)
-		if err != nil {
-			return domain.UpdateCaseResponse{}, err
-		}
-		oldSeverity = before.Severity
-	}
-
-	c, err := s.repo.UpdateCase(ctx, req)
+	// oldSeverity is the case's severity immediately before this update —
+	// accurate even under a concurrent update to the same case, since the
+	// repository locks the row before reading it whenever req.Severity is
+	// set (see CaseRepository.UpdateCase's own doc comment). Only meaningful
+	// when req.Severity != nil; otherwise it's just the unchanged severity.
+	c, oldSeverity, err := s.repo.UpdateCase(ctx, req)
 	if err != nil {
 		return domain.UpdateCaseResponse{}, err
 	}
