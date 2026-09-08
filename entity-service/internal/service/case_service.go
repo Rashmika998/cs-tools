@@ -20,6 +20,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -32,11 +33,18 @@ import (
 type caseService struct {
 	repo     repository.CaseRepository
 	userRepo repository.UserRepository
+	// publisher is nil when Event Hub is not configured — see
+	// snCaseService.publisher's own doc comment for the same convention.
+	// Currently only ever read by UpdateCase's (inert — see
+	// events.TypeCaseBillableStatusChanged's own doc comment)
+	// case.billable_status_changed detection.
+	publisher EventPublisherService
 }
 
 // NewCaseService constructs a CaseService backed by the given repositories.
-func NewCaseService(repo repository.CaseRepository, userRepo repository.UserRepository) CaseService {
-	return &caseService{repo: repo, userRepo: userRepo}
+// publisher may be nil (see caseService.publisher's own doc comment).
+func NewCaseService(repo repository.CaseRepository, userRepo repository.UserRepository, publisher EventPublisherService) CaseService {
+	return &caseService{repo: repo, userRepo: userRepo, publisher: publisher}
 }
 
 var validCaseSortField = map[domain.CaseSortField]bool{
@@ -401,10 +409,21 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 	if req.WorkState != nil && !validCaseWorkState[*req.WorkState] {
 		return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "workState contains invalid value: " + string(*req.WorkState)}
 	}
-	c, err := s.repo.UpdateCase(ctx, req)
+
+	// oldSeverity is the case's severity immediately before this update —
+	// accurate even under a concurrent update to the same case, since the
+	// repository locks the row before reading it whenever req.Severity is
+	// set (see CaseRepository.UpdateCase's own doc comment). Only meaningful
+	// when req.Severity != nil; otherwise it's just the unchanged severity.
+	c, oldSeverity, err := s.repo.UpdateCase(ctx, req)
 	if err != nil {
 		return domain.UpdateCaseResponse{}, err
 	}
+
+	if req.Severity != nil {
+		s.detectBillableStatusChange(ctx, req.ID, oldSeverity, c.Severity)
+	}
+
 	return domain.UpdateCaseResponse{
 		Message: "Case updated successfully",
 		Case: domain.UpdatedCase{
@@ -415,6 +434,48 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 			WorkState: c.WorkState,
 		},
 	}, nil
+}
+
+// detectBillableStatusChange checks whether a severity update just crossed
+// the LOW boundary in either direction — entering LOW means every time
+// card on this case should become billable, leaving it means they should
+// become non-billable (see events.CaseBillableStatusChangedPayload's own
+// doc comment for why LOW is the one severity that matters here). A
+// Postgres-backed case's Type is always "case" and can never change (see
+// this file's own UpdateCase, which rejects req.Type entirely on this data
+// source), so unlike the ServiceNow data source this reduces to a single
+// severity comparison — no Type-transition case to handle.
+//
+// Publishing events.TypeCaseBillableStatusChanged is commented out below
+// rather than live — see that type's own doc comment: nothing consumes it
+// yet (Postgres has no time_cards table/repo/service at all today), so
+// publishing now would produce an event nothing acts on. The detection
+// itself is real; only the actual Publish call is inert.
+func (s *caseService) detectBillableStatusChange(ctx context.Context, caseID string, oldSeverity, newSeverity domain.CaseSeverity) {
+	oldLow := oldSeverity == domain.CaseSeverityLow
+	newLow := newSeverity == domain.CaseSeverityLow
+	if oldLow == newLow {
+		return
+	}
+	isBillable := newLow
+
+	// TODO: enable once a consumer exists for events.TypeCaseBillableStatusChanged
+	// (bulk-flipping every time card's IsBillable for caseId) — see that
+	// type's own doc comment for what's still missing.
+	//
+	// payload, err := json.Marshal(events.CaseBillableStatusChangedPayload{CaseID: caseID, IsBillable: isBillable})
+	// if err != nil {
+	// 	slog.ErrorContext(ctx, "case update: encode case.billable_status_changed payload failed", "caseId", caseID, "error", err)
+	// 	return
+	// }
+	// if s.publisher == nil {
+	// 	return
+	// }
+	// if err := s.publisher.Publish(ctx, events.TypeCaseBillableStatusChanged, caseID, payload); err != nil {
+	// 	slog.ErrorContext(ctx, "case update: publish case.billable_status_changed failed", "caseId", caseID)
+	// }
+
+	slog.InfoContext(ctx, "case update: severity crossed the billable boundary, event hub publish not yet enabled", "caseId", caseID, "isBillable", isBillable)
 }
 
 // SearchCases implements CaseService.

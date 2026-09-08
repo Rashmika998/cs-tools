@@ -55,6 +55,33 @@ const (
 	// the one place every event Type this service touches is registered.
 	TypeSLAClockRegister Type = "sla.clock.register"
 	TypeSLATierReached   Type = "sla.tier_reached"
+
+	// TypeCaseBillableStatusChanged is Postgres-data-source-only on the
+	// entity-service side, and — like TypeSLAClockRegister/TypeSLATierReached
+	// above — not an email/Chat trigger, so dispatch.Handle's switch has no
+	// case for it either. Unlike those two, it isn't even handled by
+	// dispatch's own no-op case: internal/timecardengine.Engine consumes it
+	// instead, on its own dedicated consumer group (see
+	// cmd/server/main.go's TIME_CARD_CONSUMER_GROUP/_COUNT) — the
+	// same reasoning internal/slaengine's SLA_CONSUMER_GROUP/
+	// SLA_CONSUMER_COUNT already established: eventbus.Consumer.Run
+	// processes one record at a time, fully sequentially (fetch, handle,
+	// commit, repeat), so a future bulk update over "several time cards,"
+	// each its own HTTP round trip to entity-service, must not delay
+	// unrelated email/Chat delivery on dispatch's own consumer instance.
+	//
+	// TODO: internal/timecardengine.Engine.Handle only logs today — the
+	// actual reaction (bulk-flipping every time card's billable flag for
+	// the case) needs a Postgres time_cards table/repo/service on
+	// entity-service first (it has none today; time cards are
+	// ServiceNow-only there). entity-service's own Publish call for this
+	// event is itself still commented out for the same reason, so this
+	// consumer group exists ahead of ever actually receiving one — see
+	// that type's own doc comment in entity-service's copy of this file.
+	// Declared here anyway, kept in sync by hand with entity-service's own
+	// internal/events/events.go, so the two schemas never drift even while
+	// this type is otherwise dormant.
+	TypeCaseBillableStatusChanged Type = "case.billable_status_changed"
 )
 
 // KnownTypes lists every Type this service accepts, in the order they're
@@ -62,7 +89,7 @@ const (
 // that enumerate valid values.
 var KnownTypes = []Type{
 	TypeCaseCreated, TypeCommentAdded, TypeStatusChanged, TypeCaseAssigned, TypeCaseAcknowledged, TypeSeverityChanged, TypeIncidentCreated,
-	TypeSLAClockRegister, TypeSLATierReached,
+	TypeSLAClockRegister, TypeSLATierReached, TypeCaseBillableStatusChanged,
 }
 
 // Envelope is the wire shape of every record on the event bus: Payload's
@@ -329,4 +356,14 @@ type SLATierReachedPayload struct {
 	CaseID    string `json:"caseId"`
 	ClockType string `json:"clockType"`
 	Tier      string `json:"tier"`
+}
+
+// CaseBillableStatusChangedPayload is the Payload shape for
+// TypeCaseBillableStatusChanged — mirrors entity-service's own
+// CaseBillableStatusChangedPayload exactly; see that type's own doc comment
+// for why LOW severity is the one thing this reacts to and why IsBillable
+// is precomputed there rather than left for a consumer to re-derive.
+type CaseBillableStatusChangedPayload struct {
+	CaseID     string `json:"caseId"`
+	IsBillable bool   `json:"isBillable"`
 }
