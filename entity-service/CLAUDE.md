@@ -106,7 +106,19 @@ threaded through `server.New` to `cmd/api/main.go`, which calls `Close()` on
 it during shutdown, after `srv.Shutdown`.
 
 Seven call sites publish today, all ServiceNow-data-source-only (`DATA_SOURCE=servicenow`;
-there is no Postgres-backed equivalent for any of them):
+there is no Postgres-backed equivalent for any of them). There is also one
+Postgres-only, currently-inert exception: `caseService.UpdateCase`
+(`case_service.go`) detects when a severity update crosses the LOW boundary
+(entering it should make every time card on the case billable, leaving it
+non-billable — LOW is WSO2's own support-policy "S4/Queries" tier, same
+mapping `sla_policy.go` uses) and logs it, but its actual
+`events.TypeCaseBillableStatusChanged` publish is commented out — see that
+type's own doc comment in `internal/events/events.go` for why (no consumer
+exists yet; Postgres has no `time_cards` table/repo/service at all today, a
+prerequisite for the intended reaction). `caseService` gained a `publisher
+EventPublisherService` field for this (nil the same way `snCaseService`'s
+own `publisher` can be), wired from `routes.go`'s existing `eventPublisher`
+var.
 
 - **`snCaseService.CreateCase`** publishes `case.created` via a private
   `publishCaseCreated` helper, called after the SN create call succeeds.
