@@ -118,7 +118,7 @@ func TestCreateCallRequest_CaseIDFromPath(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	wantCaseID := toSysID(testCaseID)
+	wantCaseID := toDashedID(testCaseID)
 	if fake.gotCreateReq.CaseID != wantCaseID {
 		t.Fatalf("CaseID = %q, want %q", fake.gotCreateReq.CaseID, wantCaseID)
 	}
@@ -144,7 +144,7 @@ func TestSearchCallRequests_CaseIDFromPath(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	wantCaseID := toSysID(testCaseID)
+	wantCaseID := toDashedID(testCaseID)
 	if fake.gotSearchReq.CaseID != wantCaseID {
 		t.Fatalf("CaseID = %q, want %q", fake.gotSearchReq.CaseID, wantCaseID)
 	}
@@ -189,7 +189,7 @@ func TestPatchCallRequest_ExtraCaseIDPathSegmentDoesNotBreakRouting(t *testing.T
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	wantID := toSysID(callRequestID)
+	wantID := toDashedID(callRequestID)
 	if body.ID != wantID {
 		t.Fatalf("id = %q, want %q (the {id} segment, not {caseId})", body.ID, wantID)
 	}
@@ -211,5 +211,16 @@ func TestPatchCallRequest_BareSysIDSupported(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	wantID := toDashedID(callRequestSysID)
+	if body.ID != wantID {
+		t.Fatalf("id = %q, want %q", body.ID, wantID)
 	}
 }

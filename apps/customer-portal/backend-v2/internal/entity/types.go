@@ -980,10 +980,10 @@ type DeployedProductFilters struct {
 }
 
 // SearchDeployedProductsRequest is the input for POST /deployed-products/search.
-// Filters is used by upstream services expecting a nested filters object (e.g. Ballerina customer-entity-service).
+// DeploymentIDs scopes results to the given deployments; it is the only filter besides pagination.
 type SearchDeployedProductsRequest struct {
-	Pagination Pagination              `json:"pagination"`
-	Filters    *DeployedProductFilters `json:"filters,omitempty"`
+	Pagination    Pagination `json:"pagination"`
+	DeploymentIDs []string   `json:"deploymentIds,omitempty"`
 }
 
 // DeployedProductVersionRef is the version sub-object in a DeployedProductView.

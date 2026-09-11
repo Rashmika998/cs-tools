@@ -75,6 +75,26 @@ func TestToSysID(t *testing.T) {
 	}
 }
 
+func TestToDashedID(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"26051dbc-3baa-8f50-9140-4c6aa5e45a1c", "26051dbc-3baa-8f50-9140-4c6aa5e45a1c"},
+		{"26051DBC-3BAA-8F50-9140-4C6AA5E45A1C", "26051dbc-3baa-8f50-9140-4c6aa5e45a1c"},
+		{"26051dbc3baa8f5091404c6aa5e45a1c", "26051dbc-3baa-8f50-9140-4c6aa5e45a1c"},
+		{"26051DBC3BAA8F5091404C6AA5E45A1C", "26051dbc-3baa-8f50-9140-4c6aa5e45a1c"},
+		{"70d63bca3bd2031091404c6aa5e45a37", "70d63bca-3bd2-0310-9140-4c6aa5e45a37"},
+		{"70d63bca-3bd2-0310-9140-4c6aa5e45a37", "70d63bca-3bd2-0310-9140-4c6aa5e45a37"},
+		{"case-1", "case-1"},
+	}
+	for _, tc := range cases {
+		if got := toDashedID(tc.in); got != tc.want {
+			t.Errorf("toDashedID(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestIsUUIDOrSysID(t *testing.T) {
 	cases := map[string]struct {
 		id   string

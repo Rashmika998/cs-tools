@@ -99,11 +99,14 @@ type CallRequestSearchRequest struct {
 	Pagination entity.Pagination        `json:"pagination"`
 }
 
-// toSysID converts an identifier (either a dashed UUID or a 32-hex sysid)
-// to a 32-character lowercase hex string without hyphens, for upstream services
-// that enforce ServiceNow's 32-hex IdString pattern constraint.
-func toSysID(id string) string {
-	return strings.ToLower(strings.ReplaceAll(id, "-", ""))
+// toDashedID converts an identifier (either a dashed UUID or a 32-hex sysid)
+// to a canonical lowercase 8-4-4-4-12 dashed UUID string expected by entity-service.
+func toDashedID(id string) string {
+	clean := strings.ToLower(strings.ReplaceAll(id, "-", ""))
+	if len(clean) == 32 {
+		return clean[0:8] + "-" + clean[8:12] + "-" + clean[12:16] + "-" + clean[16:20] + "-" + clean[20:32]
+	}
+	return strings.ToLower(id)
 }
 
 // BuildEntitySearchCallRequestsRequest translates the portal's request into
@@ -124,7 +127,7 @@ func BuildEntitySearchCallRequestsRequest(caseID string, req CallRequestSearchRe
 		filters = &entity.SearchCallRequestsFilters{States: states}
 	}
 	return entity.SearchCallRequestsRequest{
-		CaseID:     toSysID(caseID),
+		CaseID:     toDashedID(caseID),
 		Filters:    filters,
 		Pagination: req.Pagination,
 	}

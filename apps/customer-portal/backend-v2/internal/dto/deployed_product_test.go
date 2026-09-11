@@ -18,7 +18,6 @@ package dto
 
 import (
 	"encoding/json"
-	"reflect"
 	"testing"
 	"time"
 
@@ -51,7 +50,7 @@ func TestToSysID(t *testing.T) {
 }
 
 func TestBuildEntitySearchDeployedProductsRequest(t *testing.T) {
-	t.Run("converts dashed UUID to sysid and sets filters", func(t *testing.T) {
+	t.Run("converts dashed UUID to canonical dashed UUID and sets root deploymentIds without filters", func(t *testing.T) {
 		req := DeployedProductSearchRequest{
 			Pagination: entity.Pagination{Limit: 10, Offset: 0},
 			Filters: &DeployedProductSearchFilters{
@@ -60,15 +59,9 @@ func TestBuildEntitySearchDeployedProductsRequest(t *testing.T) {
 		}
 		got := BuildEntitySearchDeployedProductsRequest("4e8431b1-1b8c-0310-0bb3-da47b04bcba6", req)
 
-		if got.Filters == nil {
-			t.Fatal("expected Filters to be non-nil")
-		}
-		expectedSysID := "4e8431b11b8c03100bb3da47b04bcba6"
-		if len(got.Filters.DeploymentIDs) != 1 || got.Filters.DeploymentIDs[0] != expectedSysID {
-			t.Errorf("got DeploymentIDs = %v, want [%s]", got.Filters.DeploymentIDs, expectedSysID)
-		}
-		if !reflect.DeepEqual(got.Filters.ProductCategories, []string{"Integration"}) {
-			t.Errorf("got ProductCategories = %v, want [Integration]", got.Filters.ProductCategories)
+		expectedDashedID := "4e8431b1-1b8c-0310-0bb3-da47b04bcba6"
+		if len(got.DeploymentIDs) != 1 || got.DeploymentIDs[0] != expectedDashedID {
+			t.Errorf("got DeploymentIDs = %v, want [%s]", got.DeploymentIDs, expectedDashedID)
 		}
 
 		data, err := json.Marshal(got)
@@ -79,31 +72,23 @@ func TestBuildEntitySearchDeployedProductsRequest(t *testing.T) {
 		if err := json.Unmarshal(data, &raw); err != nil {
 			t.Fatalf("json.Unmarshal failed: %v", err)
 		}
-		if _, hasRootDepID := raw["deploymentIds"]; hasRootDepID {
-			t.Errorf("expected no deploymentIds at root of serialized request, got: %v", raw)
+		if _, hasFilters := raw["filters"]; hasFilters {
+			t.Errorf("expected no filters object in serialized json, got: %v", raw)
 		}
-		filtersMap, ok := raw["filters"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected filters object in serialized json, got: %v", raw)
-		}
-		if deps, ok := filtersMap["deploymentIds"].([]any); !ok || len(deps) != 1 || deps[0] != expectedSysID {
-			t.Errorf("expected filters.deploymentIds to contain %s, got: %v", expectedSysID, filtersMap["deploymentIds"])
+		deps, ok := raw["deploymentIds"].([]any)
+		if !ok || len(deps) != 1 || deps[0] != expectedDashedID {
+			t.Errorf("expected root deploymentIds to contain %s, got: %v", expectedDashedID, raw["deploymentIds"])
 		}
 	})
 
-	t.Run("bare sysid without category filters", func(t *testing.T) {
+	t.Run("bare sysid normalized to dashed UUID at root", func(t *testing.T) {
 		req := DeployedProductSearchRequest{
 			Pagination: entity.Pagination{Limit: 20, Offset: 10},
 		}
 		got := BuildEntitySearchDeployedProductsRequest("4e8431b11b8c03100bb3da47b04bcba6", req)
-		if got.Filters == nil {
-			t.Fatal("expected Filters to be non-nil")
-		}
-		if len(got.Filters.DeploymentIDs) != 1 || got.Filters.DeploymentIDs[0] != "4e8431b11b8c03100bb3da47b04bcba6" {
-			t.Errorf("got DeploymentIDs = %v", got.Filters.DeploymentIDs)
-		}
-		if len(got.Filters.ProductCategories) != 0 {
-			t.Errorf("expected empty ProductCategories, got %v", got.Filters.ProductCategories)
+		expectedDashedID := "4e8431b1-1b8c-0310-0bb3-da47b04bcba6"
+		if len(got.DeploymentIDs) != 1 || got.DeploymentIDs[0] != expectedDashedID {
+			t.Errorf("got DeploymentIDs = %v, want [%s]", got.DeploymentIDs, expectedDashedID)
 		}
 	})
 }

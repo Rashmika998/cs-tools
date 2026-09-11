@@ -53,6 +53,16 @@ func toSysID(id string) string {
 	return strings.ToLower(strings.ReplaceAll(id, "-", ""))
 }
 
+// toDashedID converts an identifier (either a dashed UUID or a 32-hex sysid)
+// to a canonical lowercase 8-4-4-4-12 dashed UUID string expected by entity-service.
+func toDashedID(id string) string {
+	clean := strings.ToLower(strings.ReplaceAll(id, "-", ""))
+	if len(clean) == 32 {
+		return clean[0:8] + "-" + clean[8:12] + "-" + clean[12:16] + "-" + clean[16:20] + "-" + clean[20:32]
+	}
+	return strings.ToLower(id)
+}
+
 // isUUIDOrSysID reports whether id is a valid UUID or bare 32-hex ServiceNow sysid.
 func isUUIDOrSysID(id string) bool {
 	return uuidRe.MatchString(id) || sysidRe.MatchString(id)

@@ -154,19 +154,12 @@ type DeployedProductSearchRequest struct {
 
 // BuildEntitySearchDeployedProductsRequest translates the portal's search
 // request into entity-service's request shape, always scoping to the
-// deployment in the URL (normalized to a bare sysid) — never a client-settable
+// deployment in the URL (normalized to a canonical dashed UUID) — never a client-settable
 // body field (same reasoning as BuildEntitySearchCasesRequest's projectID parameter).
 func BuildEntitySearchDeployedProductsRequest(deploymentID string, req DeployedProductSearchRequest) entity.SearchDeployedProductsRequest {
-	sysID := ToSysID(deploymentID)
-	filters := &entity.DeployedProductFilters{
-		DeploymentIDs: []string{sysID},
-	}
-	if req.Filters != nil && len(req.Filters.ProductCategories) > 0 {
-		filters.ProductCategories = req.Filters.ProductCategories
-	}
 	return entity.SearchDeployedProductsRequest{
-		Pagination: req.Pagination,
-		Filters:    filters,
+		Pagination:    req.Pagination,
+		DeploymentIDs: []string{toDashedID(deploymentID)},
 	}
 }
 

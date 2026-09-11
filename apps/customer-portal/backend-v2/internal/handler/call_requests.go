@@ -75,8 +75,8 @@ func (h *CallRequestHandler) CreateCallRequest(w http.ResponseWriter, r *http.Re
 	// CaseID is always forced to the {caseId} path parameter, never a
 	// client-supplied body field — the frontend's request body carries only
 	// reason/utcTimes/durationInMinutes, no caseId at all. Normalized to a
-	// 32-hex sys_id for entity-service.
-	req.CaseID = toSysID(caseID)
+	// canonical dashed UUID for entity-service.
+	req.CaseID = toDashedID(caseID)
 	if req.Reason == "" || len(req.UTCTimes) == 0 || req.DurationMinutes <= 0 {
 		writeError(w, http.StatusBadRequest, ErrMsgBadRequest)
 		return
@@ -159,7 +159,7 @@ func (h *CallRequestHandler) PatchCallRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	result, err := h.entity.UpdateCallRequest(r.Context(), toSysID(id), dto.BuildEntityUpdateCallRequestRequest(req))
+	result, err := h.entity.UpdateCallRequest(r.Context(), toDashedID(id), dto.BuildEntityUpdateCallRequestRequest(req))
 	if err != nil {
 		slog.ErrorContext(r.Context(), "entity UpdateCallRequest failed", "userID", user.UserID, "callRequestID", id, "err", summarizeErr(err))
 		mapUpstreamError(w, err, "Failed to update call request.")

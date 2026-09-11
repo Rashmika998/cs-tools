@@ -97,17 +97,17 @@ func TestSearchDeployedProducts_AcceptsUUIDAndBareSysID(t *testing.T) {
 	tests := []struct {
 		name         string
 		deploymentID string
-		wantSysID    string
+		wantDashedID string
 	}{
 		{
 			name:         "dashed UUID",
 			deploymentID: "4e8431b1-1b8c-0310-0bb3-da47b04bcba6",
-			wantSysID:    "4e8431b11b8c03100bb3da47b04bcba6",
+			wantDashedID: "4e8431b1-1b8c-0310-0bb3-da47b04bcba6",
 		},
 		{
 			name:         "bare 32-hex sysid",
 			deploymentID: "4e8431b11b8c03100bb3da47b04bcba6",
-			wantSysID:    "4e8431b11b8c03100bb3da47b04bcba6",
+			wantDashedID: "4e8431b1-1b8c-0310-0bb3-da47b04bcba6",
 		},
 	}
 
@@ -126,11 +126,8 @@ func TestSearchDeployedProducts_AcceptsUUIDAndBareSysID(t *testing.T) {
 				t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
 			}
 
-			if fake.gotSearch.Filters == nil {
-				t.Fatal("expected Filters to be non-nil")
-			}
-			if len(fake.gotSearch.Filters.DeploymentIDs) != 1 || fake.gotSearch.Filters.DeploymentIDs[0] != tc.wantSysID {
-				t.Errorf("got DeploymentIDs = %v, want [%s]", fake.gotSearch.Filters.DeploymentIDs, tc.wantSysID)
+			if len(fake.gotSearch.DeploymentIDs) != 1 || fake.gotSearch.DeploymentIDs[0] != tc.wantDashedID {
+				t.Errorf("got DeploymentIDs = %v, want [%s]", fake.gotSearch.DeploymentIDs, tc.wantDashedID)
 			}
 		})
 	}
