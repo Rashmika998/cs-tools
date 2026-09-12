@@ -62,7 +62,6 @@ interface CsmCaseCommentInputProps {
     html: string,
     internal: boolean,
     attachments: CommentAttachmentDraft[],
-    mentionedUserIds: string[],
   ) => Promise<unknown> | void;
   disabled?: boolean;
   /**
@@ -129,26 +128,6 @@ const MAX_COMMENT_CONTENT_BYTES = MAX_COMMENT_BODY_BYTES - 1024;
 function isEmpty(html: string): boolean {
   const text = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
   return text.length === 0;
-}
-
-/**
- * Collects every mentioned user id out of the composer's HTML output.
- * `MentionNode.exportDOM` (see rich-text-editor/MentionNode.tsx) round-trips
- * each `@mention` through this editor's HTML pipeline as
- * `<span data-mention-user-id="...">@Name</span>` — parsing that markup here
- * (rather than walking the live Lexical editor state) works whether the
- * comment came from the rich editor or was hand-edited in HTML-source mode,
- * and reuses the same HTML string already being sent as `content`. Dedupes
- * so mentioning the same person twice only sends their id once.
- */
-function extractMentionedUserIds(html: string): string[] {
-  const ids = new Set<string>();
-  const pattern = /data-mention-user-id="([^"]+)"/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(html)) !== null) {
-    ids.add(match[1]);
-  }
-  return Array.from(ids);
 }
 
 /**
@@ -412,7 +391,7 @@ export default function CsmCaseCommentInput({
     setError(null);
     setSubmitting(true);
     try {
-      await onSubmit(html, internal, attachments, extractMentionedUserIds(html));
+      await onSubmit(html, internal, attachments);
       setHtml("");
       setAttachments([]);
       resetTriggerRef.current += 1;

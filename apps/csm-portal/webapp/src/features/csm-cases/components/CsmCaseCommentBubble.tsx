@@ -427,13 +427,6 @@ export default function CsmCaseCommentBubble({
               fontSize: "0.85em",
             },
             "& a": { color: "primary.main" },
-            "& span[data-mention-user-id]": {
-              color: "primary.main",
-              backgroundColor: "action.hover",
-              borderRadius: "4px",
-              padding: "0 2px",
-              fontWeight: 500,
-            },
             "& img": { maxWidth: "100%", cursor: onImageClick ? "pointer" : "default" },
             "& br": { display: "block", content: '""', mt: 0.5 },
             "& blockquote": {

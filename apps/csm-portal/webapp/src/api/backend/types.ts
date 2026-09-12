@@ -1249,13 +1249,6 @@ export interface BeCaseCommentCreatePayload {
   type: BeCreatableCommentType;
   /** Rich-text HTML body. */
   content: string;
-  /**
-   * User ids (the platform's own UUID-form user id, the same shape returned
-   * by `GET /users/{id}` and `POST /users/search`) that the comment's author
-   * @mentioned in `content`, as selected by the mention-typeahead. Optional:
-   * absent or empty means no mentions.
-   */
-  mentionedUserIds?: string[];
 }
 
 export interface BeCaseCommentSearchPayload {

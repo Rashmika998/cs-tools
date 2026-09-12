@@ -2382,7 +2382,7 @@ export default function CsmCaseDetailPage(): JSX.Element {
                 onDraftInternalChange={setDraftInternal}
                 draftSourceMode={draftSourceMode}
                 onDraftSourceModeChange={setDraftSourceMode}
-                onSubmit={async (bodyHtml, internal, commentAttachments, mentionedUserIds) => {
+                onSubmit={async (bodyHtml, internal, commentAttachments) => {
                   if (!caseId) return;
                   // Post the comment only when there's text; an attachment-only
                   // send skips the comment endpoint and just uploads the files.
@@ -2397,7 +2397,6 @@ export default function CsmCaseDetailPage(): JSX.Element {
                       bodyHtml,
                       authorName: engineerName,
                       internal,
-                      mentionedUserIds,
                     });
                   }
                   // Attachments are case-level (no comment linkage on the BE);
