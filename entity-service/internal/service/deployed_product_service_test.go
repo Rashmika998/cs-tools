@@ -40,6 +40,14 @@ func (s *stubDeployedProductRepo) SearchDeployedProducts(ctx context.Context, re
 	panic("SearchDeployedProducts called unexpectedly: the productCategories rejection should have short-circuited before reaching the repository")
 }
 
+func (s *stubDeployedProductRepo) SearchDeployedProductMetrics(ctx context.Context, id, deploymentID, startDate, endDate string) (domain.DeployedProductMetricsResponse, error) {
+	panic("SearchDeployedProductMetrics not stubbed")
+}
+
+func (s *stubDeployedProductRepo) SearchDeployedProductUsageCounts(ctx context.Context, id, deploymentID, startDate, endDate string) (domain.DeployedProductUsageCountsResponse, error) {
+	panic("SearchDeployedProductUsageCounts not stubbed")
+}
+
 func TestDeployedProductService_SearchDeployedProducts_RejectsProductCategories(t *testing.T) {
 	svc := NewDeployedProductService(&stubDeployedProductRepo{})
 

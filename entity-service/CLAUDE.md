@@ -1218,6 +1218,99 @@ side. `domain.UpdatedCase.State`/`Severity` (the `PATCH /cases/{id}`
 response) became pointers too, matching the sibling `WorkState` field's
 existing pointer convention there.
 
+## Instances and usage tracking (deployment_node, usage_count, daily_usage_summary, deployment_information)
+
+Migration 000054 added a 7-table cluster mirroring ServiceNow's product usage
+tracking (`deployment_node`, `deployment_information`, `usage_count`,
+`daily_usage_summary`, `monthly_usage_count`, `project_daily_summary`,
+`product_usage_map`) -- see that migration's own doc comment for the full
+shape. This finally gives the previously ServiceNow-only "instance" concept
+(`InstanceService`, `POST /instances/*`) and the two
+`/deployed-products/{id}/metrics*` endpoints something to read on Postgres.
+`instance_repo.go`/`instance_service.go` are new; `deployed_product_repo.go`/
+`deployed_product_service.go` gained the two metrics methods (previously
+unconditional `ServiceUnavailableError` stubs).
+
+**"Instance" is `deployment_node`.** `Instance.Key` is `node_id`;
+`Instance.Metadata` comes from that node's latest `deployment_information`
+row (by `reported_updated_on`). `CoreCount` is parsed from
+`number_of_cores`, a free-text `VARCHAR` upstream (e.g. `"8 (4 physical)"`)
+-- `parseCoreCount` only accepts a clean integer and returns `nil` otherwise,
+rather than guessing at a partial number. `Updates` has no backing column on
+`deployment_information` at all (`deployed_product.update_level_info` is a
+different, per-deployed-product concept, not per-node) and is always `nil`.
+
+**Project/Deployment/DeployedProduct references are a best-effort join,
+UNVERIFIED against real data.** `deployment_node.product_version_id` is a
+real foreign key, so the `Product` reference is always reliable. But
+`deployment_node` has **no** foreign key to `deployment` or
+`deployed_product` at all -- only a free-text `deployment_ref VARCHAR(128)`,
+and the migration's own comment admits "node identity is not consistent
+upstream." `instanceRefJoins` (`instance_repo.go`) casts `deployment_ref` to
+`uuid` and matches it against `deployment.id`, guarded by a regex so a
+non-UUID value degrades to "no match" instead of a cast error; `DeployedProduct`
+additionally requires `deployed_product.version_id` to match the same
+product_version, since `deployment_id` alone doesn't uniquely identify one.
+**This assumption could not be checked against live data**: migration 000054
+has not actually been applied to the staging database this was developed
+against (same gap as `case_attachments`/`case_escalation` before it -- every
+one of these 7 tables returns "relation does not exist" there today). If
+`deployment_ref` turns out to hold something other than a deployment UUID
+(a ServiceNow sys_id, a deployment number, ...) once real rows exist, every
+project/deployment/deployed-product-filtered instance query will simply
+return empty results rather than wrong ones (the regex guard prevents a
+cast error), but the join itself needs re-deriving from real data before
+trusting it. The same resolution (product_version_id + deployment_ref) is
+reused by `deployed_product_repo.go`'s `resolveDeployedProductNodes` to
+answer "which instances belong to this deployed product" for the two
+`/deployed-products/{id}/metrics*` endpoints.
+
+**Metrics vs. usage vs. usage-stats read three different tables, not one,
+because only one of them carries what each endpoint needs:**
+
+- `SearchInstanceMetrics`/`InstanceDataPoint` (CoreCount, JDKVersion, raw
+  `DeploymentMetadata`) reads `deployment_information` -- the only table
+  with JDK version or the raw deployment-info JSON at all.
+- `SearchInstanceUsage`/`InstanceSummary` (an open `map[string]int` of count
+  types per day) reads `usage_count` -- per-node, per-day, per-count-type
+  facts (`count_type` in practice holds `CORES`/`TPS`/`MTX`/`MAU`, but
+  nothing enforces that set; it stays a free string, same reasoning as the
+  migration's own comment on that column).
+- `SearchInstanceUsageStats` reads `daily_usage_summary` instead of
+  `usage_count`, specifically because `daily_usage_summary` is the only one
+  of the two with a `data_source` column (`usage_data_source_enum`:
+  `API_CALL`/`FILE_UPLOAD`) -- `InstanceStatsFilters.DataSource` (an int, 1
+  or 2) only has something to filter against there.
+  `instanceDataSourceEnum` (`instance_service.go`) maps 1/2 to the enum
+  labels; an unrecognized value is a `ValidationError`, not a silent no-op.
+- `SearchInstanceMetricsStats` has the same `DataSource` field on its
+  request type (`InstanceStatsFilters` is shared), but `deployment_information`
+  has no data-source column at all -- there's nothing to filter on Postgres.
+  Rather than silently ignore a caller-supplied `dataSource`, a non-nil value
+  is rejected with a `ValidationError` before the repository is ever called
+  (same "reject explicitly rather than silently ignore an unsupported
+  filter" convention as `SearchDeployedProducts`' `ProductCategories`
+  rejection). It aggregates the `CORES` reading across every matching
+  instance into one total per day (the only numeric metric
+  `deployment_information` carries); `Summary.Current` is the most recent
+  day's total in range, `Min`/`Max`/`Avg` are computed across those daily
+  totals.
+
+**A known, accepted ambiguity**: `deployment_information.node_id` is a plain
+string, not a foreign key to `deployment_node.id` -- so if the same `node_id`
+text were ever reused by two different `deployment_node` rows (the
+migration's own "identity not consistent upstream" warning suggests this is
+possible upstream), `SearchInstances`' metadata lookup could attach the same
+latest snapshot to both. Not fixable within this schema: `deployment_information`
+has no other way to identify which specific node row it belongs to.
+
+**`monthly_usage_count` and `project_daily_summary` are not wired up.** No
+existing endpoint's response shape has a monthly-granularity or
+project-level rollup concept to serve from them; `product_usage_map` (a
+product-code -> display-unit lookup) has no consuming field either. Left
+unused rather than exposed speculatively, same as other tables with no
+current caller elsewhere in this file.
+
 ## Service offerings and task SLAs
 
 `service_offering` (migration 000049) is now Postgres-backed

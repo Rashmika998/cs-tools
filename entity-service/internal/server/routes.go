@@ -343,10 +343,18 @@ func NewRouter(db *pgxpool.Pool, cfg *config.Config) (http.Handler, service.Even
 		escalationHandler = handler.NewEscalationHandler(service.NewServiceNowEscalationService(serviceNowIntegrationServiceClient))
 	}
 
-	var instanceHandler *handler.InstanceHandler
+	// instance/usage tracking tables (migration 000054) -- see
+	// instance_repo.go's own doc comment for the caveats around resolving an
+	// instance's project/deployment/deployed-product references on this data
+	// source.
+	instanceRepo := repository.NewInstanceRepository(db)
+	var activeInstanceSvc service.InstanceService
 	if cfg.DataSource == config.DataSourceServiceNow {
-		instanceHandler = handler.NewInstanceHandler(service.NewServiceNowInstanceService(serviceNowIntegrationServiceClient))
+		activeInstanceSvc = service.NewServiceNowInstanceService(serviceNowIntegrationServiceClient)
+	} else {
+		activeInstanceSvc = service.NewInstanceService(instanceRepo)
 	}
+	instanceHandler := handler.NewInstanceHandler(activeInstanceSvc)
 
 	itServiceRepo := repository.NewITServiceRepository(db)
 	var activeITServiceSvc service.ITServiceService
@@ -663,13 +671,11 @@ func NewRouter(db *pgxpool.Pool, cfg *config.Config) (http.Handler, service.Even
 		mux.HandleFunc("POST /escalations", escalationHandler.CreateEscalation)
 	}
 
-	if instanceHandler != nil {
-		mux.HandleFunc("POST /instances/search", instanceHandler.SearchInstances)
-		mux.HandleFunc("POST /instances/metrics/search", instanceHandler.SearchInstanceMetrics)
-		mux.HandleFunc("POST /instances/usages/search", instanceHandler.SearchInstanceUsage)
-		mux.HandleFunc("POST /instances/metrics/stats/search", instanceHandler.SearchInstanceMetricsStats)
-		mux.HandleFunc("POST /instances/usages/stats/search", instanceHandler.SearchInstanceUsageStats)
-	}
+	mux.HandleFunc("POST /instances/search", instanceHandler.SearchInstances)
+	mux.HandleFunc("POST /instances/metrics/search", instanceHandler.SearchInstanceMetrics)
+	mux.HandleFunc("POST /instances/usages/search", instanceHandler.SearchInstanceUsage)
+	mux.HandleFunc("POST /instances/metrics/stats/search", instanceHandler.SearchInstanceMetricsStats)
+	mux.HandleFunc("POST /instances/usages/stats/search", instanceHandler.SearchInstanceUsageStats)
 
 	return middleware.CorrelationID(
 		middleware.Recovery(
