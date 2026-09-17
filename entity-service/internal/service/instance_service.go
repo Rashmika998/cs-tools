@@ -63,6 +63,24 @@ func (s *instanceService) SearchInstances(ctx context.Context, req domain.Search
 		if err := validateInstanceIDFilters(req.Filters.ProjectIDs, req.Filters.DeploymentIDs, req.Filters.DeployedProductIDs); err != nil {
 			return domain.SearchInstancesResponse{}, err
 		}
+		// StartDate/EndDate are optional here (unlike every other instance
+		// endpoint, where InstanceDateRangeFilters makes them required and
+		// validateDateRange already checks them) -- decodeRequest only
+		// confirms the JSON shape, so a malformed value would otherwise
+		// reach instanceRepo.SearchInstances' own ::date cast unchecked.
+		if req.Filters.StartDate != nil {
+			if err := validateDateOnly("startDate", *req.Filters.StartDate); err != nil {
+				return domain.SearchInstancesResponse{}, err
+			}
+		}
+		if req.Filters.EndDate != nil {
+			if err := validateDateOnly("endDate", *req.Filters.EndDate); err != nil {
+				return domain.SearchInstancesResponse{}, err
+			}
+		}
+		if req.Filters.StartDate != nil && req.Filters.EndDate != nil && *req.Filters.StartDate > *req.Filters.EndDate {
+			return domain.SearchInstancesResponse{}, &apierror.ValidationError{Msg: "endDate must not be before startDate"}
+		}
 	}
 
 	instances, total, err := s.repo.SearchInstances(ctx, req)

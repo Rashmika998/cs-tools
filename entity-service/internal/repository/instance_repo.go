@@ -488,12 +488,12 @@ func (r *instanceRepo) SearchInstanceMetricsStats(ctx context.Context, filters d
 		if err := rows.Scan(&day, &instanceID, &numberOfCores); err != nil {
 			return domain.InstanceMetricsStatsResponse{}, fmt.Errorf("scan instance metrics stats: %w", err)
 		}
+		instancesSeen[instanceID] = struct{}{}
 		cores := parseCoreCount(numberOfCores)
 		if cores == nil {
 			continue
 		}
 		dailyTotal[day.UTC().Format("2006-01-02")] += *cores
-		instancesSeen[instanceID] = struct{}{}
 	}
 	if err := rows.Err(); err != nil {
 		return domain.InstanceMetricsStatsResponse{}, fmt.Errorf("iterate instance metrics stats: %w", err)

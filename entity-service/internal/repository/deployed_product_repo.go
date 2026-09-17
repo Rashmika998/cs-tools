@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -65,7 +66,11 @@ func (r *deployedProductRepo) resolveDeployedProductNodes(ctx context.Context, i
 		}
 		return domain.ReferenceTableItem{}, nil, fmt.Errorf("get deployed product: %w", err)
 	}
-	if dpDeploymentID == nil || *dpDeploymentID != deploymentID {
+	// Case-insensitive: dpDeploymentID comes back from Postgres in its
+	// canonical lower-case form, but deploymentID is caller-supplied and
+	// validateUUIDs accepts upper-case hex too -- a naive == would false-404
+	// a request that spelled its UUID in upper case.
+	if dpDeploymentID == nil || !strings.EqualFold(*dpDeploymentID, deploymentID) {
 		return domain.ReferenceTableItem{}, nil, &apierror.NotFoundError{Msg: "deployed product not found for the given deployment"}
 	}
 
