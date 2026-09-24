@@ -199,6 +199,81 @@ func TestGetProjectOnboardingSteps(t *testing.T) {
 		}
 	})
 
+	t.Run("drops a row a concurrent ledger write repeated across pages", func(t *testing.T) {
+		// The upstream orders by updated_on DESC, so a retry between the two
+		// page fetches moves that row to the front and pushes a row page 0
+		// already returned into page 1. amy's IDENTITY row arrives twice.
+		repeated := entity.OnboardingStep{ID: "s1", MembershipSfID: "a0X1", Email: "amy@example.com", Step: "IDENTITY", Status: "SUCCEEDED", AttemptCount: 1, EventType: "CREATED", EventModifiedOn: now, UpdatedOn: now}
+		page0 := []entity.OnboardingStep{
+			repeated,
+			{ID: "s2", MembershipSfID: "a0X1", Email: "amy@example.com", Step: "DATABASE", Status: "SUCCEEDED", AttemptCount: 1, EventType: "CREATED", EventModifiedOn: now, UpdatedOn: now},
+		}
+		page1 := []entity.OnboardingStep{
+			repeated,
+			{ID: "s3", MembershipSfID: "a0X1", Email: "amy@example.com", Step: "EMAIL", Status: "SUCCEEDED", AttemptCount: 1, EventType: "CREATED", EventModifiedOn: now, UpdatedOn: now},
+		}
+		h := NewOnboardingStepHandler(&mockEntityOnboardingStepClient{
+			searchOnboardingStepsFn: func(_ context.Context, req entity.OnboardingStepSearchRequest) (entity.OnboardingStepSearchResponse, error) {
+				switch req.Pagination.Offset {
+				case 0:
+					return entity.OnboardingStepSearchResponse{Steps: page0, Total: 4, Limit: 50, Offset: 0}, nil
+				case 2:
+					return entity.OnboardingStepSearchResponse{Steps: page1, Total: 4, Limit: 50, Offset: 2}, nil
+				default:
+					return entity.OnboardingStepSearchResponse{}, fmt.Errorf("unexpected offset %d", req.Pagination.Offset)
+				}
+			},
+		})
+		w := httptest.NewRecorder()
+		h.GetProjectOnboardingSteps(w, withUser(newRequest(projectID)))
+		assertStatus(t, w, http.StatusOK)
+
+		resp := decodeJSON[ProjectOnboardingStepsResponse](t, w)
+		if resp.Total != 1 || len(resp.Memberships) != 1 {
+			t.Fatalf("resp = %+v, want one membership", resp)
+		}
+		gotOrder := make([]string, 0, len(resp.Memberships[0].Steps))
+		for _, s := range resp.Memberships[0].Steps {
+			gotOrder = append(gotOrder, s.Step)
+		}
+		if fmt.Sprint(gotOrder) != "[IDENTITY DATABASE EMAIL]" {
+			t.Errorf("step order = %v, want each step once in flow order", gotOrder)
+		}
+	})
+
+	t.Run("lower-cases the email the response documents as lower-cased", func(t *testing.T) {
+		h := NewOnboardingStepHandler(&mockEntityOnboardingStepClient{
+			searchOnboardingStepsFn: func(context.Context, entity.OnboardingStepSearchRequest) (entity.OnboardingStepSearchResponse, error) {
+				return entity.OnboardingStepSearchResponse{
+					Steps: []entity.OnboardingStep{
+						// Upstream normalises on write today, so only a row
+						// written before that, or by another writer, looks
+						// like this — the documented shape must hold anyway.
+						{ID: "s1", MembershipSfID: "a0X2", Email: "  Zed@Example.COM ", Step: "IDENTITY", Status: "SUCCEEDED", EventType: "CREATED", EventModifiedOn: now, UpdatedOn: now},
+						{ID: "s2", MembershipSfID: "a0X1", Email: "AMY@example.com", Step: "IDENTITY", Status: "SUCCEEDED", EventType: "CREATED", EventModifiedOn: now, UpdatedOn: now},
+					},
+					Total: 2, Limit: 50, Offset: 0,
+				}, nil
+			},
+		})
+		w := httptest.NewRecorder()
+		h.GetProjectOnboardingSteps(w, withUser(newRequest(projectID)))
+		assertStatus(t, w, http.StatusOK)
+
+		resp := decodeJSON[ProjectOnboardingStepsResponse](t, w)
+		if len(resp.Memberships) != 2 {
+			t.Fatalf("memberships = %+v, want two", resp.Memberships)
+		}
+		// Sorted on the normalised value, so amy precedes zed despite the
+		// raw "AMY@…" sorting before "  Zed@…" only by accident of case.
+		if resp.Memberships[0].Email != "amy@example.com" {
+			t.Errorf("first email = %q, want %q", resp.Memberships[0].Email, "amy@example.com")
+		}
+		if resp.Memberships[1].Email != "zed@example.com" {
+			t.Errorf("second email = %q, want %q", resp.Memberships[1].Email, "zed@example.com")
+		}
+	})
+
 	t.Run("upstream errors are mapped correctly", func(t *testing.T) {
 		for _, tc := range upstreamErrorsGeneric("Failed to load onboarding status.") {
 			t.Run(tc.name, func(t *testing.T) {

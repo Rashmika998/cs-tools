@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/wso2-open-operations/cs-tools/apps/csm-portal/backend/internal/entity"
@@ -165,19 +166,46 @@ func (h *OnboardingStepHandler) fetchAllProjectSteps(ctx context.Context, projec
 	return all, true, nil
 }
 
+// membershipStepKey identifies one ledger row by its natural key. The ledger
+// table is UNIQUE (membership_sf_id, step), so this is one-to-one with a row
+// id while also being exactly the uniqueness the response has to carry: the
+// webapp renders a membership's steps keyed by step name.
+type membershipStepKey struct {
+	membershipSfID string
+	step           string
+}
+
 // groupOnboardingSteps folds flat ledger rows into one entry per membership.
 // Memberships are ordered by email then membership id so the response is
 // stable across calls; each membership's steps follow onboardingStepOrder,
 // with any step name this build does not know placed last, by name.
+//
+// Rows repeated across pages are dropped, keeping the first (newest) copy.
+// fetchAllProjectSteps walks an offset/limit window over a live ledger the
+// upstream orders by updated_on DESC, and an onboarding retry sets
+// updated_on = NOW(), which moves that row to the front and pushes a row the
+// previous page already returned into the next one. Without this the same
+// step would be listed twice for one membership.
 func groupOnboardingSteps(steps []entity.OnboardingStep) []ProjectOnboardingMembership {
 	byMembership := make(map[string]*ProjectOnboardingMembership)
+	seen := make(map[membershipStepKey]struct{}, len(steps))
 	for _, s := range steps {
+		key := membershipStepKey{membershipSfID: s.MembershipSfID, step: s.Step}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+
 		m, ok := byMembership[s.MembershipSfID]
 		if !ok {
 			m = &ProjectOnboardingMembership{
-				MembershipSfID:   s.MembershipSfID,
-				ContactSfID:      s.ContactSfID,
-				Email:            s.Email,
+				MembershipSfID: s.MembershipSfID,
+				ContactSfID:    s.ContactSfID,
+				// Normalized here rather than trusted from upstream so the
+				// documented "lower-cased email" holds for every consumer of
+				// this portal-owned response, and so the memberships sort
+				// below does not depend on letter case.
+				Email:            normalizeEmail(s.Email),
 				ProjectContactID: s.ProjectContactID,
 				Steps:            []ProjectOnboardingStep{},
 			}
@@ -192,6 +220,9 @@ func groupOnboardingSteps(steps []entity.OnboardingStep) []ProjectOnboardingMemb
 		}
 		if m.ProjectContactID == nil && s.ProjectContactID != nil {
 			m.ProjectContactID = s.ProjectContactID
+		}
+		if m.Email == "" {
+			m.Email = normalizeEmail(s.Email)
 		}
 		m.Steps = append(m.Steps, ProjectOnboardingStep{
 			Step:            s.Step,
@@ -220,6 +251,7 @@ func groupOnboardingSteps(steps []entity.OnboardingStep) []ProjectOnboardingMemb
 		})
 		memberships = append(memberships, *m)
 	}
+	// Emails are already normalized above, so this order is case-independent.
 	sort.Slice(memberships, func(i, j int) bool {
 		if memberships[i].Email != memberships[j].Email {
 			return memberships[i].Email < memberships[j].Email
@@ -227,4 +259,10 @@ func groupOnboardingSteps(steps []entity.OnboardingStep) []ProjectOnboardingMemb
 		return memberships[i].MembershipSfID < memberships[j].MembershipSfID
 	})
 	return memberships
+}
+
+// normalizeEmail puts an invited address into the one form this response
+// documents and the webapp matches on: trimmed and lower-cased.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
