@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Package notify posts incidents to CSM as the primary channel, assigning incident_number, and falls back to Chat webhooks with retry and exponential backoff.
+// Package notify creates and updates incidents on CSM via csm-integration-service (the platform's real, M2M-authenticated incident API), and falls back to Chat webhooks with retry and exponential backoff when CSM does not confirm.
 package notify
 
 import (
@@ -35,31 +35,49 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
+	"alert-core-service/internal/apierror"
+	"alert-core-service/internal/csm"
 	"alert-core-service/internal/model"
 )
 
-// Notifier posts prepared incidents to downstream systems over HTTP, targeting CSM first and falling back to Google Chat webhooks when CSM does not confirm.
+// Notifier posts prepared incidents to downstream systems, targeting CSM first via csm-integration-service and falling back to Google Chat webhooks when CSM does not confirm.
 type Notifier struct {
 	logger                  *slog.Logger
 	client                  *http.Client
-	csmWebhookURL           string
+	csm                     *csm.Client
+	callerID                string
+	unknownServiceID        string
+	services                *serviceCache
 	fallbackChatWebhookURLs []string
 	maxAttempts             int
 	retryBaseDelay          time.Duration
 }
 
-// New builds a notifier from CSM_WEBHOOK_URL and FALLBACK_CHAT_WEBHOOK_URLS; maxAttempts, retryBaseDelay, and httpTimeout tune per-target retry behavior and are all deployment-configurable via config.toml.
-func New(logger *slog.Logger, maxAttempts int, retryBaseDelay, httpTimeout time.Duration) *Notifier {
+// Config is everything New needs beyond the csm itself; kept as a struct rather than a growing positional-argument list.
+type Config struct {
+	// CallerID is the CSM caller uuid this service authenticates every CreateIncidentRequest as.
+	CallerID string
+	// UnknownServiceID is the CMDB service uuid used when an alert's raw Service label has no match via SearchServiceID.
+	UnknownServiceID string
+	// ServiceCacheTTL bounds how long a resolved label->serviceId mapping is reused before a fresh live search.
+	ServiceCacheTTL time.Duration
+	MaxAttempts     int
+	RetryBaseDelay  time.Duration
+	HTTPTimeout     time.Duration
+}
+
+// New builds a notifier around csm, plus FALLBACK_CHAT_WEBHOOK_URLS for the Chat fallback path.
+func New(logger *slog.Logger, csm *csm.Client, cfg Config) *Notifier {
 	n := &Notifier{
 		logger:                  logger,
-		client:                  &http.Client{Timeout: httpTimeout},
-		csmWebhookURL:           os.Getenv("CSM_WEBHOOK_URL"),
+		client:                  &http.Client{Timeout: cfg.HTTPTimeout},
+		csm:                     csm,
+		callerID:                cfg.CallerID,
+		unknownServiceID:        cfg.UnknownServiceID,
+		services:                newServiceCache(cfg.ServiceCacheTTL),
 		fallbackChatWebhookURLs: splitURLs(os.Getenv("FALLBACK_CHAT_WEBHOOK_URLS")),
-		maxAttempts:             maxAttempts,
-		retryBaseDelay:          retryBaseDelay,
-	}
-	if n.csmWebhookURL == "" {
-		logger.Warn("CSM_WEBHOOK_URL not set; incidents will not be forwarded to CSM")
+		maxAttempts:             cfg.MaxAttempts,
+		retryBaseDelay:          cfg.RetryBaseDelay,
 	}
 	if len(n.fallbackChatWebhookURLs) == 0 {
 		logger.Warn("FALLBACK_CHAT_WEBHOOK_URLS not set; incidents will not reach Chat if CSM fails")
@@ -78,28 +96,135 @@ func splitURLs(raw string) []string {
 	return urls
 }
 
-// csmResponse is CSM's JSON reply; its incident_number replaces the deterministic placeholder value that IncidentRepo.Upsert originally seeded when the incident row was created.
-type csmResponse struct {
-	IncidentNumber string `json:"incident_number"`
+// DedupTag returns the exact, stable tag embedded in a new incident's
+// Subject, keyed off the alert's own fingerprint. NotifyCSM searches for this
+// tag before ever calling CreateIncident, so a retried delivery whose
+// previous attempt actually succeeded on CSM's side (but whose response was
+// lost to this service) reuses the already-created incident instead of
+// creating a second one.
+func DedupTag(fingerprint string) string {
+	return "[fp:" + fingerprint[:12] + "]"
 }
 
-// NotifyCSM posts inc to the CSM webhook and returns its assigned incident_number; ok is false on any failure, which the caller uses to trigger Chat fallback.
-func (n *Notifier) NotifyCSM(ctx context.Context, inc model.Incident) (incidentNumber string, ok bool) {
-	if n.csmWebhookURL == "" {
-		return "", false
+// NotifyCSM creates inc as a real CSM incident via csm-integration-service's POST /incidents, first checking for an already-created incident carrying this fingerprint's dedup tag. ok is false on any failure; permanent is true when CSM rejected the payload itself (a 4xx other than 429) and retrying the identical payload can never succeed, so the caller should stop retrying this incident rather than rescanning it on every sweep.
+func (n *Notifier) NotifyCSM(ctx context.Context, inc model.Incident) (incidentID, incidentNumber string, ok bool, permanent bool) {
+	tag := DedupTag(inc.Fingerprint)
+	if id, number, found, err := n.csm.SearchIncidentByTag(ctx, tag); err != nil {
+		// Fail open: a search error proves nothing about whether an incident exists, so fall through to attempting CreateIncident as normal, the same posture sre-alert-ingestion-service's own dedup search takes.
+		n.logger.Warn("csm dedup search failed, proceeding to create", "incident_number", inc.IncidentNumber, "error", err)
+	} else if found {
+		n.logger.Info("found existing csm incident via dedup search, reusing", "incident_id", id, "incident_number", number)
+		return id, number, true, false
 	}
-	body, err := n.postWithRetry(ctx, n.csmWebhookURL, inc)
+
+	serviceID, err := n.resolveServiceID(ctx, inc.Service)
 	if err != nil {
-		n.logger.Error("notify failed after retries", "target", "csm", "incident_number", inc.IncidentNumber, "error", err)
-		return "", false
+		n.logger.Error("service id resolution failed, will retry", "incident_number", inc.IncidentNumber, "service", inc.Service, "error", err)
+		return "", "", false, false
 	}
-	var resp csmResponse
-	if err := json.Unmarshal(body, &resp); err != nil || resp.IncidentNumber == "" {
-		n.logger.Error("csm response missing incident_number", "incident_number", inc.IncidentNumber, "error", err)
-		return "", false
+
+	req := csm.CreateIncidentRequest{
+		CallerID:  n.callerID,
+		Category:  csmCategory(inc.Category),
+		ServiceID: serviceID,
+		Impact:    inc.Impact,
+		Urgency:   inc.Urgency,
+		Subject:   tag + " " + incidentSubject(inc),
 	}
-	n.logger.Info("notified", "target", "csm", "incident_number", resp.IncidentNumber)
-	return resp.IncidentNumber, true
+
+	res, err := n.createIncidentWithRetry(ctx, req)
+	if err != nil {
+		var apiErr *apierror.Error
+		perm := errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 && apiErr.StatusCode != http.StatusTooManyRequests
+		n.logger.Error("csm create incident failed", "incident_number", inc.IncidentNumber, "permanent", perm, "error", err)
+		return "", "", false, perm
+	}
+
+	n.logger.Info("notified", "target", "csm", "incident_id", res.IncidentID, "incident_number", res.IncidentNumber)
+	return res.IncidentID, res.IncidentNumber, true, false
+}
+
+// PushWorkNote pushes note onto an already-created CSM incident via PATCH /incidents/{id}, keyed by CSM's own incident id. Best-effort: callers must not fail the overall Outcome on an error here, matching how this service treats every other CSM-side annotation.
+func (n *Notifier) PushWorkNote(ctx context.Context, incidentID, note string) error {
+	if incidentID == "" {
+		return fmt.Errorf("notify: cannot push work note, incident has no csm incident id yet")
+	}
+	return n.csm.UpdateIncident(ctx, incidentID, note)
+}
+
+// IncidentState looks up incidentNumber's current open/closed state on CSM. found is false when CSM has no matching incident (e.g. it hasn't been created yet).
+func (n *Notifier) IncidentState(ctx context.Context, incidentNumber string) (open bool, found bool, err error) {
+	return n.csm.IncidentState(ctx, incidentNumber)
+}
+
+// createIncidentWithRetry retries a transient CreateIncident failure (network error, 5xx, 429) with backoff; a 4xx CSM rejection other than 429 fails immediately, since retrying the same payload can never succeed.
+func (n *Notifier) createIncidentWithRetry(ctx context.Context, req csm.CreateIncidentRequest) (*csm.CreateIncidentResult, error) {
+	eb := backoff.NewExponentialBackOff()
+	eb.InitialInterval = n.retryBaseDelay
+	b := backoff.WithContext(backoff.WithMaxRetries(eb, uint64(n.maxAttempts-1)), ctx)
+
+	var result *csm.CreateIncidentResult
+	err := backoff.Retry(func() error {
+		res, err := n.csm.CreateIncident(ctx, req)
+		if err == nil {
+			result = res
+			return nil
+		}
+		var apiErr *apierror.Error
+		if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 && apiErr.StatusCode != http.StatusTooManyRequests {
+			return backoff.Permanent(err)
+		}
+		return err
+	}, b)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// resolveServiceID maps an alert's raw, human-readable Service label to a CMDB service uuid: an in-memory TTL-bounded cache first, then a live POST /services/search, falling back to UnknownServiceID only on a confirmed zero-result search. A transient search error is returned as-is (never translated into the unknown-service fallback), so the caller retries rather than silently mis-tagging the incident.
+func (n *Notifier) resolveServiceID(ctx context.Context, label string) (string, error) {
+	if label == "" {
+		return n.unknownServiceID, nil
+	}
+	if id, ok := n.services.get(label, time.Now()); ok {
+		return id, nil
+	}
+	id, err := n.csm.SearchServiceID(ctx, label)
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		return n.unknownServiceID, nil
+	}
+	n.services.set(label, id, time.Now())
+	return id, nil
+}
+
+// csmCategoryMap translates this service's own free-text alert Category into one of CSM's fixed CreateIncidentRequest.Category enum values.
+var csmCategoryMap = map[string]string{
+	"security": "SECURITY",
+	"inquiry":  "INQUIRY",
+}
+
+// csmCategory maps a lowercase category label to CSM's Category enum, defaulting to SERVICE_INTERRUPTION -- the correct default for an alerting pipeline, where the overwhelming majority of incidents represent something breaking rather than a question or a security event.
+func csmCategory(category string) string {
+	if v, ok := csmCategoryMap[strings.ToLower(strings.TrimSpace(category))]; ok {
+		return v
+	}
+	return "SERVICE_INTERRUPTION"
+}
+
+// incidentSubject builds CSM's required one-line Subject from the incident's own fields.
+func incidentSubject(inc model.Incident) string {
+	subject := inc.Service
+	if inc.MetricName != "" {
+		subject += " - " + inc.MetricName
+	}
+	if inc.Environment != "" {
+		subject += " (" + inc.Environment + ")"
+	}
+	return subject
 }
 
 // NotifyChat posts inc to every FALLBACK_CHAT_WEBHOOK_URLS target concurrently; ok is true only once all confirm delivery, or immediately if no targets are configured.
@@ -111,18 +236,18 @@ func (n *Notifier) NotifyChat(ctx context.Context, inc model.Incident) (ok bool)
 	card := fallbackGoogleChatCard(inc)
 	var wg sync.WaitGroup
 	var failures atomic.Int32
-	for _, url := range n.fallbackChatWebhookURLs {
+	for _, chatURL := range n.fallbackChatWebhookURLs {
 		wg.Add(1)
-		go func(url string) {
+		go func(chatURL string) {
 			defer wg.Done()
-			spaceID := chatSpaceID(url)
-			if _, err := n.postWithRetry(ctx, url, card); err != nil {
+			spaceID := chatSpaceID(chatURL)
+			if _, err := n.postWithRetry(ctx, chatURL, card); err != nil {
 				n.logger.Error("notify failed after retries", "target", "google_chat", "chat_space_id", spaceID, "incident_number", inc.IncidentNumber, "error", err)
 				failures.Add(1)
 				return
 			}
 			n.logger.Info("notified", "target", "google_chat", "chat_space_id", spaceID, "incident_number", inc.IncidentNumber)
-		}(url)
+		}(chatURL)
 	}
 	wg.Wait()
 	return failures.Load() == 0
@@ -140,7 +265,7 @@ func chatSpaceID(webhookURL string) string {
 	return "unknown"
 }
 
-// postWithRetry retries transient failures (network, 5xx, 429) with backoff; other 4xx responses fail immediately, and 429 stays retryable since webhook targets rate-limit bursty concurrent incidents.
+// postWithRetry retries transient failures (network, 5xx, 429) with backoff; other 4xx responses fail immediately, and 429 stays retryable since Chat webhook targets rate-limit bursty concurrent incidents.
 func (n *Notifier) postWithRetry(ctx context.Context, url string, payload any) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -215,12 +340,12 @@ func severityLabel(severity int) string {
 	return fmt.Sprintf("SEVERITY %d", severity)
 }
 
-// priorityLabel formats a numeric severity as CSM's expected priority string convention, "P<N> - <Word>", for example rendering severity 1 as "P1 - Critical".
+// priorityLabel formats a numeric severity as a Chat-card-friendly priority string, for example rendering severity 1 as "P1 - Critical".
 func priorityLabel(severity int) string {
 	return fmt.Sprintf("P%d - %s", severity, severityLabel(severity))
 }
 
-// fallbackGoogleChatCard builds a cardsV2 message mirroring CSM's incident card layout, titled with a FALLBACK prefix since this path has no team-specific routing information.
+// fallbackGoogleChatCard builds a cardsV2 message summarizing the incident, titled with a FALLBACK prefix since this path has no team-specific routing information.
 func fallbackGoogleChatCard(inc model.Incident) map[string]any {
 	word := severityLabel(inc.Severity)
 	subtitle := "#" + inc.IncidentNumber + " | " + inc.Service

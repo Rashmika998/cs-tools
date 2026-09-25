@@ -32,4 +32,12 @@ endpoints:
       port: 8080
     type: REST
     networkVisibilities:
-      - Public
+      - Project
+  - name: livez
+    displayName: Alert Livez
+    service:
+      basePath: /livez
+      port: 8080
+    type: REST
+    networkVisibilities:
+      - Project

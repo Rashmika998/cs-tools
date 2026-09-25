@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Package model holds the shared alert and incident shapes, plus the severity and fingerprint normalization rules ported from ServiceNow's AlertCoreUtils (see PLAN.md sections 19-20).
+// Package model holds the shared alert and incident shapes, plus the severity and fingerprint normalization rules this service's incident pipeline is built on.
 package model
 
 import (
@@ -41,12 +41,14 @@ type Alert struct {
 
 // Incident dedups alerts by fingerprint; Severity is numeric (1=Critical through 5=OK), and the db struct tags drive gocqlx's column binding when reading and writing rows.
 type Incident struct {
-	Fingerprint    string    `json:"fingerprint" db:"fingerprint"`
+	Fingerprint string `json:"fingerprint" db:"fingerprint"`
+	// IncidentID is CSM's own incident id (a UUID), the key PATCH /incidents/{id} requires; empty until CSM confirms. IncidentNumber is the human-readable number ("INC0012345") used for display and for searching CSM's open/closed state.
+	IncidentID     string    `json:"incident_id" db:"incident_id"`
 	IncidentNumber string    `json:"incident_number" db:"incident_number"`
 	Status         string    `json:"status" db:"status"`
 	Severity       int       `json:"severity" db:"severity"`
-	Impact         int       `json:"impact" db:"impact"`
-	Urgency        int       `json:"urgency" db:"urgency"`
+	Impact         string    `json:"impact" db:"impact"`
+	Urgency        string    `json:"urgency" db:"urgency"`
 	Service        string    `json:"service" db:"service"`
 	MetricName     string    `json:"metric_name" db:"metric_name"`
 	Description    string    `json:"description" db:"description"`
@@ -58,17 +60,31 @@ type Incident struct {
 	WorkNotes      []string  `json:"work_notes" db:"work_notes"`
 	FirstSeen      time.Time `json:"first_seen" db:"first_seen"`
 	LastSeen       time.Time `json:"last_seen" db:"last_seen"`
-	// Notified is true once Chat delivered to every target; CSMConfirmed is true once CSM assigned a real incident_number — independent obligations, each retried until true.
+	// Notified is true once Chat delivered to every target; CSMConfirmed is true once CSM assigned a real IncidentID/IncidentNumber — independent obligations, each retried until true.
 	Notified     bool `json:"notified" db:"notified"`
 	CSMConfirmed bool `json:"csm_confirmed" db:"csm_confirmed"`
+	// CSMAttempts counts failed CreateIncident/PATCH delivery attempts against this incident, so a payload CSM permanently rejects (4xx) stops being retried forever instead of being rescanned by every RetrySweep tick. CSMPermanentlyFailed is set once that cap is hit or CSM reports a non-retryable client error; such rows are excluded from ListPending.
+	CSMAttempts          int  `json:"csm_attempts" db:"csm_attempts"`
+	CSMPermanentlyFailed bool `json:"csm_permanently_failed" db:"csm_permanently_failed"`
 }
 
-// openStatuses are the incident lifecycle states that ServiceNow's original flow treated as state less than or equal to 2, meaning New or In Progress.
-var openStatuses = map[string]bool{"new": true, "in progress": true}
-
-// IsOpen reports whether the incident is still actionable by checking its status against openStatuses, mirroring ServiceNow's original "state is lesser than or is 2" check.
+// IsOpen reports whether the incident is still actionable. Status here is a
+// local snapshot last synced from CSM (see engine.Engine's CSM state sync,
+// backed by notify.Notifier.IncidentState) — this service is never the party
+// that closes an incident, so Status must never be trusted as authoritative
+// on its own between syncs: a row that has never been confirmed by CSM yet
+// (no real IncidentNumber) is always still open, since nothing exists on the
+// CSM side yet to have closed. This defaults open and requires an explicit
+// "closed" to flip, rather than requiring an explicit "open": an incident
+// this service just created and confirmed, but hasn't yet had the chance to
+// live-sync a state for, must not be mistaken for closed (which would fold a
+// later duplicate alert as a *new* incident update on the same row instead
+// of annotating the still-open one) just because a sync hasn't happened yet.
 func (i Incident) IsOpen() bool {
-	return openStatuses[strings.ToLower(strings.TrimSpace(i.Status))]
+	if !i.CSMConfirmed {
+		return true
+	}
+	return !strings.EqualFold(strings.TrimSpace(i.Status), "closed")
 }
 
 // Defaults are the fallback values applied to any Alert field left empty by the upstream source, sourced from the CORE_ALERT_DEFAULTS deployment env var.
@@ -113,7 +129,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// numericSeverity maps a lowercase severity label like "critical" or "warning" to ServiceNow's numeric 0-5 severity scale used throughout incident processing.
+// numericSeverity maps a lowercase severity label like "critical" or "warning" to this service's internal numeric 0-5 severity scale used throughout incident processing.
 var numericSeverity = map[string]int{
 	"critical": 1,
 	"major":    2,
@@ -123,12 +139,12 @@ var numericSeverity = map[string]int{
 	"clear":    0,
 }
 
-// SeverityToNumeric converts a severity label to its numeric value via numericSeverity, defaulting any empty or unrecognized label to 1, meaning Critical.
-func SeverityToNumeric(label string) int {
+// SeverityToNumeric converts a severity label to its numeric value via numericSeverity. recognized is false for an empty or unrecognized label; callers should log that case (an unrecognized label silently becoming P1 Critical would otherwise page people for a typo) before falling back to the returned value, which defaults to 1 (Critical) as the safe-by-default choice.
+func SeverityToNumeric(label string) (n int, recognized bool) {
 	if n, ok := numericSeverity[strings.ToLower(strings.TrimSpace(label))]; ok {
-		return n
+		return n, true
 	}
-	return 1
+	return 1, false
 }
 
 // IsResolving reports whether severityNum equals OK (5) or Clear (0), meaning the alert is a recovery signal rather than a newly reported problem.
@@ -136,25 +152,27 @@ func IsResolving(severityNum int) bool {
 	return severityNum == 5 || severityNum == 0
 }
 
-// ImpactUrgency maps a numeric severity to CSM's Impact/Urgency pair, ported directly from ServiceNow's original Create Record scripted mapping table.
-func ImpactUrgency(severityNum int) (impact, urgency int) {
+// ImpactUrgency maps a numeric severity to CSM's Impact/Urgency pair. CSM's
+// CreateIncidentRequest (csm-integration-service's openapi.yaml) requires
+// these as the strings "HIGH"/"MEDIUM"/"LOW", not integers.
+func ImpactUrgency(severityNum int) (impact, urgency string) {
 	switch severityNum {
 	case 1:
-		return 1, 1
+		return "HIGH", "HIGH"
 	case 2:
-		return 2, 1
+		return "MEDIUM", "HIGH"
 	case 3:
-		return 2, 2
+		return "MEDIUM", "MEDIUM"
 	case 4:
-		return 2, 3
+		return "MEDIUM", "LOW"
 	case 5:
-		return 3, 3
+		return "LOW", "LOW"
 	default:
-		return 1, 1
+		return "HIGH", "HIGH"
 	}
 }
 
-// BuildWorkNote formats a journal entry matching ServiceNow's scripted work notes, referencing the alert by id rather than an instance URL link.
+// BuildWorkNote formats a journal entry recording an alert event against an incident, referencing the alert by id rather than an instance URL link.
 func BuildWorkNote(kind, alertID, metricName, source string, at time.Time) string {
 	metricName = firstNonEmpty(metricName, "N/A")
 	source = firstNonEmpty(source, "N/A")

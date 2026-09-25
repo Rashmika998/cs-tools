@@ -57,6 +57,8 @@ type Settings struct {
 	MaxWindow int
 	// NotifySweepInterval is the cadence for retrying incidents whose CSM/Chat notification hasn't yet confirmed; it is independent of the alert processing cycle and is safe to call concurrently with it.
 	NotifySweepInterval time.Duration
+	// GapTimeout bounds how long a single missing alert id (its row never became visible, e.g. the producer bumped alert_seq and died before writing it) is allowed to block every id after it. Once an id has been the head of every window for longer than this, it is skipped (logged loudly) instead of retried forever. Zero disables the bound, restoring the old block-forever behavior.
+	GapTimeout time.Duration
 }
 
 // Poller periodically (and on demand) processes every alert id issued since its last confirmed position.
@@ -68,6 +70,10 @@ type Poller struct {
 	settings Settings
 	wake     chan struct{}
 	sweeping atomic.Bool
+	// wg tracks in-flight work launched off the Run goroutine (currently only RetrySweep), so Run doesn't return -- and a caller waiting on it doesn't consider the poller drained -- while a sweep is still delivering to CSM/Chat.
+	wg sync.WaitGroup
+	// stuck backs GapTimeout above. Only ever touched from the single goroutine that calls cycle (Run's own select loop), so it needs no lock.
+	stuck stuckTracker
 }
 
 // New seeds the alert_seq and cursor rows (idempotent) and returns a ready poller.
@@ -102,11 +108,17 @@ func (p *Poller) Wake() {
 // Run processes alerts on ping and on a fixed interval backstop until ctx is cancelled; cycles never
 // overlap. A second, independent ticker retries any incident whose CSM/Chat notification is still
 // outstanding, so a Chat/CSM outage recovers on its own without ever blocking alert ingestion.
+//
+// Callers that need to know the poller has actually drained before proceeding (e.g. main releasing
+// the processor lease on shutdown) should give Run a context of its own, cancel it, and then wait for
+// Run to return: it does not return until every RetrySweep goroutine it launched has also finished,
+// even though cycle() itself always runs synchronously on this same goroutine.
 func (p *Poller) Run(ctx context.Context) {
 	ticker := time.NewTicker(p.settings.Interval)
 	defer ticker.Stop()
 	notifyTicker := time.NewTicker(p.settings.NotifySweepInterval)
 	defer notifyTicker.Stop()
+	defer p.wg.Wait()
 
 	p.cycle(ctx)
 	for {
@@ -119,8 +131,10 @@ func (p *Poller) Run(ctx context.Context) {
 			p.cycle(ctx)
 		case <-notifyTicker.C:
 			if p.leader.IsLeader() && p.sweeping.CompareAndSwap(false, true) {
-				// Runs off the poll loop's goroutine so a slow CSM/Chat outage during the sweep never delays cycle(); the guard keeps sweeps from overlapping themselves. RetrySweep rechecks leadership per incident and stops if it's lost mid-sweep.
+				// Runs off the poll loop's goroutine so a slow CSM/Chat outage during the sweep never delays cycle(); the guard keeps sweeps from overlapping themselves. RetrySweep rechecks leadership per incident and stops if it's lost mid-sweep. Tracked in p.wg so Run doesn't report itself drained while this is still in flight.
+				p.wg.Add(1)
 				go func() {
+					defer p.wg.Done()
 					defer p.sweeping.Store(false)
 					p.engine.RetrySweep(ctx, p.leader.IsLeader)
 				}()
@@ -185,6 +199,13 @@ func (p *Poller) processWindow(ctx context.Context, cursor, latest int64) int64 
 	}
 	for i := readStop; i < n; i++ {
 		outcomes[i] = engine.Retry // deferred to the next cycle
+	}
+
+	// A missing row at the very head of the window (readStop == 0) blocks every id after it forever, with no bound -- if the producer bumped alert_seq and died before writing that row, the cursor never advances past it and all alert processing halts silently. GapTimeout caps how long this service waits before skipping the stuck id, logging loudly so the gap is visible rather than silent.
+	if n > 0 && p.stuck.observe(base, readStop == 0, time.Now(), p.settings.GapTimeout) {
+		id := cassandra.FormatSeq(alertIDPrefix, alertIDWidth, base)
+		p.logger.Error("alert id stuck beyond gap timeout, skipping to unblock the pipeline", "alert_id", id, "gap_timeout", p.settings.GapTimeout)
+		outcomes[0] = engine.Failed
 	}
 
 	p.handleSharded(ctx, base, slots, outcomes, readStop)

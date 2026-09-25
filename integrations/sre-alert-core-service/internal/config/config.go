@@ -47,6 +47,8 @@ type PollConfig struct {
 	ReadConcurrency int `toml:"read_concurrency"`
 	// MaxWindow caps how many alert ids a single poll cycle processes at once, bounding memory usage under large alert bursts.
 	MaxWindow int `toml:"max_window"`
+	// GapTimeout bounds how long a single missing alert id blocks every id after it before this service skips it and logs loudly, instead of stalling the whole pipeline forever.
+	GapTimeout Duration `toml:"gap_timeout"`
 }
 
 // LeaseConfig tunes the Cassandra-backed processor lease that elects a single active poller across replicas, so standbys never double-process the same alert.
@@ -63,7 +65,6 @@ type CassandraConfig struct {
 	ConnectBaseDelay   Duration `toml:"connect_base_delay"`
 	ConnectTimeout     Duration `toml:"connect_timeout"`
 	QueryTimeout       Duration `toml:"query_timeout"`
-	SeqMaxAttempts     int      `toml:"seq_max_attempts"`
 }
 
 // NotifyConfig tunes retry attempts, backoff delay, and per-call timeout for outbound CSM and Chat webhook requests.
@@ -73,6 +74,10 @@ type NotifyConfig struct {
 	HTTPTimeout    Duration `toml:"http_timeout"`
 	// RetrySweepInterval is how often the poller retries incidents whose CSM or Chat notification is still outstanding; this is outage recovery, independent of poll.interval.
 	RetrySweepInterval Duration `toml:"retry_sweep_interval"`
+	// MaxCSMAttempts bounds how many failed CreateIncident attempts an incident absorbs before it's marked permanently failed and dropped from RetrySweep, so a payload CSM permanently rejects (or a persistently misconfigured deployment) doesn't grow incidents_processed's full-table scan cost forever.
+	MaxCSMAttempts int `toml:"max_csm_attempts"`
+	// ServiceCacheTTL bounds how long a label->CMDB-service-id resolution is reused before a fresh live /services/search call.
+	ServiceCacheTTL Duration `toml:"service_cache_ttl"`
 }
 
 // ServerConfig tunes how long the HTTP server waits for in-flight requests to drain during a graceful shutdown before forcing the process to exit.
@@ -128,6 +133,8 @@ func (c Config) validate() error {
 		return fmt.Errorf("poll.read_concurrency must be positive")
 	case c.Poll.MaxWindow <= 0:
 		return fmt.Errorf("poll.max_window must be positive")
+	case c.Poll.GapTimeout <= 0:
+		return fmt.Errorf("poll.gap_timeout must be positive")
 	case c.Lease.TTL <= 0:
 		return fmt.Errorf("lease.ttl must be positive")
 	case c.Lease.RenewInterval <= 0:
@@ -142,8 +149,6 @@ func (c Config) validate() error {
 		return fmt.Errorf("cassandra.connect_timeout must be positive")
 	case c.Cassandra.QueryTimeout <= 0:
 		return fmt.Errorf("cassandra.query_timeout must be positive")
-	case c.Cassandra.SeqMaxAttempts <= 0:
-		return fmt.Errorf("cassandra.seq_max_attempts must be positive")
 	case c.Notify.MaxAttempts <= 0:
 		return fmt.Errorf("notify.max_attempts must be positive")
 	case c.Notify.RetryBaseDelay <= 0:
@@ -152,6 +157,10 @@ func (c Config) validate() error {
 		return fmt.Errorf("notify.http_timeout must be positive")
 	case c.Notify.RetrySweepInterval <= 0:
 		return fmt.Errorf("notify.retry_sweep_interval must be positive")
+	case c.Notify.MaxCSMAttempts <= 0:
+		return fmt.Errorf("notify.max_csm_attempts must be positive")
+	case c.Notify.ServiceCacheTTL <= 0:
+		return fmt.Errorf("notify.service_cache_ttl must be positive")
 	case c.Server.ShutdownGrace <= 0:
 		return fmt.Errorf("server.shutdown_grace must be positive")
 	}

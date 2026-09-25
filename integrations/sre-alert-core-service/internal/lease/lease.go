@@ -46,6 +46,8 @@ type Lease struct {
 	owner   string
 	ttl     time.Duration
 	leader  atomic.Bool
+	// validUntil is this replica's own local deadline for how long it may keep considering itself leader without a confirmed renewal, independent of leader's cached true/false value. IsLeader() historically returned leader.Load() alone, which stays true for up to query_timeout (10s) after a renew that hung against a 15s ttl -- long enough for a second replica to also believe it holds the lease. Tracking renewStart+ttl-margin locally, and requiring IsLeader() to still be before it, closes most of that window; see IsLeader's own doc comment for what it still doesn't cover.
+	validUntil atomic.Int64 // UnixNano; 0 means "never valid".
 }
 
 // Identity returns a per-process owner id built from the hostname plus a random suffix, so concurrently running replicas each get a value unique to their process.
@@ -80,9 +82,15 @@ func (l *Lease) seed(ctx context.Context) error {
 	return nil
 }
 
-// IsLeader reports whether this replica currently holds the lease, based on the result of the most recent Run tick rather than a fresh Cassandra read.
+// IsLeader reports whether this replica currently holds the lease, based on the result of the most recent Run tick rather than a fresh Cassandra read, AND whether that tick's own locally-computed validUntil deadline hasn't yet passed.
+//
+// The leader flag alone stays true from the moment a renew's CAS applies until the next tick clears it -- up to renewInterval later, or longer if a renew call hangs against query_timeout. A hung renew is exactly the case that matters: the row's actual Cosmos-side expiry is only ttl past when the *previous* successful renew started, not when this replica notices the new one is late, so a second replica's own tryAcquireOrRenew can already see the row as expired and steal it (its CAS guards on the observed owner, so it always wins that race) while this replica's cached leader flag is still true. Comparing against validUntil (set once per successful renew, to that renew's own start time plus ttl minus a safety margin) closes most of that window without needing a fresh read on every IsLeader call. It does not close it entirely: two replicas' local clocks can still disagree with each other and with Cosmos's, and true mutual exclusion under clock skew needs an idempotent CSM create (e.g. an incident-lookup-by-tag before create -- see notify.Notifier.NotifyCSM, which now does exactly this) as the real backstop, not a tighter local deadline.
 func (l *Lease) IsLeader() bool {
-	return l.leader.Load()
+	if !l.leader.Load() {
+		return false
+	}
+	validUntil := l.validUntil.Load()
+	return validUntil != 0 && time.Now().UnixNano() < validUntil
 }
 
 // Run acquires or renews the lease every renewInterval until ctx is cancelled, updating IsLeader; renewInterval must stay well under ttl so one missed renewal never drops it.
@@ -104,10 +112,12 @@ func (l *Lease) Run(ctx context.Context, renewInterval time.Duration) {
 // tick runs one acquire-or-renew attempt against the lease row and logs whenever this replica's leadership status flips between leader and standby.
 func (l *Lease) tick(ctx context.Context) {
 	wasLeader := l.leader.Load()
-	isLeader, err := l.tryAcquireOrRenew(ctx)
+	renewStart := time.Now()
+	isLeader, err := l.tryAcquireOrRenew(ctx, renewStart)
 	if err != nil {
 		// Can't confirm leadership, so stand down; the row still names us until expiry, so no standby steals meanwhile — a transient blip costs seconds, not correctness.
 		l.leader.Store(false)
+		l.validUntil.Store(0)
 		l.logger.Warn("lease acquire/renew failed, standing down", "error", err)
 		return
 	}
@@ -119,8 +129,8 @@ func (l *Lease) tick(ctx context.Context) {
 	}
 }
 
-// tryAcquireOrRenew reads the current lease row and, depending on its owner and expiry, either renews our own hold, steals an expired one, or backs off as standby.
-func (l *Lease) tryAcquireOrRenew(ctx context.Context) (bool, error) {
+// tryAcquireOrRenew reads the current lease row and, depending on its owner and expiry, either renews our own hold, steals an expired one, or backs off as standby. renewStart, captured by the caller before this call began, is what validUntil is computed from on success -- not the time the CAS actually applied -- so validUntil always reflects the worst case (this call took as long as it possibly could) rather than assuming it was instantaneous.
+func (l *Lease) tryAcquireOrRenew(ctx context.Context, renewStart time.Time) (bool, error) {
 	var owner string
 	var expiresAt time.Time
 	if err := l.session.Query(
@@ -134,19 +144,25 @@ func (l *Lease) tryAcquireOrRenew(ctx context.Context) (bool, error) {
 
 	switch {
 	case owner == l.owner:
-		return l.cas(ctx, l.owner, newExpiry)
+		return l.cas(ctx, l.owner, newExpiry, renewStart)
 	case expiresAt.After(now):
 		// A live lease is held by someone else, so this replica stays standby until it expires or this replica observes it freed.
 		l.leader.Store(false)
+		l.validUntil.Store(0)
 		return false, nil
 	default:
 		// Expired or freed, so steal it, guarding on the exact owner value observed; Cosmos LWT only supports equality, so time is compared here and CAS enforces the race.
-		return l.cas(ctx, owner, newExpiry)
+		return l.cas(ctx, owner, newExpiry, renewStart)
 	}
 }
 
-// cas sets this replica as owner with newExpiry only if the row's current owner still equals expectedOwner, so a concurrent writer's CAS wins instead of silently overwriting it.
-func (l *Lease) cas(ctx context.Context, expectedOwner string, newExpiry time.Time) (bool, error) {
+// leaseMargin is subtracted from ttl when computing validUntil, so this replica stops treating itself as leader with some safety margin before the row it holds could actually expire on Cosmos's side, rather than assuming its own tryAcquireOrRenew call was instantaneous.
+func (l *Lease) leaseMargin() time.Duration {
+	return l.ttl / 4
+}
+
+// cas sets this replica as owner with newExpiry only if the row's current owner still equals expectedOwner, so a concurrent writer's CAS wins instead of silently overwriting it. On success it also sets validUntil to renewStart+ttl-margin -- see IsLeader's doc comment for why this is computed from when the renew *started*, not when it applied.
+func (l *Lease) cas(ctx context.Context, expectedOwner string, newExpiry, renewStart time.Time) (bool, error) {
 	applied, err := l.session.Query(
 		fmt.Sprintf(`UPDATE %s SET owner = ?, expires_at = ? WHERE name = ? IF owner = ?`, leaseTable),
 		l.owner, newExpiry, leaseKey, expectedOwner,
@@ -155,12 +171,18 @@ func (l *Lease) cas(ctx context.Context, expectedOwner string, newExpiry time.Ti
 		return false, fmt.Errorf("cas lease: %w", err)
 	}
 	l.leader.Store(applied)
+	if applied {
+		l.validUntil.Store(renewStart.Add(l.ttl - l.leaseMargin()).UnixNano())
+	} else {
+		l.validUntil.Store(0)
+	}
 	return applied, nil
 }
 
 // Release frees the lease if this replica still holds it, so a standby can take over immediately instead of waiting out the ttl; it is best-effort and meant for graceful shutdown.
 func (l *Lease) Release(ctx context.Context) error {
 	l.leader.Store(false)
+	l.validUntil.Store(0)
 	_, err := l.session.Query(
 		fmt.Sprintf(`UPDATE %s SET owner = '', expires_at = ? WHERE name = ? IF owner = ?`, leaseTable),
 		epoch, leaseKey, l.owner,

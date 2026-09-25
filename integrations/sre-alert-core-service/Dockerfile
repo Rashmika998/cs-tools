@@ -28,8 +28,8 @@ RUN go test ./...
 # Build the Go program inside the container
 RUN go build -o alert-core-service ./cmd/server
 
-# Use a small Alpine Linux image as the base image for the final container
-FROM alpine:latest
+# Use a small Alpine Linux image as the base image for the final container; pinned for reproducible builds.
+FROM alpine:3.22
 
 # Set the working directory to /app
 WORKDIR /app

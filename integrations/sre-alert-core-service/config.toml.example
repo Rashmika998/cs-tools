@@ -25,6 +25,9 @@ concurrency = 128
 read_concurrency = 64
 # Max alert ids processed per cycle; bounds memory under large bursts.
 max_window = 2000
+# Bounds how long a single missing alert id blocks every id after it before this service skips it
+# (loudly logged) instead of stalling the whole pipeline forever.
+gap_timeout = "10m"
 
 [lease]
 # Elects a single active poller across replicas: only the lease holder processes alerts, so
@@ -40,8 +43,6 @@ connect_base_delay = "2s"
 # Per-connection and per-query timeouts against Cosmos DB for Apache Cassandra.
 connect_timeout = "10s"
 query_timeout = "10s"
-# Bounds the compare-and-swap retry loop used for sequence id allocation under contention.
-seq_max_attempts = 10
 
 [notify]
 # Bounds retries per downstream target (CSM, Chat webhooks); base delay doubles each attempt.
@@ -52,6 +53,12 @@ http_timeout = "10s"
 # an extended Chat outage that outlasted max_attempts). Independent of poll.interval: this never
 # blocks alert ingestion, it only recovers stuck notifications in the background.
 retry_sweep_interval = "30s"
+# Bounds how many failed CreateIncident attempts an incident absorbs before it's marked
+# permanently failed and dropped from the retry sweep.
+max_csm_attempts = 20
+# How long a resolved alert-Service-label -> CMDB-service-id mapping is reused before a fresh
+# live /services/search call.
+service_cache_ttl = "15m"
 
 [server]
 # Bounds how long SIGTERM/SIGINT waits for in-flight work before forcing exit.

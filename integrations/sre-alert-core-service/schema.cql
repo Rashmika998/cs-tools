@@ -32,26 +32,29 @@ CREATE TABLE IF NOT EXISTS alertintegration.alert_seq (
   AND cosmosdb_cell_level_timestamp_tombstones = true
   AND cosmosdb_cell_level_timetolive = true;
 
-CREATE TABLE IF NOT EXISTS alertintegration.incidents_proccessed (
-  fingerprint     text PRIMARY KEY,
-  incident_number text, -- placeholder ("PENDING-<fp>") until CSM assigns the real number
-  status          text,
-  severity        int,
-  impact          int,
-  urgency         int,
-  service         text,
-  metric_name     text,
-  description     text,
-  category        text,
-  environment     text,
-  source          text,
-  alert_ids       list<text>,
-  alert_count     int,
-  work_notes      list<text>,
-  first_seen      timestamp,
-  last_seen       timestamp,
-  notified        boolean,
-  csm_confirmed   boolean
+CREATE TABLE IF NOT EXISTS alertintegration.incidents_processed (
+  fingerprint             text PRIMARY KEY,
+  incident_id             text,       -- CSM's own incident id (uuid); empty until csm_confirmed
+  incident_number         text,       -- placeholder ("PENDING-<fp>") until CSM assigns the real number
+  status                  text,       -- "open"/"closed", synced from CSM once csm_confirmed; meaningless before that
+  severity                int,
+  impact                  text,       -- CSM's Impact enum: "HIGH" | "MEDIUM" | "LOW"
+  urgency                 text,       -- CSM's Urgency enum: "HIGH" | "MEDIUM" | "LOW"
+  service                 text,
+  metric_name             text,
+  description             text,
+  category                text,
+  environment             text,
+  source                  text,
+  alert_ids               list<text>,
+  alert_count             int,
+  work_notes              list<text>,
+  first_seen              timestamp,
+  last_seen               timestamp,
+  notified                boolean,
+  csm_confirmed           boolean,
+  csm_attempts            int,        -- failed CreateIncident attempts against this incident
+  csm_permanently_failed  boolean     -- true once csm_attempts hits notify.max_csm_attempts, or CSM returned a non-retryable 4xx
 ) WITH cosmosdb_cell_level_timestamp = true
   AND cosmosdb_cell_level_timestamp_tombstones = true
   AND cosmosdb_cell_level_timetolive = true;

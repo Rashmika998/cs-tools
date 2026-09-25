@@ -1,34 +1,40 @@
 # Alert Core Service
 
 Alert Core Service deduplicates incoming alerts into incidents and forwards them to
-CSM, falling back to Google Chat when CSM doesn't confirm. It reads alerts
-written by the separate `alert-ingestion` service from Cassandra, folds them
-into incidents by fingerprint (`source|service|metric_name|environment`), and
-keeps retrying notifications independently until they're actually delivered.
+CSM via `csm-integration-service`, falling back to Google Chat when CSM doesn't
+confirm. It reads alerts written by the separate `alert-ingestion` service from
+Cassandra, folds them into incidents by fingerprint
+(`source|service|metric_name|environment|unique_identifier`), and keeps retrying
+notifications independently until they're actually delivered.
 
 ## How it works
 
 - A poller discovers new alerts by comparing the `alert_seq` counter against
-  its own persisted `alert_cursor` — no CDC needed. `alert-ingestion` pings
-  `POST /ping` to wake it early; a fixed interval is the backstop.
+  its own persisted `alert_cursor` — no CDC needed. `alert-ingestion` posts to
+  `POST /alert` to wake it early; a fixed interval is the backstop.
 - Each alert is normalized, deduplicated by fingerprint, and folded into an
   incident. New incidents get a placeholder `incident_number` until CSM
-  confirms the real one.
+  confirms the real one; open/closed state is synced back from CSM itself,
+  never inferred locally.
 - Notifications are tracked independently: an incident stays pending until
-  CSM confirms **and** Chat has delivered, so a temporary outage on either
-  side is retried on its own schedule without blocking alert ingestion.
+  CSM confirms, so a temporary CSM outage is retried on its own schedule
+  without blocking alert ingestion. Chat is a one-time fallback while CSM
+  remains unconfirmed, not a second standing obligation.
 
 ## Multi-container support
 
 Alert Core Service is safe to run as multiple replicas (e.g. several Choreo
-containers) without any special configuration. Exactly one replica holds a
-Cassandra-backed, time-bounded lease and acts as the active processor at any
-moment; the rest stand by. If the active replica dies or is redeployed, a
-standby steals the lease once it expires and resumes from the same durable
-cursor — no alert is duplicated or dropped, and failover is bounded by the
-lease TTL rather than requiring manual intervention. Because leadership and
-progress both live in Cassandra rather than in-memory, replicas can be added,
-removed, or restarted freely.
+containers). Exactly one replica holds a Cassandra-backed, time-bounded lease
+and acts as the active processor at any moment; the rest stand by. If the
+active replica dies or is redeployed, a standby steals the lease once it
+expires and resumes from the same durable cursor. Leadership and progress
+both live in Cassandra rather than in-memory, so replicas can be added,
+removed, or restarted freely -- but note that duplicate or dropped alerts are
+not fully impossible: lease handoff, CSM's own dedup-by-tag lookup (used
+before every incident create), and the shutdown drain sequence all narrow
+those windows significantly, they don't eliminate them under every failure
+mode (e.g. clock skew between replicas). See the lease and notify packages'
+own doc comments for the specific tradeoffs.
 
 ## Running it
 
@@ -38,13 +44,16 @@ go build ./... && go vet ./... && go test ./...
 ```
 
 Configuration lives in `config.toml` (poll cadence, retry/backoff, lease TTL)
-and environment variables (`CASSANDRA_*`, `CSM_WEBHOOK_URL`,
-`FALLBACK_CHAT_WEBHOOK_URLS`) — see `.env.example`.
+and environment variables (`CASSANDRA_*`, `CSM_INTEGRATION_*`, `CSM_CALLER_ID`,
+`CSM_UNKNOWN_SERVICE_ID`, `FALLBACK_CHAT_WEBHOOK_URLS`) — see `.env.example`.
 
 `config.toml` itself is gitignored (see root `.gitignore`), since it's treated
 as deployment config rather than source. Copy `config.toml.example` to
-`config.toml` and customize as needed — the example file's values are also
-the defaults the service falls back to.
+`config.toml` and customize as needed. Every field is required and validated
+at startup (`internal/config.Config.validate`) -- there are no built-in
+fallback defaults if the file is missing a value or unparsable, so
+`config.toml.example`'s values are a starting point to copy and edit, not
+defaults this service falls back to on its own.
 
 ```bash
 cp config.toml.example config.toml
