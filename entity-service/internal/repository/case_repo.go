@@ -378,6 +378,16 @@ type CaseRepository interface {
 	// this itself just returns whatever error occurs, with no special
 	// handling of its own.
 	RecordCaseFieldChangeActivity(ctx context.Context, caseID, fieldName, oldValue, newValue, actorEmail string) error
+	// MarkCaseFixIssued stamps work_item.fix_issued_on with the current time
+	// (a pre-existing base-schema column, csm-sync-service's designated
+	// target for ServiceNow's u_fix_issued -- see this method's own doc
+	// comment for the source), first-write-wins: a case whose fix_issued_on
+	// is already set is left untouched and alreadySet is returned true with
+	// the existing timestamp, rather than being treated as an error. The
+	// WHERE fix_issued_on IS NULL guard on the UPDATE makes this atomic on
+	// its own -- no explicit row lock or transaction is needed, unlike
+	// SetCaseWatchList. Returns a NotFoundError if caseID does not exist.
+	MarkCaseFixIssued(ctx context.Context, caseID string) (fixIssued time.Time, alreadySet bool, err error)
 	// SearchCaseActivities returns a paginated, newest-first feed combining
 	// the case's comments (comment, migration 000037) and complete
 	// attachments (case_attachment, migration 000043) into one merged
@@ -2206,6 +2216,40 @@ func (r *caseRepo) UpdateCaseAssignee(ctx context.Context, caseID, userID, calle
 		return time.Time{}, false, fmt.Errorf("update case assignee: %w", err)
 	}
 	return updatedOn, changed, nil
+}
+
+// MarkCaseFixIssued implements CaseRepository.
+//
+// Writes work_item.fix_issued_on, not a new column -- this column already
+// exists in the base schema (migration 000016_work_item_table) and is the
+// csm-sync-service mapping's designated target for ServiceNow's
+// u_fix_issued (configs/mappings/sn_customerservice_case.yaml), confirmed
+// against that file directly. A separate "case".fix_issued column was
+// briefly added and then dropped once this was found -- see lesson 124.
+func (r *caseRepo) MarkCaseFixIssued(ctx context.Context, caseID string) (time.Time, bool, error) {
+	var fixIssued time.Time
+	err := r.db.QueryRow(ctx,
+		`UPDATE work_item SET fix_issued_on = NOW() WHERE id = $1 AND fix_issued_on IS NULL RETURNING fix_issued_on`,
+		caseID,
+	).Scan(&fixIssued)
+	if err == nil {
+		return fixIssued, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, fmt.Errorf("mark case fix issued: %w", err)
+	}
+
+	// No row updated: either the case doesn't exist, or fix_issued_on was
+	// already set (first-write-wins no-op) -- distinguish the two with a
+	// follow-up read.
+	err = r.db.QueryRow(ctx, `SELECT fix_issued_on FROM work_item WHERE id = $1`, caseID).Scan(&fixIssued)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, &apierror.NotFoundError{Msg: "case not found"}
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("mark case fix issued: read existing: %w", err)
+	}
+	return fixIssued, true, nil
 }
 
 // UpdateCaseParent implements CaseRepository.

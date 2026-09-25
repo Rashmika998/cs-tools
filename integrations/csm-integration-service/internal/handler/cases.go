@@ -22,12 +22,15 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
 // entityCaseClient abstracts the entity service case operations used by CaseHandler.
 type entityCaseClient interface {
 	PatchCase(ctx context.Context, id string, body []byte) ([]byte, error)
 	CreateCaseComment(ctx context.Context, caseID string, body []byte) ([]byte, error)
+	SearchCases(ctx context.Context, body []byte) ([]byte, error)
+	AddCaseTag(ctx context.Context, caseID string, body []byte) ([]byte, error)
 }
 
 // CaseHandler handles HTTP requests for case operations, delegating to the
@@ -36,11 +39,25 @@ type entityCaseClient interface {
 // boundary for this service's M2M/third-party consumers.
 type CaseHandler struct {
 	entity entityCaseClient
+	// umtActorEmail is this service's own trusted M2M actor identity, asserted
+	// on AddCaseLabel calls (see cases_umt.go) as entity-service's
+	// AddCaseTagRequest.ActorEmail, and on CreateCaseComment/ConcludeCase's
+	// comment leg as entity-service's CreateCaseCommentRequest.ActorEmail. It
+	// must match an entry in entity-service's M2M_TRUSTED_ACTOR_EMAILS
+	// allowlist or every call 403s. Never accepted from the caller — that
+	// would defeat the point of the allowlist being server-configured rather
+	// than client-asserted. An empty value here is a deploy-time
+	// misconfiguration, not something this handler special-cases; the
+	// resulting entity-service 403 surfaces normally.
+	umtActorEmail string
 }
 
 // NewCaseHandler creates a CaseHandler backed by the given entity client.
-func NewCaseHandler(entity entityCaseClient) *CaseHandler {
-	return &CaseHandler{entity: entity}
+// umtActorEmail is this service's configured M2M actor identity for
+// AddCaseLabel and CreateCaseComment/ConcludeCase (see the field's own doc
+// comment); pass "" if unset.
+func NewCaseHandler(entity entityCaseClient, umtActorEmail string) *CaseHandler {
+	return &CaseHandler{entity: entity, umtActorEmail: umtActorEmail}
 }
 
 // PatchCase handles PATCH /cases/{id}. The request body is forwarded verbatim;
@@ -83,12 +100,39 @@ func (h *CaseHandler) PatchCase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// CreateCaseComment handles POST /cases/{id}/comments. Targets an entity-service
-// operation that requires a forwarded end-user identity token on both data
-// sources (the comment's author is resolved from that token) — this service is
-// strictly M2M with no mechanism to supply one, so calls here always receive a
-// mapped 401 from upstream. Kept for API-shape completeness, not because it
-// currently succeeds. The request body is forwarded verbatim.
+// createCaseCommentRequest is the caller-facing request body for
+// CreateCaseComment: only "type" and "content" are ever accepted from the
+// caller. actorEmail is never a caller input -- see
+// CaseHandler.umtActorEmail's doc comment.
+type createCaseCommentRequest struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
+// createCaseCommentUpstreamRequest is the entity-service POST
+// /cases/{id}/comments body this handler builds, mirroring
+// domain.CreateCaseCommentRequest. ActorEmail is always this service's own
+// configured M2M identity.
+type createCaseCommentUpstreamRequest struct {
+	Type       string `json:"type"`
+	Content    string `json:"content"`
+	ActorEmail string `json:"actorEmail"`
+}
+
+// CreateCaseComment handles POST /cases/{id}/comments. The caller supplies
+// only "type" and "content"; this handler supplies entity-service's
+// actorEmail field itself, from this service's own configured trusted M2M
+// identity (CaseHandler.umtActorEmail) -- it is never taken from the caller,
+// the same way AddCaseLabel injects it for POST /cases/{id}/tags. If
+// umtActorEmail is unset or not on entity-service's
+// M2M_TRUSTED_ACTOR_EMAILS allowlist, entity-service rejects the call with
+// 403, which is surfaced normally rather than special-cased here.
+//
+// Before entity-service grew its own actorEmail allowlist path for this
+// operation, this endpoint always received a mapped 401 (comment-author
+// resolution unconditionally required a forwarded end-user identity token,
+// which this strictly-M2M service has no mechanism to supply). That gap is
+// now closed for the configured M2M actor.
 func (h *CaseHandler) CreateCaseComment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" || !uuidRe.MatchString(id) {
@@ -97,7 +141,7 @@ func (h *CaseHandler) CreateCaseComment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
-	body, err := io.ReadAll(r.Body)
+	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, ok := err.(*http.MaxBytesError); ok {
 			writeError(w, http.StatusRequestEntityTooLarge, ErrMsgTooLarge)
@@ -107,12 +151,33 @@ func (h *CaseHandler) CreateCaseComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !json.Valid(body) {
+	if !json.Valid(raw) {
 		writeError(w, http.StatusBadRequest, ErrMsgBadRequest)
 		return
 	}
 
-	result, err := h.entity.CreateCaseComment(r.Context(), id, body)
+	var req createCaseCommentRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		writeError(w, http.StatusBadRequest, ErrMsgBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		writeError(w, http.StatusBadRequest, ErrMsgContentRequired)
+		return
+	}
+
+	upstreamBody, err := json.Marshal(createCaseCommentUpstreamRequest{
+		Type:       req.Type,
+		Content:    req.Content,
+		ActorEmail: h.umtActorEmail,
+	})
+	if err != nil {
+		slog.ErrorContext(r.Context(), "marshal create case comment body failed", "err", err)
+		writeError(w, http.StatusInternalServerError, ErrMsgInternal)
+		return
+	}
+
+	result, err := h.entity.CreateCaseComment(r.Context(), id, upstreamBody)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "entity CreateCaseComment failed", "caseID", id, "err", summarizeErr(err))
 		mapUpstreamError(w, err, "Failed to create case comment.")

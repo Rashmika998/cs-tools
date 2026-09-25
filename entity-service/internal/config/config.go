@@ -254,6 +254,14 @@ type Config struct {
 	SalesEntityClientID     string
 	SalesEntityClientSecret string
 	SalesEntityScopes       string
+	// M2MTrustedActorEmails is the allowlist of service-account emails an
+	// M2M caller (no x-user-id-token, e.g. UMT via csm-integration-service)
+	// may claim as the acting user via AddCaseTagRequest.ActorEmail. An
+	// unset/empty var means no email is trusted and every such request is
+	// rejected -- this is deliberately not a default-open list, since it
+	// exists specifically to stop an M2M caller from spoofing an arbitrary
+	// actor. Compared case-insensitively in the handler.
+	M2MTrustedActorEmails []string
 }
 
 // Load reads configuration from environment variables and returns a populated
@@ -314,6 +322,7 @@ func Load() *Config {
 		SalesEntityClientSecret:                       os.Getenv("SALES_ENTITY_CLIENT_SECRET"),
 		SalesEntityScopes:                             os.Getenv("SALES_ENTITY_SCOPES"),
 		CSMMigrationMembershipRegistrationEnabled:     os.Getenv("CSM_MIGRATION_MEMBERSHIP_REGISTRATION_ENABLED") == "true",
+		M2MTrustedActorEmails:                         splitComma(os.Getenv("M2M_TRUSTED_ACTOR_EMAILS")),
 	}
 	cfg.AuthInternalClientIDs = ParseInternalClientIDs(cfg.AuthInternalClientIDsRaw)
 	return cfg

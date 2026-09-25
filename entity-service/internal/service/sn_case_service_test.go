@@ -1109,6 +1109,23 @@ func TestSNCaseService_UpdateCase_FieldCountValidation(t *testing.T) {
 	}
 }
 
+// TestSNCaseService_UpdateCase_RejectsMarkFixIssued proves plain
+// DATA_SOURCE=servicenow rejects markFixIssued outright rather than
+// silently accepting or dropping it: work_item.fix_issued_on is a
+// Postgres-managed column with no ServiceNow-native equivalent under this
+// data source. The mirror-only path (patchCaseFields, exercised in
+// TestSNCaseService_PatchCaseFields_NoGetCaseByIDOrEventPublish) is the only
+// place markFixIssued legitimately reaches ServiceNow.
+func TestSNCaseService_UpdateCase_RejectsMarkFixIssued(t *testing.T) {
+	svc := NewServiceNowCaseService(nil, nil, nil, nil, nil)
+	markFixIssued := true
+
+	_, err := svc.UpdateCase(contextWithUserIDToken("token"), domain.UpdateCaseRequest{ID: testCaseUUID, MarkFixIssued: &markFixIssued})
+	if _, ok := err.(*apierror.ValidationError); !ok {
+		t.Fatalf("expected *apierror.ValidationError, got %T: %v", err, err)
+	}
+}
+
 // --- UpdateCase: close no longer gated on open visible tasks ---
 //
 // The open-visible-task close-gate previously enforced here has been removed:
@@ -2852,7 +2869,7 @@ func TestSNCaseService_PatchCaseFields_NoGetCaseByIDOrEventPublish(t *testing.T)
 			publisher := &mockEventPublisher{}
 			svc := NewServiceNowCaseService(client, nil, publisher, nil, nil).(*snCaseService)
 
-			result, err := svc.patchCaseFields(contextWithUserIDToken("token"), testDeploymentUUID, tt.state, tt.severity, tt.workState)
+			result, err := svc.patchCaseFields(contextWithUserIDToken("token"), testDeploymentUUID, tt.state, tt.severity, tt.workState, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
