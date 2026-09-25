@@ -210,6 +210,23 @@ type Config struct {
 	// nothing to do with case state) — the two are read by separate
 	// processes/environments and don't interact.
 	CustomerRoles []string
+	// CSEngineerRole is the ServiceNow role name (e.g. an org-specific
+	// "sn_*" role) whose presence on a case comment's resolved author marks
+	// that comment as a qualifying CS-engineer response — see
+	// sn_case_service.go's applyResponseSLAOnComment, which the CSM-native
+	// SLA engine (internal/service/sla_engine_service.go) uses to complete
+	// a case's "response" SLA clock. Deliberately no committed default:
+	// this is organisation-specific vocabulary, same reasoning
+	// CustomerRoles' own doc comment gives. Left unset, that function
+	// simply can't confirm engineer-authorship and skips (logged) — not
+	// fatal, not required by Validate.
+	CSEngineerRole string
+	// SLARecomputeInterval is how often SLAEngineRecomputeWorker
+	// recomputes every CSM-native "sla" row's elapsed percentage/breach
+	// status (internal/service/sla_engine_recompute_worker.go). Same
+	// envDuration convention as CRNoticePollInterval/GithubOutboundInterval
+	// above.
+	SLARecomputeInterval time.Duration
 	// Auth* configure token validation (internal/auth), always on -- there is
 	// no config flag to disable it. AuthIssuer/AuthJWKSURL/
 	// AuthUserTokenAudiences are required (Validate rejects startup without
@@ -308,6 +325,8 @@ func Load() *Config {
 		AuthClockSkew:                                 envDuration("AUTH_CLOCK_SKEW", 30*time.Second),
 		AuthInternalClientIDsRaw:                      os.Getenv("AUTH_INTERNAL_CLIENT_IDS"),
 		CustomerRoles:                                 splitComma(os.Getenv("CUSTOMER_ROLES")),
+		CSEngineerRole:                                os.Getenv("CS_ENGINEER_ROLE"),
+		SLARecomputeInterval:                          envDuration("SLA_RECOMPUTE_INTERVAL", 45*time.Second),
 		SalesEntityBaseURL:                            os.Getenv("SALES_ENTITY_BASE_URL"),
 		SalesEntityTokenURL:                           os.Getenv("SALES_ENTITY_TOKEN_URL"),
 		SalesEntityClientID:                           os.Getenv("SALES_ENTITY_CLIENT_ID"),
