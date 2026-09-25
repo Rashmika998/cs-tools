@@ -134,7 +134,6 @@ func (l *Lease) tryAcquireOrRenew(ctx context.Context) (bool, error) {
 
 	switch {
 	case owner == l.owner:
-		// We already hold it, so renew by guarding the CAS on our own ownership; a concurrent steal attempt still wins cleanly if it happens first.
 		return l.cas(ctx, l.owner, newExpiry)
 	case expiresAt.After(now):
 		// A live lease is held by someone else, so this replica stays standby until it expires or this replica observes it freed.

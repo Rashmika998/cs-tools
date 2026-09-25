@@ -154,8 +154,7 @@ func (p *Poller) cycle(ctx context.Context) {
 		}
 		next := p.processWindow(ctx, cursor, latest)
 		if next <= cursor {
-			// No forward progress (head of window is not visible yet, or another writer moved the
-			// cursor). Stop; the next cycle re-reads and retries the stuck id.
+			// No forward progress (head of window is not visible yet, or another writer moved the cursor first), so stop this cycle and wait for the next tick or ping.
 			return
 		}
 		cursor = next

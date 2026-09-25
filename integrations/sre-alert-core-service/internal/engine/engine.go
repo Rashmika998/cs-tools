@@ -197,9 +197,7 @@ func (e *Engine) deliverNotifications(ctx context.Context, inc model.Incident) (
 	return csmConfirmed, chatNotified
 }
 
-// deliverAndPersist runs deliverNotifications and persists whichever flag newly flipped to true,
-// logging (not failing) any persist error the same way the rest of this file treats notification
-// bookkeeping as best-effort, non-blocking side work.
+// deliverAndPersist runs deliverNotifications and persists whichever flag newly flipped to true, logging any write errors; it is safe to call concurrently with Process, since each incident row is keyed by fingerprint and the engine never processes the same fingerprint at once.
 func (e *Engine) deliverAndPersist(ctx context.Context, inc model.Incident) {
 	csmConfirmed, chatNotified := e.deliverNotifications(ctx, inc)
 	if csmConfirmed && !inc.CSMConfirmed {
