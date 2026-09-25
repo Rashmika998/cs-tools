@@ -1,0 +1,58 @@
+# Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
+#
+# WSO2 LLC. licenses this file to you under the Apache License,
+# Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied. See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+[poll]
+# Backstop cadence: ensures a lost or malformed ping never loses an alert. With multiple
+# replicas a ping may reach a standby, so this also bounds worst-case pickup latency on the leader.
+interval = "10s"
+# Fingerprint-sharded workers handling alerts in parallel each cycle (distinct incidents run
+# concurrently; same-fingerprint alerts stay serialized to one worker).
+concurrency = 128
+# Parallel alert-row reads at the start of each cycle.
+read_concurrency = 64
+# Max alert ids processed per cycle; bounds memory under large bursts.
+max_window = 2000
+
+[lease]
+# Elects a single active poller across replicas: only the lease holder processes alerts, so
+# multiple Choreo containers never send duplicate incident notifications.
+ttl = "15s"
+# How often the leader renews its lease; must be well under ttl.
+renew_interval = "5s"
+
+[cassandra]
+# Bounds Cassandra's startup connection retry so a transient blip doesn't crash-loop the pod.
+connect_max_attempts = 5
+connect_base_delay = "2s"
+# Per-connection and per-query timeouts against Cosmos DB for Apache Cassandra.
+connect_timeout = "10s"
+query_timeout = "10s"
+# Bounds the compare-and-swap retry loop used for sequence id allocation under contention.
+seq_max_attempts = 10
+
+[notify]
+# Bounds retries per downstream target (CSM, Chat webhooks); base delay doubles each attempt.
+max_attempts = 3
+retry_base_delay = "200ms"
+http_timeout = "10s"
+# How often the poller retries incidents whose CSM/Chat notification still hasn't succeeded (e.g.
+# an extended Chat outage that outlasted max_attempts). Independent of poll.interval: this never
+# blocks alert ingestion, it only recovers stuck notifications in the background.
+retry_sweep_interval = "30s"
+
+[server]
+# Bounds how long SIGTERM/SIGINT waits for in-flight work before forcing exit.
+shutdown_grace = "15s"
