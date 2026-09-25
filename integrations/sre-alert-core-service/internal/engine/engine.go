@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"alert-core-service/internal/model"
@@ -56,6 +57,11 @@ type Engine struct {
 	incidents incidentStore
 	notifier  notifier
 	defaults  model.Defaults
+	// notifyMu serializes deliverAndPersist across both callers (Handle, called from cycle's sharded
+	// workers, and RetrySweep, called from its own goroutine): without it, both could read the same
+	// incident's CSMConfirmed/Notified flags as false and both send a duplicate CSM/Chat notification
+	// before either persists its result.
+	notifyMu sync.Mutex
 }
 
 // New wires the engine's collaborators together — typically the real *store.AlertRepo, *store.IncidentRepo, and *notify.Notifier — plus the alert default values to apply.
@@ -197,8 +203,11 @@ func (e *Engine) deliverNotifications(ctx context.Context, inc model.Incident) (
 	return csmConfirmed, chatNotified
 }
 
-// deliverAndPersist runs deliverNotifications and persists whichever flag newly flipped to true, logging any write errors; it is safe to call concurrently with Process, since each incident row is keyed by fingerprint and the engine never processes the same fingerprint at once.
+// deliverAndPersist runs deliverNotifications and persists whichever flag newly flipped to true, logging any write errors. notifyMu serializes it against every other caller (Handle and RetrySweep alike), so the same incident is never delivered to CSM/Chat twice concurrently.
 func (e *Engine) deliverAndPersist(ctx context.Context, inc model.Incident) {
+	e.notifyMu.Lock()
+	defer e.notifyMu.Unlock()
+
 	csmConfirmed, chatNotified := e.deliverNotifications(ctx, inc)
 	if csmConfirmed && !inc.CSMConfirmed {
 		if err := e.incidents.MarkCSMConfirmed(ctx, inc.Fingerprint); err != nil {
@@ -212,14 +221,18 @@ func (e *Engine) deliverAndPersist(ctx context.Context, inc model.Incident) {
 	}
 }
 
-// RetrySweep re-attempts delivery for every incident still owed a CSM confirmation, a Chat notification, or both; it is safe to call concurrently with Process, since each incident row is keyed by fingerprint and the engine never processes the same fingerprint at once.
-func (e *Engine) RetrySweep(ctx context.Context) {
+// RetrySweep re-attempts delivery for every incident still owed a CSM confirmation, a Chat notification, or both. stillLeader is checked before each incident, so a sweep that outlives this replica's leadership stops immediately instead of racing a new leader's own sweep or cycle. It is safe to call concurrently with Process: deliverAndPersist is mutex-serialized.
+func (e *Engine) RetrySweep(ctx context.Context, stillLeader func() bool) {
 	pending, err := e.incidents.ListPending(ctx)
 	if err != nil {
 		e.logger.Error("notify retry sweep: failed to list pending incidents", "error", err)
 		return
 	}
 	for _, inc := range pending {
+		if !stillLeader() {
+			e.logger.Warn("lost leadership mid-sweep, stopping", "incident_number", inc.IncidentNumber)
+			return
+		}
 		e.deliverAndPersist(ctx, inc)
 	}
 }

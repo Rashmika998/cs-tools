@@ -119,10 +119,10 @@ func (p *Poller) Run(ctx context.Context) {
 			p.cycle(ctx)
 		case <-notifyTicker.C:
 			if p.leader.IsLeader() && p.sweeping.CompareAndSwap(false, true) {
-				// Runs off the poll loop's goroutine so a slow CSM/Chat outage during the sweep never delays cycle(); the guard keeps sweeps from overlapping themselves.
+				// Runs off the poll loop's goroutine so a slow CSM/Chat outage during the sweep never delays cycle(); the guard keeps sweeps from overlapping themselves. RetrySweep rechecks leadership per incident and stops if it's lost mid-sweep.
 				go func() {
 					defer p.sweeping.Store(false)
-					p.engine.RetrySweep(ctx)
+					p.engine.RetrySweep(ctx, p.leader.IsLeader)
 				}()
 			}
 		}
