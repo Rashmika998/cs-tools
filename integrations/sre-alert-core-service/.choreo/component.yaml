@@ -17,12 +17,12 @@
 schemaVersion: 1.2
 
 endpoints:
-  - name: ping
-    displayName: Alert Ping
+  - name: alert
+    displayName: Alert
     service:
-      basePath: /ping
+      basePath: /alert
       port: 8080
-    type: WS
+    type: REST
     networkVisibilities:
       - Project
   - name: healthz

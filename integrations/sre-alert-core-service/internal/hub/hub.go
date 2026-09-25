@@ -14,53 +14,33 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Package hub is alert-core-service's websocket endpoint: alert-ingestion pings it to wake the poller early; poller does the real work.
+// Package hub is alert-core-service's wake endpoint: alert-ingestion POSTs to it to wake the poller early; poller does the real work.
 package hub
 
-import (
-	"log/slog"
-	"net/http"
-
-	"github.com/gorilla/websocket"
-)
+import "net/http"
 
 // waker is satisfied by *poll.Poller; kept narrow so hub doesn't need to import poll.
 type waker interface {
 	Wake()
 }
 
-// Hub upgrades publisher connections and wakes the poller on every frame.
+// Hub wakes the poller on every request it serves.
 type Hub struct {
-	logger   *slog.Logger
-	poller   waker
-	upgrader websocket.Upgrader
+	poller waker
 }
 
 // New returns a ready hub.
-func New(logger *slog.Logger, p waker) *Hub {
-	return &Hub{
-		logger: logger,
-		poller: p,
-		// alert-ingestion is a trusted in-mesh caller, not a browser; accept any origin.
-		upgrader: websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
-	}
+func New(p waker) *Hub {
+	return &Hub{poller: p}
 }
 
-// ServePing upgrades a pinger and wakes the poller on every frame until the connection closes.
-func (h *Hub) ServePing(w http.ResponseWriter, r *http.Request) {
-	conn, err := h.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		h.logger.Error("ping upgrade failed", "error", err)
+// ServeAlert wakes the poller on POST requests; any other method is rejected.
+func (h *Hub) ServeAlert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	defer conn.Close()
-
-	h.logger.Info("alert-ingestion connected")
-	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
-			h.logger.Info("alert-ingestion disconnected", "error", err)
-			return
-		}
-		h.poller.Wake()
-	}
+	h.poller.Wake()
+	w.WriteHeader(http.StatusAccepted)
 }

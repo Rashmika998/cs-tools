@@ -7,7 +7,6 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/gocql/gocql v1.7.0
-	github.com/gorilla/websocket v1.5.3
 	github.com/scylladb/gocqlx/v2 v2.8.0
 )
 

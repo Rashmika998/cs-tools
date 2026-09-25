@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Command server wires Cassandra, the alert poller, dedup engine, and CSM/Chat notifier together, then serves health and ping endpoints over HTTP.
+// Command server wires Cassandra, the alert poller, dedup engine, and CSM/Chat notifier together, then serves health and alert wake endpoints over HTTP.
 package main
 
 import (
@@ -94,7 +94,7 @@ func main() {
 		logger.Error("failed to initialise poller", "error", err)
 		os.Exit(1)
 	}
-	h := hub.New(base.With("component", "hub"), poller)
+	h := hub.New(poller)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -110,7 +110,7 @@ func main() {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/ping", h.ServePing)
+	mux.HandleFunc("/alert", h.ServeAlert)
 
 	port := os.Getenv("PORT")
 	if port == "" {
