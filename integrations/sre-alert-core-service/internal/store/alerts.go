@@ -19,12 +19,16 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/gocql/gocql"
 
 	"alert-core-service/internal/model"
 )
+
+// ErrMalformedAlert marks a decode failure on a stored alert payload as permanent, distinguishing it from transient read errors that should be retried.
+var ErrMalformedAlert = errors.New("malformed alert payload")
 
 // AlertRepo reads the alerts table; alert-ingestion writes it, alert-core-service only ever reads it.
 type AlertRepo struct {
@@ -46,7 +50,7 @@ func (r *AlertRepo) Get(ctx context.Context, id string) (model.Alert, error) {
 	}
 	var a model.Alert
 	if err := json.Unmarshal([]byte(payload), &a); err != nil {
-		return model.Alert{}, fmt.Errorf("decode alert %s: %w", id, err)
+		return model.Alert{}, fmt.Errorf("decode alert %s: %w: %v", id, ErrMalformedAlert, err)
 	}
 	return a, nil
 }

@@ -23,9 +23,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/gocql/gocql"
-
 	"alert-core-service/internal/model"
+	"alert-core-service/internal/store"
 )
 
 // alertReader is the narrow subset of *store.AlertRepo's methods the engine actually needs, letting tests substitute a fake without depending on the full repo type.
@@ -102,12 +101,12 @@ func (e *Engine) Process(ctx context.Context, alertID string) Outcome {
 func (e *Engine) Prepare(ctx context.Context, alertID string) (alert model.Alert, fingerprint string, outcome Outcome, ready bool) {
 	alert, err := e.alerts.Get(ctx, alertID)
 	if err != nil {
-		if errors.Is(err, gocql.ErrNotFound) {
-			e.logger.Info("alert not visible yet, will retry", "alert_id", alertID, "error", err)
-			return model.Alert{}, "", Retry, false
+		if errors.Is(err, store.ErrMalformedAlert) {
+			e.logger.Error("alert unprocessable, skipping", "alert_id", alertID, "error", err)
+			return model.Alert{}, "", Failed, false
 		}
-		e.logger.Error("alert unprocessable, skipping", "alert_id", alertID, "error", err)
-		return model.Alert{}, "", Failed, false
+		e.logger.Info("alert read failed or not visible yet, will retry", "alert_id", alertID, "error", err)
+		return model.Alert{}, "", Retry, false
 	}
 	e.defaults.Apply(&alert)
 	fingerprint = model.Fingerprint(alert.Source, alert.Service, alert.MetricName, alert.Environment, alert.UniqueIdentifier)
@@ -123,6 +122,12 @@ func (e *Engine) Handle(ctx context.Context, alertID string, alert model.Alert) 
 	if err != nil {
 		e.logger.Warn("incident lookup failed, will retry", "alert_id", alertID, "error", err)
 		return Retry
+	}
+
+	if model.IsResolving(severityNum) && !found {
+		// A resolving alert with no matching incident has nothing to annotate or fold; creating one via Upsert would turn an OK/Clear alert into a spurious critical-impact incident.
+		e.logger.Info("resolving alert with no matching incident, ignoring", "alert_id", alertID, "fingerprint", fp)
+		return Processed
 	}
 
 	if found {

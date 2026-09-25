@@ -21,10 +21,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -167,15 +169,20 @@ func (n *Notifier) postWithRetry(ctx context.Context, url string, payload any) (
 	return respBody, nil
 }
 
-// post makes exactly one HTTP attempt against url, returning the response status code (0 if the request never got a response) and the body on success.
-func (n *Notifier) post(ctx context.Context, url string, body []byte) (int, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+// post makes exactly one HTTP attempt against target, returning the response status code (0 if the request never got a response) and the body on success.
+func (n *Notifier) post(ctx context.Context, target string, body []byte) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := n.client.Do(req)
 	if err != nil {
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			// url.Error.Error() embeds the full request URL, including the webhook's key/token query params; strip it before this error reaches the logs.
+			return 0, nil, fmt.Errorf("%s request failed: %w", uerr.Op, uerr.Err)
+		}
 		return 0, nil, err
 	}
 	defer resp.Body.Close()

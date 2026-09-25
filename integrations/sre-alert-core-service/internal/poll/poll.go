@@ -22,6 +22,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -66,6 +67,7 @@ type Poller struct {
 	leader   Leader
 	settings Settings
 	wake     chan struct{}
+	sweeping atomic.Bool
 }
 
 // New seeds the alert_seq and cursor rows (idempotent) and returns a ready poller.
@@ -116,8 +118,12 @@ func (p *Poller) Run(ctx context.Context) {
 		case <-p.wake:
 			p.cycle(ctx)
 		case <-notifyTicker.C:
-			if p.leader.IsLeader() {
-				p.engine.RetrySweep(ctx)
+			if p.leader.IsLeader() && p.sweeping.CompareAndSwap(false, true) {
+				// Runs off the poll loop's goroutine so a slow CSM/Chat outage during the sweep never delays cycle(); the guard keeps sweeps from overlapping themselves.
+				go func() {
+					defer p.sweeping.Store(false)
+					p.engine.RetrySweep(ctx)
+				}()
 			}
 		}
 	}
@@ -142,6 +148,10 @@ func (p *Poller) cycle(ctx context.Context) {
 	}
 
 	for cursor < latest {
+		if !p.leader.IsLeader() {
+			p.logger.Warn("lost leadership mid-cycle, stopping", "cursor", cursor)
+			return
+		}
 		next := p.processWindow(ctx, cursor, latest)
 		if next <= cursor {
 			// No forward progress (head of window is not visible yet, or another writer moved the

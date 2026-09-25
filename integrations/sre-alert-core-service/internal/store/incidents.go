@@ -195,7 +195,8 @@ func (r *IncidentRepo) ListPending(ctx context.Context) ([]model.Incident, error
 	}
 	pending := make([]model.Incident, 0, len(all))
 	for _, inc := range all {
-		if !inc.Notified || !inc.CSMConfirmed {
+		// Chat is only owed while CSM is unconfirmed; CSM confirmation closes both obligations.
+		if !inc.CSMConfirmed {
 			pending = append(pending, inc)
 		}
 	}
