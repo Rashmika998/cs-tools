@@ -665,16 +665,33 @@ type CaseService interface {
 	// CreateCaseComment creates a new comment on the case identified by req.CaseID.
 	// A ValidationError is returned for invalid input or constraint violations.
 	CreateCaseComment(ctx context.Context, req domain.CreateCaseCommentRequest) (domain.CreateCaseCommentResponse, error)
+	// CreateCaseCommentAs is CreateCaseComment for a caller that already
+	// knows who is acting (actorEmail) and has no live x-user-id-token to
+	// resolve it from -- see domain.CreateCaseCommentRequest.ActorEmail's
+	// own doc comment. Skips the token-based actor resolution
+	// CreateCaseComment does; everything else is identical.
+	CreateCaseCommentAs(ctx context.Context, req domain.CreateCaseCommentRequest, actorEmail string) (domain.CreateCaseCommentResponse, error)
 	// SearchCaseComments returns a paginated list of comments for the case identified
 	// by req.CaseID. A ValidationError is returned for invalid input.
 	SearchCaseComments(ctx context.Context, req domain.SearchCaseCommentsRequest) (domain.SearchCaseCommentsResponse, error)
-	// UpdateCase updates the state, severity, watch list, assignee, or internal-only
-	// fix-ETA estimate (best-case/most-likely/worst-case) of a case.
+	// UpdateCase updates the state, severity, watch list, assignee, fix-issued mark, or
+	// combinable-field-bundle (subject/description/deployment/deployed product/fix-ETA
+	// estimates/related case/workaround-provided) of a case.
 	// A ValidationError is returned for invalid values or malformed UUID; a NotFoundError if no case matches.
 	// WatchList is supported by both data sources (Postgres via work_item_watcher,
 	// migration 000040) and is mutually exclusive with State/Severity/WorkState.
-	// AssigneeEmail, BestCaseFixEta, MostLikelyFixEta, and WorstCaseFixEta are
-	// only supported for the ServiceNow data source.
+	// BestCaseFixEta/MostLikelyFixEta/WorstCaseFixEta are supported by both data sources
+	// (Postgres via work_item.best_case_eta/most_likely_eta/worst_case_eta, part of the
+	// combinable-field-bundle CaseRepository.UpdateCaseFields writes); any subset of the
+	// three may be combined with the bundle's other fields in one request, but the bundle
+	// as a whole is mutually exclusive with State/Severity/WorkState/WatchList/
+	// MarkFixIssued/Acknowledge/AssigneeEmail/ParentID.
+	// MarkFixIssued (Postgres/postgres-servicenow-dual-write only) is a true-only,
+	// first-write-wins mark of the case's fix-issued timestamp, mutually exclusive with
+	// every other field on this request.
+	// Acknowledge, AssigneeEmail, and ParentID are each their own exclusive branch,
+	// supported on the Postgres data source (not ServiceNow-only, despite this method's
+	// older doc history saying otherwise).
 	// Transitioning State to closed is rejected with a ValidationError if the case has any
 	// open task that is visible to the customer (the authoritative case-close gate).
 	UpdateCase(ctx context.Context, req domain.UpdateCaseRequest) (domain.UpdateCaseResponse, error)

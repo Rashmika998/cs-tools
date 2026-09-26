@@ -1979,6 +1979,17 @@ type snCreateCommentResponse struct {
 	} `json:"comment"`
 }
 
+// CreateCaseCommentAs implements CaseService. Mirrors AddCaseTagAs's own
+// SN-mode counterpart exactly: unlike the Postgres data source,
+// snCaseService's CreateCaseComment never hard-requires a token locally --
+// it just forwards whatever x-user-id-token is on ctx (possibly empty) to
+// ServiceNow -- so there is nothing this caller-supplied actorEmail needs to
+// override; this is a plain passthrough, kept only so this type still
+// satisfies CaseService.
+func (s *snCaseService) CreateCaseCommentAs(ctx context.Context, req domain.CreateCaseCommentRequest, _ string) (domain.CreateCaseCommentResponse, error) {
+	return s.CreateCaseComment(ctx, req)
+}
+
 func (s *snCaseService) CreateCaseComment(ctx context.Context, req domain.CreateCaseCommentRequest) (domain.CreateCaseCommentResponse, error) {
 	if !validCommentType[req.Type] {
 		return domain.CreateCaseCommentResponse{}, &apierror.ValidationError{Msg: "type contains invalid value: " + string(req.Type)}
@@ -2270,7 +2281,16 @@ type snUpdateCasePayload struct {
 	// Acknowledge claims the case for the calling engineer, first-write-wins. Only
 	// true is ever sent -- there is no unacknowledge -- and the backing service keeps
 	// it mutually exclusive with every other field in this payload.
-	Acknowledge    *bool   `json:"acknowledge,omitempty"`
+	Acknowledge *bool `json:"acknowledge,omitempty"`
+	// MarkFixIssued, when true, tells ServiceNow to record that a fix has been
+	// issued for the case -- the mirror-only counterpart to
+	// caseService.updateCaseMarkFixIssued's Postgres write. Only true is ever
+	// sent, first-write-wins, same shape as Acknowledge above. Sent only via
+	// patchCaseFields (DATA_SOURCE=postgres-servicenow-dual-write's async
+	// mirror) -- snCaseService.UpdateCase itself rejects markFixIssued
+	// outright, since plain DATA_SOURCE=servicenow has no Postgres fix_issued
+	// column to be the source of truth for.
+	MarkFixIssued  *bool   `json:"markFixIssued,omitempty"`
 	ResolutionCode *int    `json:"resolutionCode,omitempty"`
 	Cause          *string `json:"cause,omitempty"`
 	CloseNotes     *string `json:"closeNotes,omitempty"`
@@ -2460,6 +2480,18 @@ type snUpdateCaseResponse struct {
 func (s *snCaseService) UpdateCase(ctx context.Context, req domain.UpdateCaseRequest) (domain.UpdateCaseResponse, error) {
 	if err := validateUUIDs("id", []string{req.ID}); err != nil {
 		return domain.UpdateCaseResponse{}, err
+	}
+
+	// MarkFixIssued is a Postgres-only field: it stamps work_item.fix_issued_on
+	// (a pre-existing base-schema column, also csm-sync-service's mapping
+	// target for ServiceNow's u_fix_issued), with no ServiceNow-native
+	// equivalent to be the source of truth for under plain
+	// DATA_SOURCE=servicenow. It is never silently accepted or
+	// dropped here -- see patchCaseFields for the one path that DOES send it
+	// to ServiceNow, as a best-effort async mirror of the Postgres write, only
+	// under DATA_SOURCE=postgres-servicenow-dual-write.
+	if req.MarkFixIssued != nil {
+		return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "markFixIssued is only supported for the Postgres data source"}
 	}
 
 	hasResolutionFields := req.ResolutionCode != nil || req.Cause != nil || req.CloseNotes != nil
@@ -3048,24 +3080,24 @@ func (s *snCaseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReq
 }
 
 // patchCaseFields performs a bare ServiceNow PATCH for exactly the fields
-// given (state/severity/workState, whichever are non-nil), with NONE of
-// UpdateCase's enrichment reads, no-op detection, or event publishing: no
-// GetCaseByID, no publishStatusChanged/publishSeverityChanged.
+// given (state/severity/workState/markFixIssued, whichever are non-nil),
+// with NONE of UpdateCase's enrichment reads, no-op detection, or event
+// publishing: no GetCaseByID, no publishStatusChanged/publishSeverityChanged.
 //
 // This exists purely for DATA_SOURCE=postgres-servicenow-dual-write's async
-// State/Severity/WorkState mirror (see caseService.UpdateCase's own doc
-// comment): Postgres has already decided the real outcome by the time this
-// runs, so re-running ServiceNow's own no-op-detection/event logic would be
-// redundant at best -- and for State/Severity specifically, would require
-// the very GetCaseByID read this mode must never perform, which is exactly
-// why State/Severity couldn't join the mirror before this method existed.
+// mirror (see caseService.UpdateCase's own doc comment): Postgres has
+// already decided the real outcome by the time this runs, so re-running
+// ServiceNow's own no-op-detection/event logic would be redundant at best --
+// and for State/Severity specifically, would require the very GetCaseByID
+// read this mode must never perform, which is exactly why State/Severity
+// couldn't join the mirror before this method existed.
 //
 // Do not call this from UpdateCase itself -- that method's read-before-write
 // behavior is deliberate and unchanged for live DATA_SOURCE=servicenow
-// traffic. At most one of state/severity/workState is expected non-nil
-// (mirroring caseService.UpdateCase's own "exactly one" invariant), but this
-// method does not enforce that itself -- the caller already has.
-func (s *snCaseService) patchCaseFields(ctx context.Context, caseID string, state *domain.CaseState, severity *domain.CaseSeverity, workState *domain.CaseWorkState) (domain.UpdatedCase, error) {
+// traffic. At most one of state/severity/workState/markFixIssued is expected
+// non-nil at a time -- this method does not enforce that itself, the caller
+// already has.
+func (s *snCaseService) patchCaseFields(ctx context.Context, caseID string, state *domain.CaseState, severity *domain.CaseSeverity, workState *domain.CaseWorkState, markFixIssued *bool) (domain.UpdatedCase, error) {
 	payload := snUpdateCasePayload{}
 	if state != nil {
 		if !validCaseState[*state] {
@@ -3097,6 +3129,9 @@ func (s *snCaseService) patchCaseFields(ctx context.Context, caseID string, stat
 		}
 		payload.WorkStateKey = &id
 	}
+	if markFixIssued != nil {
+		payload.MarkFixIssued = markFixIssued
+	}
 
 	token := middleware.UserIDTokenFromContext(ctx)
 	raw, err := s.client.Patch(ctx, "/cases/"+uuidToSysid(caseID), token, payload)
@@ -3125,6 +3160,15 @@ func (s *snCaseService) patchCaseFields(ctx context.Context, caseID string, stat
 		result.Severity = &sev
 	}
 	result.WorkState = snWorkStateLabelToEnum(snResp.Case.WorkState)
+	if snResp.Case.BestCaseFixEta != nil && *snResp.Case.BestCaseFixEta != "" {
+		result.BestCaseFixEta = snResp.Case.BestCaseFixEta
+	}
+	if snResp.Case.MostLikelyFixEta != nil && *snResp.Case.MostLikelyFixEta != "" {
+		result.MostLikelyFixEta = snResp.Case.MostLikelyFixEta
+	}
+	if snResp.Case.WorstCaseFixEta != nil && *snResp.Case.WorstCaseFixEta != "" {
+		result.WorstCaseFixEta = snResp.Case.WorstCaseFixEta
+	}
 	return result, nil
 }
 

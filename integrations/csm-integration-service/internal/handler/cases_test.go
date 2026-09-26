@@ -18,6 +18,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,7 +29,7 @@ func TestPatchCase(t *testing.T) {
 	const caseID = "11111111-1111-1111-1111-111111111111"
 
 	t.Run("rejects empty case ID", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPatch, "/cases/", strings.NewReader(`{"state":"closed"}`))
 		w := httptest.NewRecorder()
 		h.PatchCase(w, r)
@@ -38,7 +39,7 @@ func TestPatchCase(t *testing.T) {
 	})
 
 	t.Run("rejects non-UUID case ID", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPatch, "/cases/case-42", strings.NewReader(`{"state":"closed"}`))
 		r.SetPathValue("id", "case-42")
 		w := httptest.NewRecorder()
@@ -49,7 +50,7 @@ func TestPatchCase(t *testing.T) {
 	})
 
 	t.Run("rejects body exceeding 1 MiB", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPatch, "/cases/"+caseID, strings.NewReader(strings.Repeat("x", maxRequestBodyBytes+1)))
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -60,7 +61,7 @@ func TestPatchCase(t *testing.T) {
 	})
 
 	t.Run("rejects invalid JSON body", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPatch, "/cases/"+caseID, strings.NewReader(`not-json`))
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -71,7 +72,7 @@ func TestPatchCase(t *testing.T) {
 	})
 
 	t.Run("rejects empty body", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPatch, "/cases/"+caseID, nil)
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -92,7 +93,7 @@ func TestPatchCase(t *testing.T) {
 				return []byte(`{"message":"Case updated successfully","case":{"id":"` + caseID + `","state":"closed"}}`), nil
 			},
 		}
-		h := NewCaseHandler(client)
+		h := NewCaseHandler(client, "")
 		r := httptest.NewRequest(http.MethodPatch, "/cases/"+caseID, strings.NewReader(reqBody))
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -123,7 +124,7 @@ func TestPatchCase(t *testing.T) {
 						return nil, tc.err
 					},
 				}
-				h := NewCaseHandler(client)
+				h := NewCaseHandler(client, "")
 				r := httptest.NewRequest(http.MethodPatch, "/cases/"+caseID, strings.NewReader(`{"state":"closed"}`))
 				r.SetPathValue("id", caseID)
 				w := httptest.NewRecorder()
@@ -140,7 +141,7 @@ func TestCreateCaseComment(t *testing.T) {
 	const caseID = "11111111-1111-1111-1111-111111111111"
 
 	t.Run("rejects empty case ID", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPost, "/cases//comments", strings.NewReader(`{"type":"comment","content":"hi"}`))
 		w := httptest.NewRecorder()
 		h.CreateCaseComment(w, r)
@@ -150,7 +151,7 @@ func TestCreateCaseComment(t *testing.T) {
 	})
 
 	t.Run("rejects non-UUID case ID", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPost, "/cases/case-42/comments", strings.NewReader(`{"type":"comment","content":"hi"}`))
 		r.SetPathValue("id", "case-42")
 		w := httptest.NewRecorder()
@@ -161,7 +162,7 @@ func TestCreateCaseComment(t *testing.T) {
 	})
 
 	t.Run("rejects body exceeding 1 MiB", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPost, "/cases/"+caseID+"/comments", strings.NewReader(strings.Repeat("x", maxRequestBodyBytes+1)))
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -172,7 +173,7 @@ func TestCreateCaseComment(t *testing.T) {
 	})
 
 	t.Run("rejects invalid JSON body", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPost, "/cases/"+caseID+"/comments", strings.NewReader(`not-json`))
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -183,7 +184,7 @@ func TestCreateCaseComment(t *testing.T) {
 	})
 
 	t.Run("rejects empty body", func(t *testing.T) {
-		h := NewCaseHandler(&mockEntityCaseClient{})
+		h := NewCaseHandler(&mockEntityCaseClient{}, "")
 		r := httptest.NewRequest(http.MethodPost, "/cases/"+caseID+"/comments", nil)
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -193,18 +194,40 @@ func TestCreateCaseComment(t *testing.T) {
 		assertContentType(t, w, "application/json")
 	})
 
-	t.Run("forwards body verbatim and returns upstream response with 201", func(t *testing.T) {
+	t.Run("rejects missing content", func(t *testing.T) {
+		h := NewCaseHandler(&mockEntityCaseClient{}, "svc@example.com")
+		r := httptest.NewRequest(http.MethodPost, "/cases/"+caseID+"/comments", strings.NewReader(`{"type":"comment"}`))
+		r.SetPathValue("id", caseID)
+		w := httptest.NewRecorder()
+		h.CreateCaseComment(w, r)
+		assertStatus(t, w, http.StatusBadRequest)
+		assertErrorMessage(t, w, ErrMsgContentRequired)
+		assertContentType(t, w, "application/json")
+	})
+
+	t.Run("rejects blank content", func(t *testing.T) {
+		h := NewCaseHandler(&mockEntityCaseClient{}, "svc@example.com")
+		r := httptest.NewRequest(http.MethodPost, "/cases/"+caseID+"/comments", strings.NewReader(`{"type":"comment","content":"   "}`))
+		r.SetPathValue("id", caseID)
+		w := httptest.NewRecorder()
+		h.CreateCaseComment(w, r)
+		assertStatus(t, w, http.StatusBadRequest)
+		assertErrorMessage(t, w, ErrMsgContentRequired)
+		assertContentType(t, w, "application/json")
+	})
+
+	t.Run("injects the configured actorEmail and ignores a caller-supplied one", func(t *testing.T) {
 		var capturedCaseID string
 		var capturedBody []byte
-		reqBody := `{"type":"comment","content":"Investigating now."}`
+		reqBody := `{"type":"comment","content":"Investigating now.","actorEmail":"attacker@example.com"}`
 		client := &mockEntityCaseClient{
 			createCaseCommentFn: func(_ context.Context, id string, body []byte) ([]byte, error) {
 				capturedCaseID = id
 				capturedBody = body
-				return []byte(`{"message":"Comment created successfully","comment":{"id":"c-1","createdBy":"jane@example.com"}}`), nil
+				return []byte(`{"message":"Comment created successfully","comment":{"id":"c-1","createdBy":"svc@example.com"}}`), nil
 			},
 		}
-		h := NewCaseHandler(client)
+		h := NewCaseHandler(client, "svc@example.com")
 		r := httptest.NewRequest(http.MethodPost, "/cases/"+caseID+"/comments", strings.NewReader(reqBody))
 		r.SetPathValue("id", caseID)
 		w := httptest.NewRecorder()
@@ -216,8 +239,23 @@ func TestCreateCaseComment(t *testing.T) {
 		if capturedCaseID != caseID {
 			t.Errorf("caseID = %q, want %q", capturedCaseID, caseID)
 		}
-		if string(capturedBody) != reqBody {
-			t.Errorf("upstream body = %q, want verbatim %q", string(capturedBody), reqBody)
+
+		var sent struct {
+			Type       string `json:"type"`
+			Content    string `json:"content"`
+			ActorEmail string `json:"actorEmail"`
+		}
+		if err := json.Unmarshal(capturedBody, &sent); err != nil {
+			t.Fatalf("decode captured body: %v; raw: %s", err, capturedBody)
+		}
+		if sent.Type != "comment" {
+			t.Errorf("type = %q, want %q", sent.Type, "comment")
+		}
+		if sent.Content != "Investigating now." {
+			t.Errorf("content = %q, want %q", sent.Content, "Investigating now.")
+		}
+		if sent.ActorEmail != "svc@example.com" {
+			t.Errorf("actorEmail = %q, want the configured service actor email, never the caller-supplied one", sent.ActorEmail)
 		}
 
 		resp := decodeJSON[map[string]any](t, w)
@@ -235,7 +273,7 @@ func TestCreateCaseComment(t *testing.T) {
 						return nil, tc.err
 					},
 				}
-				h := NewCaseHandler(client)
+				h := NewCaseHandler(client, "")
 				r := httptest.NewRequest(http.MethodPost, "/cases/"+caseID+"/comments", strings.NewReader(`{"type":"comment","content":"hi"}`))
 				r.SetPathValue("id", caseID)
 				w := httptest.NewRecorder()

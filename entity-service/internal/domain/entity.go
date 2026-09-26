@@ -2798,6 +2798,14 @@ type UpdateCaseRequest struct {
 	// the provider and pauses the case's Workaround SLA clock in the backing data
 	// source; recalling clears both (ServiceNow data source only).
 	WorkaroundProvided *bool `json:"workaroundProvided"`
+	// MarkFixIssued, when true, records that a fix has been issued for the case:
+	// it stamps work_item.fix_issued_on with the current time if it isn't already set,
+	// and otherwise succeeds without changing anything (first-write-wins, same
+	// shape as Acknowledge -- there is no un-mark). Only true is accepted -- like
+	// Acknowledge, there is no unmark path -- and it cannot be combined with any
+	// other field in the same request (Postgres data source only; the mirrored
+	// ServiceNow write happens asynchronously through the dual-write mechanism).
+	MarkFixIssued *bool `json:"markFixIssued"`
 }
 
 // UpdateCaseResponse is the response for PATCH /cases/{id}.
@@ -2861,6 +2869,12 @@ type UpdatedCase struct {
 	// request set it or found it already set. Present only when the update set
 	// acknowledge.
 	AcknowledgedBy *AssignedEngineerRef `json:"acknowledgedBy,omitempty"`
+	// FixIssued echoes the case's fix-issued timestamp back on a successful
+	// markFixIssued update, whether this request just set it (first write) or it
+	// was already set (first-write-wins no-op). Present only when the update set
+	// markFixIssued -- not part of the general read model (CaseView/GetCaseByID/
+	// SearchCases), which is a separate, later piece of work.
+	FixIssued *time.Time `json:"fixIssued,omitempty"`
 	// WorkaroundProvidedOn/WorkaroundProvidedBy are not echoed here: ServiceNow's
 	// Update Case response only ever returns {id, updatedOn, updatedBy} for a plain
 	// field write like this one (same as Subject/Description/the fix-ETA fields
@@ -3002,6 +3016,14 @@ type CreateCaseCommentRequest struct {
 	CreatedBy string      `json:"-"`
 	Type      CommentType `json:"type"`
 	Content   string      `json:"content"`
+	// ActorEmail is set only by an M2M caller that has no x-user-id-token to
+	// resolve an acting user from (e.g. UMT via csm-integration-service).
+	// The handler checks it against a configured allowlist of trusted
+	// service-account emails (config.Config.M2MTrustedActorEmails) before
+	// honoring it -- an arbitrary caller-supplied value is never trusted
+	// as-is, since that would let any caller claim to be any user. Mutually
+	// exclusive with a real x-user-id-token on the same request.
+	ActorEmail *string `json:"actorEmail,omitempty"`
 }
 
 // AddCaseTagRequest is the request body for POST /cases/{id}/tags. SN's tagging is
@@ -3010,6 +3032,14 @@ type CreateCaseCommentRequest struct {
 type AddCaseTagRequest struct {
 	CaseID string `json:"-"`
 	Label  string `json:"label"`
+	// ActorEmail is set only by an M2M caller that has no x-user-id-token to
+	// resolve an acting user from (e.g. UMT via csm-integration-service).
+	// The handler checks it against a configured allowlist of trusted
+	// service-account emails (config.Config.M2MTrustedActorEmails) before
+	// honoring it -- an arbitrary caller-supplied value is never trusted
+	// as-is, since that would let any caller claim to be any user. Mutually
+	// exclusive with a real x-user-id-token on the same request.
+	ActorEmail *string `json:"actorEmail,omitempty"`
 }
 
 // SearchTagsFilters holds the optional filters for a tag search.

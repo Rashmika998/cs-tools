@@ -71,7 +71,7 @@ type caseService struct {
 // named exactly for what UpdateCase's mirror needs: a bare PATCH with none of
 // snCaseService.UpdateCase's own read-before-write behavior.
 type snFieldPatcher interface {
-	patchCaseFields(ctx context.Context, caseID string, state *domain.CaseState, severity *domain.CaseSeverity, workState *domain.CaseWorkState) (domain.UpdatedCase, error)
+	patchCaseFields(ctx context.Context, caseID string, state *domain.CaseState, severity *domain.CaseSeverity, workState *domain.CaseWorkState, markFixIssued *bool) (domain.UpdatedCase, error)
 }
 
 // snCommentMirror is implemented by *snCaseService (see
@@ -648,15 +648,6 @@ var validCommentType = map[domain.CommentType]bool{
 
 // CreateCaseComment implements CaseService.
 func (s *caseService) CreateCaseComment(ctx context.Context, req domain.CreateCaseCommentRequest) (domain.CreateCaseCommentResponse, error) {
-	if err := validateUUIDs("caseId", []string{req.CaseID}); err != nil {
-		return domain.CreateCaseCommentResponse{}, err
-	}
-	if !validCommentType[req.Type] {
-		return domain.CreateCaseCommentResponse{}, &apierror.ValidationError{Msg: "type contains invalid value: " + string(req.Type)}
-	}
-	if req.Content == "" {
-		return domain.CreateCaseCommentResponse{}, &apierror.ValidationError{Msg: "content is required"}
-	}
 	token := middleware.UserIDTokenFromContext(ctx)
 	if token == "" {
 		return domain.CreateCaseCommentResponse{}, &apierror.UnauthorizedError{Msg: "x-user-id-token header is required"}
@@ -669,9 +660,43 @@ func (s *caseService) CreateCaseComment(ctx context.Context, req domain.CreateCa
 	if err != nil {
 		return domain.CreateCaseCommentResponse{}, err
 	}
+	authorName := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	if authorName == "" {
+		authorName = user.Email
+	}
+	return s.createCaseCommentAs(ctx, req, user.Email, authorName)
+}
+
+// CreateCaseCommentAs implements CaseService for a caller that already knows
+// the acting email and has no x-user-id-token to resolve one from -- see the
+// CaseService interface's own doc comment on this method. Mirrors
+// AddCaseTagAs/addCaseTagAs: no GetUserByEmail lookup happens here, since
+// the configured M2M service-account email (config.Config.
+// M2MTrustedActorEmails) is not guaranteed to be a provisioned sys_user-
+// equivalent row -- actorEmail is used directly for both created_by and the
+// published event's author name rather than risking a hard failure over a
+// service account that was never expected to exist as a real user.
+func (s *caseService) CreateCaseCommentAs(ctx context.Context, req domain.CreateCaseCommentRequest, actorEmail string) (domain.CreateCaseCommentResponse, error) {
+	return s.createCaseCommentAs(ctx, req, actorEmail, actorEmail)
+}
+
+// createCaseCommentAs is the shared validation/create logic behind both
+// CreateCaseComment (token-resolved actor) and CreateCaseCommentAs (caller-
+// supplied actor) -- everything past actor resolution is identical between
+// the two.
+func (s *caseService) createCaseCommentAs(ctx context.Context, req domain.CreateCaseCommentRequest, actorEmail, authorName string) (domain.CreateCaseCommentResponse, error) {
+	if err := validateUUIDs("caseId", []string{req.CaseID}); err != nil {
+		return domain.CreateCaseCommentResponse{}, err
+	}
+	if !validCommentType[req.Type] {
+		return domain.CreateCaseCommentResponse{}, &apierror.ValidationError{Msg: "type contains invalid value: " + string(req.Type)}
+	}
+	if req.Content == "" {
+		return domain.CreateCaseCommentResponse{}, &apierror.ValidationError{Msg: "content is required"}
+	}
 	// comment.created_by (migration 000037) is a free-text VARCHAR, not a
 	// UUID FK -- see CaseRepository.CreateCaseComment's own doc comment.
-	req.CreatedBy = user.Email
+	req.CreatedBy = actorEmail
 	c, err := s.repo.CreateCaseComment(ctx, req)
 	if err != nil {
 		return domain.CreateCaseCommentResponse{}, err
@@ -679,7 +704,7 @@ func (s *caseService) CreateCaseComment(ctx context.Context, req domain.CreateCa
 
 	// Event publishing follows the write, not DATA_SOURCE -- see
 	// publishCaseCreatedEvent's own doc comment for why. authorName reuses
-	// the actor already resolved above (user) -- unlike snCaseService's own
+	// the actor already resolved above -- unlike snCaseService's own
 	// version, this data source never needs publishCommentAdded's
 	// SearchCaseComments re-fetch trick, since the create response never
 	// loses the author's identity here in the first place.
@@ -687,10 +712,6 @@ func (s *caseService) CreateCaseComment(ctx context.Context, req domain.CreateCa
 		if cv, err := s.GetCaseByID(ctx, req.CaseID); err != nil {
 			slog.ErrorContext(ctx, "create comment: enrich case for case.comment_added publish failed", "caseId", req.CaseID)
 		} else {
-			authorName := strings.TrimSpace(user.FirstName + " " + user.LastName)
-			if authorName == "" {
-				authorName = user.Email
-			}
 			publishCommentAddedEvent(ctx, s.publisher, cv, req, c.ID, authorName)
 		}
 	}
@@ -709,7 +730,9 @@ func (s *caseService) CreateCaseComment(ctx context.Context, req domain.CreateCa
 	// CreateBareCaseComment's own doc comment). Uses CreateBareCaseComment
 	// specifically (not the full CreateCaseComment) so neither side effect
 	// ever fires twice, or fires against ServiceNow for an outcome only
-	// Postgres actually decided.
+	// Postgres actually decided. Fires identically for both the token-
+	// resolved and M2M actorEmail paths -- the mirror doesn't care how the
+	// author was resolved.
 	// "activity" comments have no ServiceNow counterpart at all
 	// (CreateBareCaseComment rejects the type outright -- see its own doc
 	// comment) -- this is a permanent, 100%-guaranteed incompatibility, not
@@ -734,7 +757,7 @@ func (s *caseService) CreateCaseComment(ctx context.Context, req domain.CreateCa
 		Comment: domain.CaseCommentDetail{
 			ID:        c.ID,
 			CreatedOn: c.CreatedOn,
-			CreatedBy: user.Email,
+			CreatedBy: actorEmail,
 		},
 	}, nil
 }
@@ -808,6 +831,9 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 	if req.Acknowledge != nil {
 		exclusiveCount++
 	}
+	if req.MarkFixIssued != nil {
+		exclusiveCount++
+	}
 	combinableCount := 0
 	if req.Subject != nil {
 		combinableCount++
@@ -836,14 +862,14 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 	if req.WorkaroundProvided != nil {
 		combinableCount++
 	}
-	const fieldList = "state, severity, workState, watchList, assigneeEmail, parentId, acknowledge, " +
+	const fieldList = "state, severity, workState, watchList, assigneeEmail, parentId, acknowledge, markFixIssued, " +
 		"subject, description, deploymentId, deployedProductId, bestCaseFixEta, mostLikelyFixEta, " +
 		"worstCaseFixEta, relatedCaseId, or workaroundProvided"
 	if exclusiveCount == 0 && combinableCount == 0 {
 		return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "at least one of " + fieldList + " must be provided"}
 	}
 	if exclusiveCount > 1 || (exclusiveCount == 1 && combinableCount > 0) {
-		return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "state, severity, workState, watchList, assigneeEmail, parentId, and acknowledge cannot be combined with each other or with any other field in the same request"}
+		return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "state, severity, workState, watchList, assigneeEmail, parentId, acknowledge, and markFixIssued cannot be combined with each other or with any other field in the same request"}
 	}
 	// resolutionCode/cause/closeNotes ride along with a state change only --
 	// same restriction sn_case_service.go's own UpdateCase enforces
@@ -879,6 +905,18 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 			return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "acknowledge only accepts true"}
 		}
 		return s.acknowledgeCase(ctx, req)
+	}
+	// MarkFixIssued is mutually exclusive with every other field (exclusiveCount
+	// above) and has its own persistence path (work_item.fix_issued_on, a
+	// pre-existing base-schema column also csm-sync-service's mapping target
+	// for u_fix_issued) entirely separate from every other UpdateCase branch --
+	// split out into its own branch with an early return for the same reason
+	// WatchList/AssigneeEmail/ParentID/Acknowledge are, just above.
+	if req.MarkFixIssued != nil {
+		if !*req.MarkFixIssued {
+			return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "markFixIssued must be true; unmarking a case's fix as issued is not supported"}
+		}
+		return s.updateCaseMarkFixIssued(ctx, req)
 	}
 	if combinableCount > 0 {
 		return s.updateCaseFields(ctx, req)
@@ -1012,7 +1050,7 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 				s.snWriteback.Dispatch(ctx, "case", req.ID, "update",
 					map[string]any{"id": req.ID, "state": state},
 					func(writeCtx context.Context) error {
-						_, err := patcher.patchCaseFields(writeCtx, req.ID, &state, nil, nil)
+						_, err := patcher.patchCaseFields(writeCtx, req.ID, &state, nil, nil, nil)
 						return err
 					},
 				)
@@ -1021,7 +1059,7 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 				s.snWriteback.Dispatch(ctx, "case", req.ID, "update",
 					map[string]any{"id": req.ID, "severity": severity},
 					func(writeCtx context.Context) error {
-						_, err := patcher.patchCaseFields(writeCtx, req.ID, nil, &severity, nil)
+						_, err := patcher.patchCaseFields(writeCtx, req.ID, nil, &severity, nil, nil)
 						return err
 					},
 				)
@@ -1030,7 +1068,7 @@ func (s *caseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReque
 				s.snWriteback.Dispatch(ctx, "case", req.ID, "update",
 					map[string]any{"id": req.ID, "workState": workState},
 					func(writeCtx context.Context) error {
-						_, err := patcher.patchCaseFields(writeCtx, req.ID, nil, nil, &workState)
+						_, err := patcher.patchCaseFields(writeCtx, req.ID, nil, nil, &workState, nil)
 						return err
 					},
 				)
@@ -1194,6 +1232,48 @@ func (s *caseService) updateCaseAssignee(ctx context.Context, req domain.UpdateC
 			UpdatedOn:      updatedOn,
 			AssignedTo:     &domain.AssignedEngineerRef{ID: assignee.ID, Name: assigneeName, Email: &assignee.Email},
 			AssignedToUser: domain.NewUserReference(assignee.ID, assignee.Email, assigneeName),
+		},
+	}, nil
+}
+
+// updateCaseMarkFixIssued implements UpdateCase's MarkFixIssued branch:
+// stamping work_item.fix_issued_on via CaseRepository.MarkCaseFixIssued
+// (first-write-wins -- a case whose fix is already marked issued succeeds as
+// a no-op, echoing the existing timestamp rather than erroring). The
+// ServiceNow mirror write is dispatched only when this call is the one that
+// actually set fix_issued for the first time (alreadySet false) -- a repeat
+// call on an already-marked case changed nothing in Postgres, so there is
+// nothing new to mirror and dispatching again would just be redundant noise
+// in sn_writeback_failures on every retry.
+func (s *caseService) updateCaseMarkFixIssued(ctx context.Context, req domain.UpdateCaseRequest) (domain.UpdateCaseResponse, error) {
+	if !*req.MarkFixIssued {
+		return domain.UpdateCaseResponse{}, &apierror.ValidationError{Msg: "markFixIssued must be true; unmarking a case's fix as issued is not supported"}
+	}
+
+	fixIssued, alreadySet, err := s.repo.MarkCaseFixIssued(ctx, req.ID)
+	if err != nil {
+		return domain.UpdateCaseResponse{}, err
+	}
+
+	if !alreadySet && s.snWriteback != nil {
+		if patcher, ok := s.snMirror.(snFieldPatcher); ok {
+			markFixIssued := true
+			s.snWriteback.Dispatch(ctx, "case", req.ID, "update",
+				map[string]any{"id": req.ID, "markFixIssued": true},
+				func(writeCtx context.Context) error {
+					_, err := patcher.patchCaseFields(writeCtx, req.ID, nil, nil, nil, &markFixIssued)
+					return err
+				},
+			)
+		}
+	}
+
+	return domain.UpdateCaseResponse{
+		Message: "Case updated successfully",
+		Case: domain.UpdatedCase{
+			ID:        req.ID,
+			UpdatedOn: fixIssued,
+			FixIssued: &fixIssued,
 		},
 	}, nil
 }
