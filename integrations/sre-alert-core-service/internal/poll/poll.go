@@ -39,8 +39,7 @@ const (
 	alertIDWidth  = 9
 )
 
-// Leader reports whether this replica is the elected active processor. Only the leader processes
-// alerts, so multiple replicas never send duplicate incident notifications.
+// Leader reports whether this replica may process alerts, preventing duplicate incident notifications across replicas.
 type Leader interface {
 	IsLeader() bool
 }
@@ -55,9 +54,9 @@ type Settings struct {
 	ReadConcurrency int
 	// MaxWindow caps how many alert ids one window processes, bounding memory under large bursts.
 	MaxWindow int
-	// NotifySweepInterval is the cadence for retrying incidents whose CSM/Chat notification hasn't yet confirmed; it is independent of the alert processing cycle and is safe to call concurrently with it.
+	// NotifySweepInterval is the retry cadence for unconfirmed CSM/Chat notifications, independent of and concurrent-safe with the alert cycle.
 	NotifySweepInterval time.Duration
-	// GapTimeout bounds how long a single missing alert id (its row never became visible, e.g. the producer bumped alert_seq and died before writing it) is allowed to block every id after it. Once an id has been the head of every window for longer than this, it is skipped (logged loudly) instead of retried forever. Zero disables the bound, restoring the old block-forever behavior.
+	// GapTimeout bounds how long a missing alert id blocks all following ids before being skipped; zero disables the bound.
 	GapTimeout time.Duration
 }
 
@@ -70,16 +69,13 @@ type Poller struct {
 	settings Settings
 	wake     chan struct{}
 	sweeping atomic.Bool
-	// wg tracks in-flight work launched off the Run goroutine (currently only RetrySweep), so Run doesn't return -- and a caller waiting on it doesn't consider the poller drained -- while a sweep is still delivering to CSM/Chat.
+	// wg tracks in-flight sweep goroutines so Run doesn't return, and callers don't see it drained, mid-sweep.
 	wg sync.WaitGroup
-	// stuck backs GapTimeout above. Only ever touched from the single goroutine that calls cycle (Run's own select loop), so it needs no lock.
+	// stuck backs GapTimeout; only touched from the single goroutine running cycle, so it needs no lock.
 	stuck stuckTracker
 }
 
-// New seeds the alert_seq and cursor rows (idempotent) and returns a ready poller.
-// alert_seq must be seeded here too: on a fresh deployment with no ingestion writer
-// having run yet, an unseeded alert_seq makes every cycle's first read fail with
-// "not found" forever, so the poller never even reaches the alerts table.
+// New seeds alert_seq and cursor rows so a fresh deployment's first cycle doesn't fail with "not found" forever.
 func New(logger *slog.Logger, session *gocql.Session, e *engine.Engine, leader Leader, settings Settings) (*Poller, error) {
 	if err := cassandra.SeedSeq(context.Background(), session, alertSeqTable); err != nil {
 		return nil, err
@@ -105,14 +101,7 @@ func (p *Poller) Wake() {
 	}
 }
 
-// Run processes alerts on ping and on a fixed interval backstop until ctx is cancelled; cycles never
-// overlap. A second, independent ticker retries any incident whose CSM/Chat notification is still
-// outstanding, so a Chat/CSM outage recovers on its own without ever blocking alert ingestion.
-//
-// Callers that need to know the poller has actually drained before proceeding (e.g. main releasing
-// the processor lease on shutdown) should give Run a context of its own, cancel it, and then wait for
-// Run to return: it does not return until every RetrySweep goroutine it launched has also finished,
-// even though cycle() itself always runs synchronously on this same goroutine.
+// Run processes alerts on ping/interval until ctx cancels, and doesn't return until launched RetrySweep goroutines finish too.
 func (p *Poller) Run(ctx context.Context) {
 	ticker := time.NewTicker(p.settings.Interval)
 	defer ticker.Stop()
@@ -131,7 +120,7 @@ func (p *Poller) Run(ctx context.Context) {
 			p.cycle(ctx)
 		case <-notifyTicker.C:
 			if p.leader.IsLeader() && p.sweeping.CompareAndSwap(false, true) {
-				// Runs off the poll loop's goroutine so a slow CSM/Chat outage during the sweep never delays cycle(); the guard keeps sweeps from overlapping themselves. RetrySweep rechecks leadership per incident and stops if it's lost mid-sweep. Tracked in p.wg so Run doesn't report itself drained while this is still in flight.
+				// Runs in a separate goroutine so a slow CSM/Chat outage never delays cycle(); guard prevents overlapping sweeps.
 				p.wg.Add(1)
 				go func() {
 					defer p.wg.Done()
@@ -143,8 +132,7 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 }
 
-// cycle drains alert ids from cursor to the latest issued, one bounded window at a time, advancing
-// the durable cursor across each window's completed prefix. Only the elected leader does work.
+// cycle drains alert ids from cursor to latest in bounded windows, advancing the durable cursor after each completed prefix.
 func (p *Poller) cycle(ctx context.Context) {
 	if !p.leader.IsLeader() {
 		return
@@ -168,14 +156,14 @@ func (p *Poller) cycle(ctx context.Context) {
 		}
 		next := p.processWindow(ctx, cursor, latest)
 		if next <= cursor {
-			// No forward progress (head of window is not visible yet, or another writer moved the cursor first), so stop this cycle and wait for the next tick or ping.
+			// No progress: window head not visible yet, or cursor moved elsewhere; wait for next tick/ping.
 			return
 		}
 		cursor = next
 	}
 }
 
-// processWindow reads, handles, and confirms one window of alert ids in [cursor+1, min(latest, cursor+MaxWindow)] and returns the new cursor position. It never blocks waiting for a future alert id to appear; any unready id is deferred to the next cycle.
+// processWindow handles one window of alert ids and returns the new cursor; never blocks on an unready id, deferring it.
 func (p *Poller) processWindow(ctx context.Context, cursor, latest int64) int64 {
 	base := cursor + 1
 	end := min(latest, cursor+int64(p.settings.MaxWindow))
@@ -184,7 +172,7 @@ func (p *Poller) processWindow(ctx context.Context, cursor, latest int64) int64 
 	// Stage 1: read + normalize every id in the window concurrently, into disjoint slots.
 	slots := p.readWindow(ctx, base, n)
 
-	// Determine the ready prefix: handling stops at the first id not yet visible (Retry). An id that is visible but failed to normalize (Failed) is skipped past, so the next cycle re-reads it and retries.
+	// Ready prefix stops at first unvisible id (Retry); a normalize failure (Failed) is skipped, retried next cycle.
 	outcomes := make([]engine.Outcome, n)
 	readStop := n
 	for i := range n {
@@ -201,7 +189,7 @@ func (p *Poller) processWindow(ctx context.Context, cursor, latest int64) int64 
 		outcomes[i] = engine.Retry // deferred to the next cycle
 	}
 
-	// A missing row at the very head of the window (readStop == 0) blocks every id after it forever, with no bound -- if the producer bumped alert_seq and died before writing that row, the cursor never advances past it and all alert processing halts silently. GapTimeout caps how long this service waits before skipping the stuck id, logging loudly so the gap is visible rather than silent.
+	// A missing row at the window head blocks everything after it indefinitely; GapTimeout bounds the wait before skipping it.
 	if n > 0 && p.stuck.observe(base, readStop == 0, time.Now(), p.settings.GapTimeout) {
 		id := cassandra.FormatSeq(alertIDPrefix, alertIDWidth, base)
 		p.logger.Error("alert id stuck beyond gap timeout, skipping to unblock the pipeline", "alert_id", id, "gap_timeout", p.settings.GapTimeout)
@@ -258,7 +246,7 @@ func (p *Poller) readWindow(ctx context.Context, base int64, n int) []prepared {
 	return slots
 }
 
-// handleSharded handles the ready ids in slots[0:readStop] on a fingerprint-sharded worker pool and writes each outcome into outcomes[0:readStop]. It returns only after all workers finish, so the caller can advance the cursor across the leading run of completed ids.
+// handleSharded processes ready ids on a fingerprint-sharded pool and blocks until done, so the caller can safely advance the cursor.
 func (p *Poller) handleSharded(ctx context.Context, base int64, slots []prepared, outcomes []engine.Outcome, readStop int) {
 	workers := min(p.settings.Concurrency, readStop)
 	if workers <= 0 {
@@ -306,7 +294,7 @@ func (p *Poller) handleSharded(ctx context.Context, base int64, slots []prepared
 	wg.Wait()
 }
 
-// contiguousCompleted returns the length of the leading run of completed outcomes (Processed or Failed) in the slice, stopping at the first Retry. The caller uses this to advance the cursor across the window's completed prefix.
+// contiguousCompleted returns the leading run length of completed outcomes, stopping at the first Retry, for advancing the cursor.
 func contiguousCompleted(outcomes []engine.Outcome) int {
 	for i, o := range outcomes {
 		if o == engine.Retry {
@@ -316,7 +304,7 @@ func contiguousCompleted(outcomes []engine.Outcome) int {
 	return len(outcomes)
 }
 
-// shard maps a fingerprint to one of workers worker queues via FNV-1a, so a given incident's alerts always land on the same worker.
+// shard maps a fingerprint to a worker index via FNV-1a so an incident's alerts land on the same worker.
 func shard(fingerprint string, workers int) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(fingerprint))

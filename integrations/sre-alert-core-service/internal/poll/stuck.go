@@ -18,22 +18,13 @@ package poll
 
 import "time"
 
-// stuckTracker tracks how long the current window's head alert id has failed
-// to become visible, backing Settings.GapTimeout: a missing row at the head
-// of a window blocks every id after it, with no bound, until something skips
-// past it. Not safe for concurrent use -- callers must only ever touch it
-// from the single goroutine that runs cycle (see Poller.stuck's own doc
-// comment).
+// stuckTracker tracks how long the window's head alert id has been unready, backing GapTimeout; not safe for concurrent use.
 type stuckTracker struct {
 	at    int64
 	since time.Time
 }
 
-// observe records that base is (or isn't) the current window's stuck head,
-// and reports whether it has now been stuck for at least gapTimeout and
-// should be skipped. headBlocked is true when the window's very first id
-// (readStop == 0 in processWindow) isn't ready yet. gapTimeout <= 0 disables
-// the bound entirely -- observe never reports skip in that case.
+// observe records whether base is the stuck head and reports if it's been stuck long enough (gapTimeout) to skip.
 func (t *stuckTracker) observe(base int64, headBlocked bool, now time.Time, gapTimeout time.Duration) (skip bool) {
 	if !headBlocked {
 		if t.at == base {

@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Command server wires Cassandra, the alert poller, dedup engine, and CSM/Chat notifier together, then serves health and alert wake endpoints over HTTP.
+// Command server wires Cassandra, the poller, dedup engine, and notifier, then serves health and alert endpoints.
 package main
 
 import (
@@ -65,7 +65,7 @@ func main() {
 	}
 	defer session.Close()
 
-	// Elects a single active processor across replicas so multiple Choreo containers never duplicate notifications; standbys take over once the leader's lease lapses.
+	// Elects one active processor across replicas so multiple containers don't duplicate notifications.
 	processorLease, err := lease.New(session, base.With("component", "lease"), lease.Identity(), depCfg.Lease.TTL.Duration())
 	if err != nil {
 		logger.Error("failed to initialise processor lease", "error", err)
@@ -118,11 +118,7 @@ func main() {
 	defer stop()
 	go processorLease.Run(ctx, depCfg.Lease.RenewInterval.Duration())
 
-	// pollCtx is intentionally its own context, not derived from the signal ctx above: on shutdown this
-	// lets main cancel it first, wait for the poller to actually drain (bounded by shutdown_grace), and
-	// only then release the lease -- rather than the poller and the lease-release racing off the same
-	// cancellation, which could let a CSM POST that already succeeded be followed by a lease release
-	// (and the next leader re-sending) before this replica even finishes recording the result.
+	// pollCtx is separate from ctx so shutdown can drain the poller before releasing the lease, avoiding duplicate sends.
 	pollCtx, cancelPoll := context.WithCancel(context.Background())
 	defer cancelPoll()
 	pollerDone := make(chan struct{})
@@ -140,7 +136,7 @@ func main() {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	// livez is a liveness check that never touches Cassandra, so a DB blip doesn't cause every pod to be restarted by a liveness probe pointed here instead of at /healthz.
+	// livez skips Cassandra so a DB blip doesn't trigger pod restarts via the liveness probe.
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -167,12 +163,12 @@ func main() {
 		}
 	case <-ctx.Done():
 		logger.Info("shutdown signal received, draining connections")
-		// Restores default OS signal handling so a second Ctrl-C during graceful shutdown forcibly kills the process instead of being silently ignored.
+		// Restores default signal handling so a second Ctrl-C force-kills instead of being ignored.
 		stop()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), depCfg.Server.ShutdownGrace.Duration())
 		defer cancel()
 
-		// Cancel the poller first and wait for it to actually drain (any in-flight Handle/RetrySweep) before releasing the lease -- see pollCtx's own doc comment above for why this ordering matters.
+		// Cancels the poller and waits for drain before releasing the lease, to avoid duplicate delivery.
 		cancelPoll()
 		select {
 		case <-pollerDone:
@@ -180,7 +176,7 @@ func main() {
 			logger.Warn("poller did not drain within shutdown_grace")
 		}
 
-		// Releases the lease only after the poller has drained, so a standby resumes processing immediately instead of waiting out the full lease ttl, and never while this replica might still be mid-delivery.
+		// Released only after drain, so a standby resumes immediately and never races a mid-delivery replica.
 		if err := processorLease.Release(shutdownCtx); err != nil {
 			logger.Warn("failed to release processor lease on shutdown", "error", err)
 		}
@@ -190,7 +186,7 @@ func main() {
 	}
 }
 
-// mustEnv reads name from the environment, exiting the process loudly if it is unset or empty -- required CSM integration config with no safe default to fall back to.
+// mustEnv exits the process if name is unset; used for required config with no safe default.
 func mustEnv(logger *slog.Logger, name string) string {
 	v := os.Getenv(name)
 	if v == "" {
@@ -212,7 +208,7 @@ func splitComma(raw string) []string {
 	return out
 }
 
-// connectWithRetry retries Connect with exponential backoff, up to ConnectMaxAttempts times, so a transient Cassandra outage at startup doesn't immediately crash the server.
+// connectWithRetry retries with exponential backoff so a transient startup outage doesn't crash the server.
 func connectWithRetry(logger *slog.Logger, cfg cassandra.Config, ccfg config.CassandraConfig) (*gocql.Session, error) {
 	var session *gocql.Session
 	attempt := 0

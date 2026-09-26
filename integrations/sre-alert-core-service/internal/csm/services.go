@@ -33,8 +33,7 @@ type searchITServicesFilters struct {
 	SearchQuery string `json:"searchQuery,omitempty"`
 }
 
-// ITService is the subset of entity-service's own ITService this client
-// reads out of a search hit.
+// ITService is the subset of entity-service's own ITService this client reads out of a search hit.
 type ITService struct {
 	ID   string `json:"id"`
 	Name string `json:"name,omitempty"`
@@ -45,20 +44,13 @@ type searchITServicesResponse struct {
 	Total    int         `json:"total"`
 }
 
-// servicesSearchPageSize/MaxPages bound SearchServiceID's walk for an
-// exact-name match; entity-service's own search is a case-insensitive
-// substring match ordered by created_on, not by relevance, so a bare
-// first-result read can return the wrong service (see SearchServiceID's own
-// doc comment).
+// Bounds SearchServiceID's walk; entity-service's search is substring-matched and ordered by created_on, not relevance.
 const (
 	servicesSearchPageSize = 50
 	servicesSearchMaxPages = 20
 )
 
-// SearchServiceID calls POST /services/search on csm-integration-service
-// looking for a CMDB service whose Name matches label case-insensitively,
-// and returns its UUID. Returns ("", nil) on a confirmed zero-match search
-// (not an error) -- the caller decides what "no match" means.
+// SearchServiceID returns a CMDB service UUID by case-insensitive Name match; zero matches returns ("", nil), not an error.
 func (c *Client) SearchServiceID(ctx context.Context, label string) (string, error) {
 	offset := 0
 	for page := 0; page < servicesSearchMaxPages; page++ {

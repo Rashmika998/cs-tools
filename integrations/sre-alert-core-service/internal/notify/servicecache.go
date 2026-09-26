@@ -21,14 +21,7 @@ import (
 	"time"
 )
 
-// serviceCache is a small in-memory, TTL-bounded cache mapping an alert's raw
-// Service label to a CMDB service uuid already resolved via
-// csm.Client.SearchServiceID, so a label doesn't pay for a live
-// /services/search call on every single CSM delivery attempt. Only a
-// successful resolution is ever cached: a confirmed zero-result search, or a
-// transient search error, could become a different outcome on a later
-// attempt, and caching either would risk pinning an incident to a stale
-// wrong answer for a full TTL window.
+// serviceCache only caches successful resolutions; caching a zero-result or error risks a stale wrong answer.
 type serviceCache struct {
 	mu      sync.Mutex
 	ttl     time.Duration

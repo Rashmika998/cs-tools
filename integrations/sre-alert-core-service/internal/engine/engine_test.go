@@ -94,6 +94,17 @@ func (f *fakeIncidents) Upsert(_ context.Context, alertID string, a model.Alert,
 	if severityNum < existing.Severity {
 		existing.Severity = severityNum
 	}
+	// Mirrors store.IncidentRepo.Upsert: this path is only ever reached (rather than annotate) for
+	// an incident that is no longer open, so folding a new occurrence into it must reset delivery
+	// state -- otherwise a closed incident's csm_confirmed/notified silently swallow the recurrence.
+	if !existing.IsOpen() {
+		existing.IncidentID = ""
+		existing.IncidentNumber = "PENDING-" + fp[:8]
+		existing.Notified = false
+		existing.CSMConfirmed = false
+		existing.CSMAttempts = 0
+		existing.CSMPermanentlyFailed = false
+	}
 	f.byFP[fp] = existing
 	return existing, false, nil
 }
@@ -330,5 +341,38 @@ func TestRetrySweepAndHandle_NeverDoubleDeliverSameIncident(t *testing.T) {
 
 	if calls := notifier.csmCalls.Load(); calls != 1 {
 		t.Fatalf("NotifyCSM calls = %d, want exactly 1 across two concurrent deliverAndPersist calls for the same fingerprint", calls)
+	}
+}
+
+// TestHandle_RecurrenceAfterCsmCloses_NotifiesAgain is the case cs-tools#2016's review flagged:
+// once CSM closes an incident, a later alert for the same fingerprint must not be folded silently
+// into the closed row. It needs a fresh delivery cycle (and a fresh dedup tag, so NotifyCSM's
+// search can't just reuse the incident CSM already closed).
+func TestHandle_RecurrenceAfterCsmCloses_NotifiesAgain(t *testing.T) {
+	notifier := &fakeNotifier{csmOK: true, csmID: "csm-1", csmNumber: "INC0000001", openStates: map[string]bool{}}
+	e, incidents := newTestEngine(nil, notifier)
+	ctx := context.Background()
+
+	alert := model.Alert{Service: "svc", MetricName: "cpu", Severity: "critical", Source: "vendor"}
+	e.Handle(ctx, "ALT1", alert) // creates + confirms the incident
+	if notifier.csmCalls.Load() != 1 {
+		t.Fatalf("NotifyCSM calls = %d, want 1 after initial creation", notifier.csmCalls.Load())
+	}
+
+	notifier.openStates["INC0000001"] = false // CSM has since closed the incident
+
+	notifier.csmNumber = "INC0000002" // the recurrence's own, distinct CSM incident
+	outcome := e.Handle(ctx, "ALT2", alert)
+	if outcome != Processed {
+		t.Fatalf("outcome = %v, want Processed", outcome)
+	}
+	if calls := notifier.csmCalls.Load(); calls != 2 {
+		t.Fatalf("NotifyCSM calls = %d, want 2: a recurrence after CSM closes the incident must be notified again", calls)
+	}
+
+	fp := model.Fingerprint(alert.Source, alert.Service, alert.MetricName, alert.Environment, alert.UniqueIdentifier)
+	inc := incidents.byFP[fp]
+	if inc.IncidentNumber != "INC0000002" || !inc.CSMConfirmed {
+		t.Fatalf("expected the recurrence to be recorded against its own new CSM incident, got %+v", inc)
 	}
 }

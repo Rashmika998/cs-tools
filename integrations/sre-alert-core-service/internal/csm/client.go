@@ -14,19 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Package csm is an HTTP client for csm-integration-service — the M2M
-// gateway this service calls to turn a deduplicated incident row into a real
-// CSM incident. It never calls entity-service directly, matching the same
-// choice sre-alert-ingestion-service and acp-closure-service already made:
-// only csm-integration-service is fronted for M2M/third-party consumers.
-//
-// This is a self-contained copy of sre-alert-ingestion-service's own
-// internal/csm, trimmed to what this service needs (CreateIncident,
-// UpdateIncident for work notes, SearchIncidents for open/closed state and
-// serviceId resolution). Go modules in this repo don't share internal/
-// packages across services — confirmed by csm-integration-service and
-// acp-closure-service each having their own copies of the same kind of
-// client — so this is a deliberate duplication, not an oversight.
+// Package csm is a client for csm-integration-service, duplicated per-service since Go modules here don't share internal/ packages.
 package csm
 
 import (
@@ -51,8 +39,7 @@ type ctxKey string
 
 const correlationIDKey ctxKey = "x-csm-correlation-id" // #nosec G101 -- context map key, not a credential
 
-// WithCorrelationID returns a copy of ctx carrying the correlation ID to be
-// forwarded as X-CSM-Correlation-ID on every outgoing request.
+// WithCorrelationID returns a copy of ctx carrying the id forwarded as X-CSM-Correlation-ID.
 func WithCorrelationID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, correlationIDKey, id)
 }
@@ -62,7 +49,6 @@ func correlationIDFromContext(ctx context.Context) string {
 	return v
 }
 
-// Config holds the configuration for the csm-integration-service client.
 type Config struct {
 	BaseURL      string
 	TokenURL     string
@@ -71,16 +57,13 @@ type Config struct {
 	Scopes       []string
 }
 
-// Client is an HTTP client authenticated to csm-integration-service via the
-// OAuth2 client credentials grant. Tokens are acquired and refreshed
-// automatically; callers need not manage them.
+// Client authenticates via OAuth2 client-credentials grant; tokens are acquired and refreshed automatically.
 type Client struct {
 	http    *http.Client
 	baseURL string
 }
 
-// NewClient constructs a Client that authenticates against
-// csm-integration-service using the OAuth2 client credentials grant type.
+// NewClient constructs a Client using the OAuth2 client-credentials grant.
 func NewClient(cfg Config) *Client {
 	cc := clientcredentials.Config{
 		ClientID:     cfg.ClientID,
@@ -110,8 +93,7 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-// do executes an authenticated HTTP request against csm-integration-service
-// and returns the raw JSON response body. The caller owns the returned slice.
+// do executes an authenticated request; the caller owns the returned response body slice.
 func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]byte, error) {
 	var reqBody io.Reader
 	if len(body) > 0 {
@@ -152,9 +134,7 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 	return respBody, nil
 }
 
-// httpsOnlyTransport refuses to send a request whose URL isn't HTTPS — this
-// client always carries either the OAuth2 client secret (token endpoint) or
-// the bearer token it returns (every other request).
+// httpsOnlyTransport blocks non-HTTPS requests since this client always carries a secret or bearer token.
 type httpsOnlyTransport struct {
 	base http.RoundTripper
 }

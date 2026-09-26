@@ -29,10 +29,9 @@ import (
 	"alert-core-service/internal/model"
 )
 
-// ErrMalformedAlert marks a decode failure on a stored alert payload as permanent, distinguishing it from transient read errors that should be retried.
+// ErrMalformedAlert marks a decode failure as permanent, unlike retryable transient read errors.
 var ErrMalformedAlert = errors.New("malformed alert payload")
 
-// alertRow maps the alerts table's single queried column to a Go field via gocqlx's db tag.
 type alertRow struct {
 	Payload string `db:"alert"`
 }
@@ -47,7 +46,6 @@ func NewAlertRepo(session *gocql.Session) *AlertRepo {
 	return &AlertRepo{session: gocqlx.NewSession(session)}
 }
 
-// Get reads the alert stored under id.
 func (r *AlertRepo) Get(ctx context.Context, id string) (model.Alert, error) {
 	stmt, names := qb.Select("alerts").Columns("alert").Where(qb.Eq("id")).ToCql()
 	var row alertRow

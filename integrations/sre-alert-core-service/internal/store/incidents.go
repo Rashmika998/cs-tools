@@ -28,14 +28,13 @@ import (
 	"alert-core-service/internal/model"
 )
 
-// incidentColumns lists the incidents table's columns once; model.Incident's db tags map them via gocqlx.
 var incidentColumns = []string{
 	"fingerprint", "incident_id", "incident_number", "status", "severity", "impact", "urgency", "service",
 	"metric_name", "description", "category", "environment", "source", "alert_ids", "alert_count", "work_notes",
 	"first_seen", "last_seen", "notified", "csm_confirmed", "csm_attempts", "csm_permanently_failed",
 }
 
-// maxAlertIDs and maxWorkNotes bound the two unbounded, read-modify-rewritten lists on an incident row, so a flapping alert can't push the row toward Cosmos's row-size limit or make each write progressively heavier. Both are trimmed to their most recent entries; the count in AlertCount is unaffected and keeps growing, since that is the number engineers actually care about, not the raw list.
+// Bounds unbounded lists so a flapping alert can't blow past Cosmos's row-size limit; AlertCount keeps growing regardless.
 const (
 	maxAlertIDs  = 500
 	maxWorkNotes = 200
@@ -46,7 +45,6 @@ type IncidentRepo struct {
 	session gocqlx.Session
 }
 
-// NewIncidentRepo wraps session for incident storage.
 func NewIncidentRepo(session *gocql.Session) (*IncidentRepo, error) {
 	return &IncidentRepo{session: gocqlx.NewSession(session)}, nil
 }
@@ -116,7 +114,7 @@ func (r *IncidentRepo) Upsert(ctx context.Context, alertID string, a model.Alert
 		}
 	}
 
-	// Skip if alertID is already folded in, e.g. a retry after an ambiguous but successful timeout, or a retried poll window re-handling an id that already ran (see engine.Handle's idempotency check, which relies on this list too).
+	// Skip if alertID already folded in (retry after ambiguous timeout); engine.Handle's idempotency check relies on this too.
 	for _, seen := range existing.AlertIDs {
 		if seen == alertID {
 			return existing, false, nil
@@ -141,8 +139,22 @@ func (r *IncidentRepo) Upsert(ctx context.Context, alertID string, a model.Alert
 		updated.Description = a.Description
 	}
 
+	setCols := []string{"alert_ids", "alert_count", "severity", "impact", "urgency", "category", "description", "last_seen"}
+	// Handle only reaches here for a closed incident: reset delivery fields or the recurrence is
+	// silently swallowed. FirstSeen reset also gives DedupTag a fresh value for NotifyCSM.
+	if !existing.IsOpen() {
+		updated.IncidentID = ""
+		updated.IncidentNumber = pendingIncidentNumber(fp)
+		updated.Notified = false
+		updated.CSMConfirmed = false
+		updated.CSMAttempts = 0
+		updated.CSMPermanentlyFailed = false
+		updated.FirstSeen = updated.LastSeen
+		setCols = append(setCols, "incident_id", "incident_number", "notified", "csm_confirmed", "csm_attempts", "csm_permanently_failed", "first_seen")
+	}
+
 	stmt, names := qb.Update("incidents_processed").
-		Set("alert_ids", "alert_count", "severity", "impact", "urgency", "category", "description", "last_seen").
+		Set(setCols...).
 		Where(qb.Eq("fingerprint")).
 		ToCql()
 	if err := r.session.Query(stmt, names).WithContext(ctx).BindStruct(updated).ExecRelease(); err != nil {
@@ -151,7 +163,7 @@ func (r *IncidentRepo) Upsert(ctx context.Context, alertID string, a model.Alert
 	return updated, false, nil
 }
 
-// RecordAlertID folds alertID into an incident's AlertIDs without touching any other field, so annotate-only paths (a duplicate or resolving note on an already-existing incident) are idempotent across a retried poll window the same way Upsert's own alertID-membership check is. A no-op if alertID is already present.
+// RecordAlertID appends alertID for idempotent annotate-only paths, matching Upsert's dedup check; no-op if already present.
 func (r *IncidentRepo) RecordAlertID(ctx context.Context, existing model.Incident, alertID string) error {
 	for _, seen := range existing.AlertIDs {
 		if seen == alertID {
@@ -173,7 +185,7 @@ func (r *IncidentRepo) RecordAlertID(ctx context.Context, existing model.Inciden
 	return nil
 }
 
-// RecordCSMIncident persists the CSM-assigned incident id and number together with csm_confirmed=true in a single write, so a caller can never observe csm_confirmed=true with a still-empty/placeholder id or number (see UpdateIncidentNumber's old failure mode, where marking confirmed and persisting the number were two separate, independently-fallible steps).
+// RecordCSMIncident writes id, number, and csm_confirmed together so confirmed is never observed with a placeholder id.
 func (r *IncidentRepo) RecordCSMIncident(ctx context.Context, fingerprint, incidentID, incidentNumber string) error {
 	stmt, names := qb.Update("incidents_processed").
 		Set("incident_id", "incident_number", "csm_confirmed").
@@ -191,7 +203,7 @@ func (r *IncidentRepo) RecordCSMIncident(ctx context.Context, fingerprint, incid
 	return nil
 }
 
-// RecordCSMAttemptFailure increments csm_attempts and, once maxAttempts is reached (or permanent is true, e.g. CSM returned a non-retryable 4xx), sets csm_permanently_failed so ListPending stops surfacing this row -- otherwise a payload CSM permanently rejects would be rescanned and re-attempted by every RetrySweep tick forever.
+// RecordCSMAttemptFailure sets csm_permanently_failed once attempts are exhausted or CSM rejects non-retryably, stopping RetrySweep from retrying forever.
 func (r *IncidentRepo) RecordCSMAttemptFailure(ctx context.Context, fingerprint string, attempts, maxAttempts int, permanent bool) error {
 	failed := permanent || attempts >= maxAttempts
 	stmt, names := qb.Update("incidents_processed").
@@ -209,7 +221,7 @@ func (r *IncidentRepo) RecordCSMAttemptFailure(ctx context.Context, fingerprint 
 	return nil
 }
 
-// SyncStatus persists a status string last read from CSM (see notify.Notifier.IncidentState), so model.Incident.IsOpen reflects CSM's own lifecycle state instead of a value only this service ever wrote.
+// SyncStatus persists CSM's status so IsOpen reflects CSM's lifecycle, not a value only this service wrote.
 func (r *IncidentRepo) SyncStatus(ctx context.Context, fingerprint, status string) error {
 	stmt, names := qb.Update("incidents_processed").
 		Set("status").
@@ -225,7 +237,7 @@ func (r *IncidentRepo) SyncStatus(ctx context.Context, fingerprint, status strin
 	return nil
 }
 
-// FindByFingerprint reads the incident matching an alert's fingerprint without mutating anything, so the engine can decide whether to annotate or Upsert before touching any row.
+// FindByFingerprint reads without mutating, so the engine can decide annotate vs Upsert before touching any row.
 func (r *IncidentRepo) FindByFingerprint(ctx context.Context, fp string) (model.Incident, bool, error) {
 	return r.get(ctx, fp)
 }
@@ -254,7 +266,7 @@ func (r *IncidentRepo) ListPending(ctx context.Context) ([]model.Incident, error
 	}
 	pending := make([]model.Incident, 0, len(all))
 	for _, inc := range all {
-		// Chat is only owed while CSM is unconfirmed; CSM confirmation closes both obligations. A row CSM has permanently rejected is excluded too -- retrying it forever would just spend request units against an outcome that can never change.
+		// Chat is owed only while CSM is unconfirmed; permanently-rejected rows are excluded to avoid retrying forever.
 		if !inc.CSMConfirmed && !inc.CSMPermanentlyFailed {
 			pending = append(pending, inc)
 		}
@@ -262,7 +274,7 @@ func (r *IncidentRepo) ListPending(ctx context.Context) ([]model.Incident, error
 	return pending, nil
 }
 
-// AppendWorkNote appends note to existing's work notes and writes the full list back, mirroring Upsert's Go-side-append pattern for alert_ids rather than relying on Cosmos's Cassandra API to support native list append.
+// AppendWorkNote appends and rewrites the full list, since Cosmos's Cassandra API lacks native list append.
 func (r *IncidentRepo) AppendWorkNote(ctx context.Context, existing model.Incident, note string) error {
 	updated := capTail(append(append([]string{}, existing.WorkNotes...), note), maxWorkNotes)
 	stmt, names := qb.Update("incidents_processed").

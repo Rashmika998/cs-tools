@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Package engine reads, normalizes, dedups by fingerprint, and forwards one alert id at a time to CSM and Chat, folding repeats into an existing incident.
+// Package engine dedups alerts by fingerprint and forwards them to CSM and Chat.
 package engine
 
 import (
@@ -28,12 +28,12 @@ import (
 	"alert-core-service/internal/store"
 )
 
-// alertReader is the narrow subset of *store.AlertRepo's methods the engine actually needs, letting tests substitute a fake without depending on the full repo type.
+// alertReader lets tests fake *store.AlertRepo without the full repo type.
 type alertReader interface {
 	Get(ctx context.Context, id string) (model.Alert, error)
 }
 
-// incidentStore is the narrow subset of *store.IncidentRepo's methods the engine actually needs, letting tests substitute a fake without depending on the full repo type.
+// incidentStore lets tests fake *store.IncidentRepo without the full repo type.
 type incidentStore interface {
 	FindByFingerprint(ctx context.Context, fingerprint string) (model.Incident, bool, error)
 	Upsert(ctx context.Context, alertID string, a model.Alert, severityNum int) (model.Incident, bool, error)
@@ -46,7 +46,7 @@ type incidentStore interface {
 	ListPending(ctx context.Context) ([]model.Incident, error)
 }
 
-// notifier is the narrow subset of *notify.Notifier's methods the engine actually needs, letting tests substitute a fake without depending on the full notifier type.
+// notifier lets tests fake *notify.Notifier without the full notifier type.
 type notifier interface {
 	NotifyCSM(ctx context.Context, inc model.Incident) (incidentID, incidentNumber string, ok bool, permanent bool)
 	NotifyChat(ctx context.Context, inc model.Incident) (ok bool)
@@ -54,33 +54,33 @@ type notifier interface {
 	IncidentState(ctx context.Context, incidentNumber string) (open bool, found bool, err error)
 }
 
-// Engine wires one repo per entity plus the notifier together; each dependency field is named for exactly the data or system it touches during processing.
+// Engine wires one repo per entity plus the notifier together.
 type Engine struct {
 	logger    *slog.Logger
 	alerts    alertReader
 	incidents incidentStore
 	notifier  notifier
 	defaults  model.Defaults
-	// maxCSMAttempts bounds how many failed CreateIncident attempts an incident absorbs before it's marked permanently failed and dropped from RetrySweep -- see store.IncidentRepo.RecordCSMAttemptFailure.
+	// maxCSMAttempts caps failed CreateIncident attempts before RetrySweep gives up on the incident.
 	maxCSMAttempts int
-	// locks hands out one mutex per fingerprint, replacing a single global lock: deliverAndPersist for distinct incidents never serializes behind each other, and the two callers that can race the same fingerprint (Handle and RetrySweep) always re-read the row inside the lock rather than trusting a possibly-stale snapshot.
+	// locks is per-fingerprint so distinct incidents never serialize; racing callers re-read the row under lock.
 	locks *fpLocks
 }
 
-// New wires the engine's collaborators together — typically the real *store.AlertRepo, *store.IncidentRepo, and *notify.Notifier — plus the alert default values to apply and the CSM delivery attempt cap.
+// New wires the engine's collaborators, alert defaults, and CSM attempt cap together.
 func New(logger *slog.Logger, alerts alertReader, incidents incidentStore, n notifier, defaults model.Defaults, maxCSMAttempts int) *Engine {
 	return &Engine{logger: logger, alerts: alerts, incidents: incidents, notifier: n, defaults: defaults, maxCSMAttempts: maxCSMAttempts, locks: newFPLocks()}
 }
 
-// Outcome tells the poller what happened to an alert id, determining whether the poller's durable cursor may safely advance past that id or must retry it.
+// Outcome tells the poller whether it may advance its cursor past an alert id or must retry it.
 type Outcome int
 
 const (
-	// Processed means the alert was folded into an incident, or already had been; the poller may safely advance its cursor past this alert id.
+	// Processed: the poller may advance its cursor past this alert id.
 	Processed Outcome = iota
-	// Retry means processing hit a transient condition, such as the row not yet being visible or a write failing; the poller retries this id next cycle.
+	// Retry: a transient failure occurred; the poller retries this id next cycle.
 	Retry
-	// Failed means the row exists but can't be processed, for example due to malformed JSON; it will never resolve on retry, so the poller skips past it.
+	// Failed: the alert will never process successfully, so the poller skips it.
 	Failed
 )
 
@@ -97,7 +97,7 @@ func (o Outcome) String() string {
 	}
 }
 
-// Process handles one stored alert id end to end, composing Prepare and Handle; errors are logged internally rather than returned, since the caller only needs the Outcome.
+// Process handles one stored alert id end to end via Prepare and Handle.
 func (e *Engine) Process(ctx context.Context, alertID string) Outcome {
 	alert, _, outcome, ready := e.Prepare(ctx, alertID)
 	if !ready {
@@ -106,7 +106,7 @@ func (e *Engine) Process(ctx context.Context, alertID string) Outcome {
 	return e.Handle(ctx, alertID, alert)
 }
 
-// Prepare reads and normalizes one alert, returning its fingerprint for sharding; ready is false when unprocessable, with outcome then Retry or Failed, and true means pass alert to Handle.
+// Prepare reads and normalizes one alert; ready is false when unprocessable (see outcome).
 func (e *Engine) Prepare(ctx context.Context, alertID string) (alert model.Alert, fingerprint string, outcome Outcome, ready bool) {
 	alert, err := e.alerts.Get(ctx, alertID)
 	if err != nil {
@@ -122,11 +122,11 @@ func (e *Engine) Prepare(ctx context.Context, alertID string) (alert model.Alert
 	return alert, fingerprint, Processed, true
 }
 
-// Handle folds a normalized alert into its incident and forwards notifications; safe to call concurrently for distinct fingerprints, but never for the same fingerprint at once.
+// Handle folds a normalized alert into its incident; concurrent calls must use distinct fingerprints.
 func (e *Engine) Handle(ctx context.Context, alertID string, alert model.Alert) Outcome {
 	severityNum, recognized := model.SeverityToNumeric(alert.Severity)
 	if !recognized {
-		// An unrecognized label silently becoming P1 Critical would page people for what might just be a typo -- log it loudly rather than defaulting silently.
+		// Log loudly: a silent default to Critical could page people for a typo.
 		e.logger.Warn("unrecognized severity label, defaulting to critical", "alert_id", alertID, "severity", alert.Severity)
 	}
 	fp := model.Fingerprint(alert.Source, alert.Service, alert.MetricName, alert.Environment, alert.UniqueIdentifier)
@@ -138,27 +138,27 @@ func (e *Engine) Handle(ctx context.Context, alertID string, alert model.Alert) 
 	}
 
 	if model.IsResolving(severityNum) && !found {
-		// A resolving alert with no matching incident has nothing to annotate or fold; creating one via Upsert would turn an OK/Clear alert into a spurious critical-impact incident.
+		// Nothing to annotate/fold; Upsert would spuriously create an incident from an OK/Clear alert.
 		e.logger.Info("resolving alert with no matching incident, ignoring", "alert_id", alertID, "fingerprint", fp)
 		return Processed
 	}
 
 	if found {
-		// Open/closed state is authoritative only on CSM's side -- this service is never the party that closes an incident, so refresh the local snapshot before deciding whether to annotate or fold. See model.Incident.IsOpen's own doc comment.
+		// Only CSM authoritatively closes incidents, so refresh local state before deciding.
 		existing = e.syncIncidentState(ctx, existing)
 
-		// Idempotency: a poll window whose cursor stalled on a later Retry re-runs every already-handled id in the same window on the next cycle (see poll.Poller's own doc comment). AlertIDs already records every alert this incident has absorbed, including ones only ever annotated (see RecordAlertID below) -- so a repeat is a no-op here rather than a second "Duplicate"/"OK" work note.
+		// Replayed poll windows re-run already-handled ids; AlertIDs makes that a no-op here.
 		if slices.Contains(existing.AlertIDs, alertID) {
 			e.logger.Info("alert id already recorded on this incident, skipping duplicate replay", "incident_number", existing.IncidentNumber, "alert_id", alertID)
 			return Processed
 		}
 
-		// A resolving alert (OK/Clear) against an existing incident is only annotated, never folded in; this must run before Upsert, or Clear's severity value would poison it.
+		// Must run before Upsert, or Clear's severity value would poison the incident update.
 		if model.IsResolving(severityNum) {
 			return e.annotate(ctx, existing, alertID, "OK", alert)
 		}
 
-		// A duplicate alert against a still-open incident is annotated, not re-notified; against a closed incident it falls through to Upsert and folds into the same row.
+		// Duplicate against an open incident is annotated; against a closed one it falls through to Upsert.
 		if existing.IsOpen() {
 			return e.annotate(ctx, existing, alertID, "Duplicate", alert)
 		}
@@ -178,12 +178,12 @@ func (e *Engine) Handle(ctx context.Context, alertID string, alert model.Alert) 
 			"alert_count", inc.AlertCount)
 	}
 
-	// Notification delivery is separate from alert processing; the alert is done once its incident row is written, and RetrySweep independently retries any pending delivery later.
+	// Delivery is decoupled from processing; RetrySweep retries any pending delivery later.
 	e.deliverAndPersist(ctx, inc.Fingerprint)
 	return Processed
 }
 
-// annotate appends an OK/Duplicate work note to an existing incident, records alertID against it (for idempotency -- see Handle's own doc comment), and best-effort pushes the same note to CSM.
+// annotate appends an OK/Duplicate work note, records alertID for idempotency, and best-effort pushes to CSM.
 func (e *Engine) annotate(ctx context.Context, existing model.Incident, alertID, kind string, alert model.Alert) Outcome {
 	note := model.BuildWorkNote(kind, alertID, alert.MetricName, alert.Source, time.Now())
 	if err := e.incidents.AppendWorkNote(ctx, existing, note); err != nil {
@@ -191,12 +191,12 @@ func (e *Engine) annotate(ctx context.Context, existing model.Incident, alertID,
 		return Retry
 	}
 	if err := e.incidents.RecordAlertID(ctx, existing, alertID); err != nil {
-		// Best-effort: if this fails, the worst case is a redundant note on a future retried-window replay, not a lost alert -- see Handle's idempotency check.
+		// Best-effort: failure just risks a redundant note on a future replay, not a lost alert.
 		e.logger.Warn("failed to record alert id for idempotency, continuing", "alert_id", alertID, "error", err)
 	}
 	if existing.IncidentID != "" {
 		if err := e.notifier.PushWorkNote(ctx, existing.IncidentID, note); err != nil {
-			// Best-effort and non-blocking, matching this service's other CSM-side annotation calls: the note is already durably recorded locally, and retrying a one-shot summary on a later scan has no natural dedup story of its own.
+			// Best-effort: note is already durably recorded locally.
 			e.logger.Warn("failed to push work note to csm", "incident_number", existing.IncidentNumber, "alert_id", alertID, "error", err)
 		}
 	}
@@ -204,10 +204,10 @@ func (e *Engine) annotate(ctx context.Context, existing model.Incident, alertID,
 	return Processed
 }
 
-// syncIncidentState refreshes inc's local Status from CSM's own incident state when a real CSM incident exists, so model.Incident.IsOpen reflects reality rather than a value only this service ever wrote. A CSM lookup failure or a not-yet-existing incident leaves inc unchanged; this never blocks or fails the caller.
+// syncIncidentState refreshes inc's local Status from CSM so IsOpen reflects reality, not stale local state.
 func (e *Engine) syncIncidentState(ctx context.Context, inc model.Incident) model.Incident {
 	if !inc.CSMConfirmed {
-		return inc // nothing created on CSM yet -- still open by definition, see IsOpen.
+		return inc // nothing created on CSM yet.
 	}
 	open, found, err := e.notifier.IncidentState(ctx, inc.IncidentNumber)
 	if err != nil {
@@ -232,7 +232,15 @@ func (e *Engine) syncIncidentState(ctx context.Context, inc model.Incident) mode
 	return inc
 }
 
-// deliverAndPersist re-reads the incident row for fingerprint under that fingerprint's own lock, attempts whichever of CSM/Chat delivery is still owed, and persists the result. Re-reading inside the lock (rather than trusting a caller-supplied snapshot) is what closes the race RetrySweep's stale ListPending snapshot used to allow: without it, Handle could confirm the incident between the sweep's list and this call, and the sweep would still see csm_confirmed=false and send CSM a second time.
+// persistTimeout bounds recording a delivery result after its external call already completed.
+const persistTimeout = 5 * time.Second
+
+// persistCtx survives ctx's cancellation, so a successful delivery still gets recorded on shutdown.
+func persistCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), persistTimeout)
+}
+
+// deliverAndPersist re-reads the incident under its fingerprint's lock, delivers what's owed, and persists the result.
 func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 	unlock := e.locks.lock(fingerprint)
 	defer unlock()
@@ -247,15 +255,18 @@ func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 		return
 	}
 	if inc.CSMConfirmed && inc.Notified {
-		return // already fully delivered by a caller that beat us to this lock.
+		return // already delivered by a caller that beat us to this lock.
 	}
 
 	csmConfirmed := inc.CSMConfirmed
 	if !csmConfirmed {
 		id, number, ok, permanent := e.notifier.NotifyCSM(ctx, inc)
 		if ok {
-			if err := e.incidents.RecordCSMIncident(ctx, inc.Fingerprint, id, number); err != nil {
-				// Do not treat as confirmed locally: csm_confirmed only ever flips true in the same write that persists id/number, so a partial failure here can never strand a real incident under an unconfirmed placeholder for good -- the next attempt's dedup-by-tag search (see notify.Notifier.NotifyCSM) finds this exact incident instead of creating another one.
+			pctx, cancel := persistCtx(ctx)
+			err := e.incidents.RecordCSMIncident(pctx, inc.Fingerprint, id, number)
+			cancel()
+			if err != nil {
+				// Don't mark confirmed locally; the next attempt's dedup-by-tag search will find this incident instead of duplicating it.
 				e.logger.Error("failed to persist csm incident, will retry", "incident_number", inc.IncidentNumber, "csm_incident_id", id, "csm_incident_number", number, "error", err)
 			} else {
 				csmConfirmed = true
@@ -264,7 +275,10 @@ func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 			}
 		} else {
 			attempts := inc.CSMAttempts + 1
-			if err := e.incidents.RecordCSMAttemptFailure(ctx, inc.Fingerprint, attempts, e.maxCSMAttempts, permanent); err != nil {
+			pctx, cancel := persistCtx(ctx)
+			err := e.incidents.RecordCSMAttemptFailure(pctx, inc.Fingerprint, attempts, e.maxCSMAttempts, permanent)
+			cancel()
+			if err != nil {
 				e.logger.Error("failed to record csm attempt failure", "incident_number", inc.IncidentNumber, "error", err)
 			} else if permanent || attempts >= e.maxCSMAttempts {
 				e.logger.Error("csm permanently failed for incident, giving up", "incident_number", inc.IncidentNumber, "attempts", attempts, "permanent", permanent)
@@ -274,19 +288,20 @@ func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 
 	chatNotified := inc.Notified
 	if !csmConfirmed && !chatNotified {
-		// CSM didn't confirm (this attempt or a prior one), so fall back to
-		// FALLBACK_CHAT_WEBHOOK_URLS so a human still sees it -- but only the first time; once
-		// delivered, resending on every later CSM-retry sweep would just spam the space.
+		// Fall back to chat so a human sees it, but only the first time to avoid spamming retries.
 		chatNotified = e.notifier.NotifyChat(ctx, inc)
 	}
 	if chatNotified && !inc.Notified {
-		if err := e.incidents.MarkNotified(ctx, inc.Fingerprint); err != nil {
+		pctx, cancel := persistCtx(ctx)
+		err := e.incidents.MarkNotified(pctx, inc.Fingerprint)
+		cancel()
+		if err != nil {
 			e.logger.Error("failed to persist notified flag", "incident_number", inc.IncidentNumber, "error", err)
 		}
 	}
 }
 
-// RetrySweep re-attempts delivery for every incident still owed a CSM confirmation, a Chat notification, or both (ListPending already excludes incidents CSM has permanently rejected). stillLeader is checked before each incident, so a sweep that outlives this replica's leadership stops immediately instead of racing a new leader's own sweep or cycle. It is safe to call concurrently with Process: deliverAndPersist is serialized per fingerprint and always re-reads the row before acting.
+// RetrySweep retries delivery for every pending incident, stopping early if leadership is lost.
 func (e *Engine) RetrySweep(ctx context.Context, stillLeader func() bool) {
 	pending, err := e.incidents.ListPending(ctx)
 	if err != nil {

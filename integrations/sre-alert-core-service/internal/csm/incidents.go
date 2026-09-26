@@ -24,10 +24,7 @@ import (
 	"net/url"
 )
 
-// CreateIncidentRequest is the request body for csm-integration-service's
-// POST /incidents — a thin proxy of entity-service's own
-// CreateIncidentRequest. Field names and JSON tags are copied verbatim from
-// that contract; this service does not define its own incident shape.
+// CreateIncidentRequest proxies entity-service's own contract verbatim; this service does not define its own incident shape.
 type CreateIncidentRequest struct {
 	CallerID  string  `json:"callerId"`
 	Category  string  `json:"category"` // "INQUIRY" | "SERVICE_INTERRUPTION" | "SECURITY"
@@ -38,15 +35,13 @@ type CreateIncidentRequest struct {
 	WorkNotes *string `json:"workNotes,omitempty"`
 }
 
-// createdIncident is the subset of the response's nested "incident" object
-// this service actually reads.
+// createdIncident is the subset of the response's nested "incident" object this service actually reads.
 type createdIncident struct {
 	ID     string `json:"id"`
 	Number string `json:"number"`
 }
 
-// createIncidentResponse is the response body for POST /incidents, decoded
-// tolerantly (unknown fields ignored).
+// createIncidentResponse is the response body for POST /incidents, decoded tolerantly (unknown fields ignored).
 type createIncidentResponse struct {
 	Message  string          `json:"message"`
 	Incident createdIncident `json:"incident"`
@@ -75,25 +70,19 @@ func (c *Client) CreateIncident(ctx context.Context, req CreateIncidentRequest) 
 		return nil, fmt.Errorf("csm: decode CreateIncident response: %w", err)
 	}
 	if resp.Incident.ID == "" || resp.Incident.Number == "" {
-		// A 2xx with no incident id/number is malformed, not a successful
-		// create -- treat it as a failure so the caller's normal retry path
-		// handles it, rather than persisting a half-populated result.
+		// A 2xx with no id/number is malformed; treat as failure so retry handles it, not a half-populated persist.
 		return nil, fmt.Errorf("csm: CreateIncident response missing incident id or number")
 	}
 
 	return &CreateIncidentResult{IncidentID: resp.Incident.ID, IncidentNumber: resp.Incident.Number}, nil
 }
 
-// updateIncidentRequest is the request body for PATCH /incidents/{id}. This
-// client only ever sends WorkNotes, so every other field that request shape
-// accepts is left unmodeled.
+// updateIncidentRequest models only WorkNotes; other PATCH /incidents/{id} fields are intentionally left unmodeled.
 type updateIncidentRequest struct {
 	WorkNotes string `json:"workNotes"`
 }
 
-// UpdateIncident calls PATCH /incidents/{id} on csm-integration-service to
-// push a work note onto an already-existing incident, keyed by the CSM
-// incident id (not the human-readable number).
+// UpdateIncident pushes a work note, keyed by CSM's incident id (not the human-readable number).
 func (c *Client) UpdateIncident(ctx context.Context, incidentID, workNotes string) error {
 	body, err := json.Marshal(updateIncidentRequest{WorkNotes: workNotes})
 	if err != nil {
@@ -103,8 +92,7 @@ func (c *Client) UpdateIncident(ctx context.Context, incidentID, workNotes strin
 	return err
 }
 
-// searchIncidentsRequest is the request body for POST /incidents/search —
-// only the subset this client needs (exact match on Number).
+// searchIncidentsRequest is the request body for POST /incidents/search — only the subset this client needs (exact match on Number).
 type searchIncidentsRequest struct {
 	Filters    searchIncidentsFilters `json:"filters"`
 	Pagination pagination             `json:"pagination"`
@@ -131,22 +119,10 @@ type searchIncidentsResponse struct {
 	Total     int                  `json:"total"`
 }
 
-// openIncidentStates are entity-service's domain.IncidentState values (see
-// entity-service/internal/domain/entity.go — a read-only reference this
-// service does not import, being a separate Go module, so these literals
-// are copied and must be kept in sync by hand) that represent an incident
-// still being worked.
+// openIncidentStates copies entity-service's IncidentState values by hand (separate Go module, not importable) — keep in sync manually.
 var openIncidentStates = map[string]bool{"NEW": true, "IN_PROGRESS": true, "ON_HOLD": true}
 
-// IncidentState looks up an incident by its human-readable number via
-// POST /incidents/search and reports whether it is currently open.
-//
-// This is the authoritative source of open/closed state: nothing about
-// whether an incident is still actionable can be derived from a column only
-// this service writes, since csm-integration-service (and the CSM agents
-// working the incident) are the only parties that ever close one. found is
-// false when the search returns no match (e.g. the incident predates this
-// lookup, or number is a still-pending placeholder never actually created).
+// IncidentState is authoritative for open/closed since only CSM/agents ever close incidents; found is false on no match.
 func (c *Client) IncidentState(ctx context.Context, number string) (open bool, found bool, err error) {
 	req := searchIncidentsRequest{
 		Filters:    searchIncidentsFilters{Number: number},
@@ -172,16 +148,7 @@ func (c *Client) IncidentState(ctx context.Context, number string) (open bool, f
 	return openIncidentStates[*resp.Incidents[0].State], true, nil
 }
 
-// SearchIncidentByTag looks up an incident whose Subject carries tag (see
-// notify.DedupTag) via POST /incidents/search's free-text SearchQuery.
-//
-// This is the pre-create dedup check: a prior CreateIncident call can
-// succeed on CSM's side while its response is lost to this service (a
-// timeout, a connection reset, or this service crashing right after receipt
-// but before persisting the result) -- a failed call never proves nothing
-// was created. Checking here first, on every CreateIncident attempt, means a
-// retried delivery finds and reuses the already-created incident instead of
-// creating a second one.
+// SearchIncidentByTag is the pre-create dedup check: a lost CreateIncident response must not cause a duplicate on retry.
 func (c *Client) SearchIncidentByTag(ctx context.Context, tag string) (id, number string, found bool, err error) {
 	req := searchIncidentsRequest{
 		Filters:    searchIncidentsFilters{SearchQuery: tag},

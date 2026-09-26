@@ -18,11 +18,7 @@ package engine
 
 import "sync"
 
-// fpLocks hands out one mutex per fingerprint instead of a single global one,
-// so delivery for distinct incidents never serializes behind each other; only
-// two callers racing the *same* fingerprint (Handle and RetrySweep) ever
-// block on one another. Entries are reference-counted and deleted once
-// unheld, so the map never grows unbounded across the service's lifetime.
+// fpLocks hands out one mutex per fingerprint; entries are refcounted and pruned once unheld.
 type fpLocks struct {
 	mu    sync.Mutex
 	byKey map[string]*fpLockEntry
@@ -37,9 +33,7 @@ func newFPLocks() *fpLocks {
 	return &fpLocks{byKey: make(map[string]*fpLockEntry)}
 }
 
-// lock acquires the mutex for key, blocking until it's free, and returns a
-// function that releases it and cleans up the entry if no one else is
-// waiting.
+// lock acquires the mutex for key and returns a function that releases it and cleans up if unused.
 func (f *fpLocks) lock(key string) func() {
 	f.mu.Lock()
 	e, ok := f.byKey[key]

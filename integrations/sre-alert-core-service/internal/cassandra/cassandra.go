@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Package cassandra holds alert-core-service's Cosmos DB for Apache Cassandra access: connection setup, TLS session creation, and counter-row helpers used for sequence ids.
+// Package cassandra handles Cosmos DB for Apache Cassandra connection setup, TLS sessions, and sequence-id counter helpers.
 package cassandra
 
 import (
@@ -28,7 +28,7 @@ import (
 	"github.com/gocql/gocql"
 )
 
-// Config holds Cassandra connection settings — contact point, port, keyspace, and credentials — read directly from CASSANDRA_* environment variables at process startup.
+// Config holds Cassandra connection settings read from CASSANDRA_* env vars at startup.
 type Config struct {
 	ContactPoint string `env:"CASSANDRA_CONTACT_POINT,notEmpty"`
 	Port         int    `env:"CASSANDRA_PORT" envDefault:"10350"`
@@ -37,7 +37,7 @@ type Config struct {
 	Key          string `env:"CASSANDRA_KEY,notEmpty"`
 }
 
-// ConfigFromEnv reads CASSANDRA_* env vars, failing loudly on malformed or missing values; Username defaults to the contact point's leading DNS label, matching Cosmos's account-name convention.
+// ConfigFromEnv defaults Username to the contact point's leading DNS label, matching Cosmos's account-name convention.
 func ConfigFromEnv() (Config, error) {
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {
@@ -51,7 +51,7 @@ func ConfigFromEnv() (Config, error) {
 	return cfg, nil
 }
 
-// Connect opens a TLS session with peer and token-ring discovery disabled, since Cosmos DB is a single proxy endpoint; connectTimeout and queryTimeout are set via config.toml.
+// Connect disables peer/token-ring discovery since Cosmos DB is a single proxy endpoint.
 func Connect(cfg Config, connectTimeout, queryTimeout time.Duration) (*gocql.Session, error) {
 	cluster := gocql.NewCluster(cfg.ContactPoint)
 	cluster.Port = cfg.Port
@@ -70,7 +70,7 @@ func Connect(cfg Config, connectTimeout, queryTimeout time.Duration) (*gocql.Ses
 	return session, nil
 }
 
-// SeedSeq creates the named counter row at seq=0 if it is absent, using IF NOT EXISTS so repeated calls at every startup stay safely idempotent.
+// SeedSeq uses IF NOT EXISTS so repeated calls on every startup stay idempotent.
 func SeedSeq(ctx context.Context, session *gocql.Session, seqTable string) error {
 	_, err := session.Query(
 		fmt.Sprintf(`INSERT INTO %s (name, seq) VALUES (?, 0) IF NOT EXISTS`, seqTable),
@@ -82,17 +82,17 @@ func SeedSeq(ctx context.Context, session *gocql.Session, seqTable string) error
 	return nil
 }
 
-// formatSeq renders prefix followed by a zero-padded, width-digit number, for example formatSeq("ALT", 9, 123) produces the fixed-width id string "ALT000000123".
+// formatSeq renders prefix plus a zero-padded, width-digit number, e.g. formatSeq("ALT",9,123) -> "ALT000000123".
 func formatSeq(prefix string, width int, n int64) string {
 	return fmt.Sprintf("%s%0*d", prefix, width, n)
 }
 
-// FormatSeq exports the internal formatSeq helper for callers outside this package that need to derive an id string without allocating a new sequence value.
+// FormatSeq exposes formatSeq for callers needing to derive an id string without allocating a new sequence.
 func FormatSeq(prefix string, width int, n int64) string {
 	return formatSeq(prefix, width, n)
 }
 
-// ReadSeq reads a counter row's current value as-is, purely for inspection, without advancing or allocating a new sequence value in the process.
+// ReadSeq reads a counter's current value for inspection only; it never advances the sequence.
 func ReadSeq(ctx context.Context, session *gocql.Session, seqTable string) (int64, error) {
 	var seq int64
 	if err := session.Query(
@@ -103,7 +103,7 @@ func ReadSeq(ctx context.Context, session *gocql.Session, seqTable string) (int6
 	return seq, nil
 }
 
-// AdvanceSeqTo CAS-moves a counter row from an expected value to a specific target value, reporting via the bool return whether this call won the race.
+// AdvanceSeqTo CAS-moves a counter from an expected value to a target; the bool reports whether this call won the race.
 func AdvanceSeqTo(ctx context.Context, session *gocql.Session, seqTable string, from, to int64) (bool, error) {
 	applied, err := session.Query(
 		fmt.Sprintf(`UPDATE %s SET seq = ? WHERE name = ? IF seq = ?`, seqTable),

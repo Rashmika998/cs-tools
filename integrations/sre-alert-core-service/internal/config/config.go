@@ -14,7 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// Package config loads alert-core-service's deployment tunables — poll cadence, retry counts, and timeouts — from a TOML file, validating every value before returning it.
+// Package config loads deployment tunables from a TOML file, validating every value before returning it.
 package config
 
 import (
@@ -25,10 +25,10 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// DefaultPath is the config file name used when the CONFIG_PATH env var is unset; it is expected to live at the repo or deployment root.
+// DefaultPath is used when CONFIG_PATH is unset; expected at the repo or deployment root.
 const DefaultPath = "config.toml"
 
-// Config holds every deployment tunable that previously lived as a hardcoded constant, grouped by the subsystem each section configures.
+// Config groups every deployment tunable, previously hardcoded constants, by the subsystem it configures.
 type Config struct {
 	Poll      PollConfig      `toml:"poll"`
 	Cassandra CassandraConfig `toml:"cassandra"`
@@ -37,25 +37,25 @@ type Config struct {
 	Lease     LeaseConfig     `toml:"lease"`
 }
 
-// PollConfig tunes the alert poller's backstop cadence, per-cycle worker concurrency, and how many alert ids a single cycle is allowed to process.
+// PollConfig tunes the alert poller's cadence, concurrency, and per-cycle alert id limits.
 type PollConfig struct {
-	// Interval is the backstop polling cadence; in practice a websocket ping from alert-ingestion normally wakes the poller sooner than this.
+	// Interval is the backstop cadence; a websocket ping from alert-ingestion normally wakes the poller sooner.
 	Interval Duration `toml:"interval"`
-	// Concurrency is the number of fingerprint-sharded workers handling alerts per cycle; distinct incidents run in parallel, same-fingerprint alerts stay serialized on one worker.
+	// Concurrency is fingerprint-sharded worker count; same-fingerprint alerts stay serialized on one worker.
 	Concurrency int `toml:"concurrency"`
-	// ReadConcurrency bounds how many alert rows are read in parallel at the start of each poll cycle, independent of the handling worker count.
+	// ReadConcurrency bounds parallel alert-row reads at cycle start, independent of the handling worker count.
 	ReadConcurrency int `toml:"read_concurrency"`
 	// MaxWindow caps how many alert ids a single poll cycle processes at once, bounding memory usage under large alert bursts.
 	MaxWindow int `toml:"max_window"`
-	// GapTimeout bounds how long a single missing alert id blocks every id after it before this service skips it and logs loudly, instead of stalling the whole pipeline forever.
+	// GapTimeout bounds how long a missing alert id blocks the rest before being skipped and logged loudly.
 	GapTimeout Duration `toml:"gap_timeout"`
 }
 
-// LeaseConfig tunes the Cassandra-backed processor lease that elects a single active poller across replicas, so standbys never double-process the same alert.
+// LeaseConfig tunes the lease electing one active poller across replicas, so standbys never double-process alerts.
 type LeaseConfig struct {
-	// TTL is how long an acquired lease stays valid without renewal; a dead leader's work resumes on a standby after at most this long.
+	// TTL bounds how long a dead leader's work can go unresumed by a standby.
 	TTL Duration `toml:"ttl"`
-	// RenewInterval is how often the leader renews its lease; it must stay well under TTL so one missed renewal never drops leadership.
+	// RenewInterval must stay well under TTL so one missed renewal never drops leadership.
 	RenewInterval Duration `toml:"renew_interval"`
 }
 
@@ -72,9 +72,9 @@ type NotifyConfig struct {
 	MaxAttempts    int      `toml:"max_attempts"`
 	RetryBaseDelay Duration `toml:"retry_base_delay"`
 	HTTPTimeout    Duration `toml:"http_timeout"`
-	// RetrySweepInterval is how often the poller retries incidents whose CSM or Chat notification is still outstanding; this is outage recovery, independent of poll.interval.
+	// RetrySweepInterval retries outstanding CSM/Chat notifications; outage recovery, independent of poll.interval.
 	RetrySweepInterval Duration `toml:"retry_sweep_interval"`
-	// MaxCSMAttempts bounds how many failed CreateIncident attempts an incident absorbs before it's marked permanently failed and dropped from RetrySweep, so a payload CSM permanently rejects (or a persistently misconfigured deployment) doesn't grow incidents_processed's full-table scan cost forever.
+	// MaxCSMAttempts caps failed attempts before marking permanently failed, so bad payloads don't grow RetrySweep's scan cost forever.
 	MaxCSMAttempts int `toml:"max_csm_attempts"`
 	// ServiceCacheTTL bounds how long a label->CMDB-service-id resolution is reused before a fresh live /services/search call.
 	ServiceCacheTTL Duration `toml:"service_cache_ttl"`
@@ -98,12 +98,12 @@ func (d *Duration) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// Duration returns the wrapped value as a plain time.Duration so callers can pass it directly to standard library timer and context functions.
+// Duration unwraps to a plain time.Duration for standard library timer and context functions.
 func (d Duration) Duration() time.Duration {
 	return time.Duration(d)
 }
 
-// Load reads and validates the deployment config from path, falling back to the CONFIG_PATH env var and then DefaultPath when path is left empty.
+// Load falls back to the CONFIG_PATH env var, then DefaultPath, when path is empty.
 func Load(path string) (Config, error) {
 	if path == "" {
 		path = os.Getenv("CONFIG_PATH")
@@ -122,7 +122,7 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// validate rejects zero or negative tunables that would otherwise silently disable retries, skip timeouts, or leave the poller blocked forever on startup.
+// validate rejects zero/negative tunables that would silently disable retries or timeouts.
 func (c Config) validate() error {
 	switch {
 	case c.Poll.Interval <= 0:
