@@ -7942,8 +7942,26 @@ paths:
   /plg/cs-users:
     get:
       summary: PLG CS engineers, for the owner pickers.
-      description: "Active internal staff only. Customers and partner contacts share the `user` table and are never returned."
+      description: >-
+        Active internal staff only. Customers and partner contacts share the
+        `user` table and are never returned.
+
+
+        Returns at most 100 engineers, ordered by first name. There are far more
+        than that, so `search` is how the rest are reached — without it the
+        answer is always the same first page.
       operationId: plgListCSUsers
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: >-
+            Matches a fragment of the engineer's name or email address,
+            case-insensitively. Omitted or blank returns the default first page.
+            A term matching more than 100 is still cut at 100.
+          schema:
+            type: string
+          example: ayesha
       responses:
         "200":
           description: Assignable engineers.

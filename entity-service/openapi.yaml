@@ -21638,6 +21638,12 @@ components:
                 type: string
             search:
               type: string
+              description: >-
+                Matches a fragment of the engineer's name or email address,
+                case-insensitively — name, email, first_name, last_name, and
+                first+last together, since `name` is blank on some rows. The
+                caller's own % and _ are escaped, so they match themselves.
+                Blank applies no filter.
             active:
               type: boolean
               nullable: true
