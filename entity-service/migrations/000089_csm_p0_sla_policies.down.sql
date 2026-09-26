@@ -14,6 +14,14 @@
 -- specific language governing permissions and limitations
 -- under the License.
 
+-- Delete CSM-owned "sla" clocks before their "sla_policy" rows go away below
+-- (this migration runs before 000088's down in a reverse rollback, while
+-- source is still a real column) -- otherwise a rolled-back environment is
+-- left with orphaned CSM clocks that, once 000088's down drops the source
+-- column, become indistinguishable from real ServiceNow-synced rows and
+-- would be served as such by GET /sla-status.
+DELETE FROM sla WHERE source = 'CSM';
+
 DELETE FROM sla_policy
 WHERE created_by = 'migration-000089'
   AND name IN (

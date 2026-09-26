@@ -3170,7 +3170,15 @@ func (s *snCaseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReq
 	// ApplyCaseStateEffects applies is idempotent, so a caller re-PATCHing
 	// the case's own current state just redundantly re-applies the same
 	// effect harmlessly.
-	if s.slaEngine != nil && req.State != nil && snResp.Case.State != nil {
+	//
+	// Guards on resp.Case.State (the converted domain state), not
+	// snResp.Case.State (the raw SN label) -- snCaseStateLabelToEnum can
+	// fail on an unrecognised label, leaving resp.Case.State nil while
+	// snResp.Case.State is still non-nil; guarding on the raw field would
+	// then pass derefState(resp.Case.State)'s zero value ("") through to
+	// ApplyCaseStateSLAEffects' default branch, which resumes both clocks
+	// for a case whose real new state was never actually established.
+	if s.slaEngine != nil && req.State != nil && resp.Case.State != nil {
 		s.applyCaseStateSLAEffects(ctx, req.ID, derefState(resp.Case.State))
 	}
 	if publishCaseAssign {

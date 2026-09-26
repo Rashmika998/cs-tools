@@ -113,8 +113,14 @@ func NewSLAEngineRepository(db *pgxpool.Pool) SLAEngineRepository {
 // migration 000089), but preferring the synced row costs nothing and
 // removes any doubt about which one wins if it ever did.
 func (r *slaEngineRepo) FindPolicyByName(ctx context.Context, name, target string) (SLAPolicyRef, error) {
+	// EXTRACT(EPOCH FROM duration) rather than scanning the INTERVAL column
+	// directly into time.Duration -- pgx v5 has no default scan plan from
+	// PostgreSQL INTERVAL to time.Duration (it scans into pgtype.Interval,
+	// whose Months/Days fields have no fixed conversion), so a direct scan
+	// errors at query time. Same pattern task_sla_repo.go's
+	// scanTaskSlaView already uses for its own INTERVAL columns.
 	const query = `
-		SELECT id, name, target::TEXT, duration
+		SELECT id, name, target::TEXT, EXTRACT(EPOCH FROM duration)
 		FROM sla_policy
 		WHERE name = $1 AND target = $2::sla_policy_target_enum
 		  AND source IN ('SERVICENOW', 'CSM')
@@ -124,15 +130,15 @@ func (r *slaEngineRepo) FindPolicyByName(ctx context.Context, name, target strin
 		LIMIT 1`
 
 	var ref SLAPolicyRef
-	var duration time.Duration
-	err := r.db.QueryRow(ctx, query, name, target).Scan(&ref.ID, &ref.Name, &ref.Target, &duration)
+	var durationSeconds float64
+	err := r.db.QueryRow(ctx, query, name, target).Scan(&ref.ID, &ref.Name, &ref.Target, &durationSeconds)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SLAPolicyRef{}, &apierror.NotFoundError{Msg: "no sla_policy found named " + name}
 	}
 	if err != nil {
 		return SLAPolicyRef{}, fmt.Errorf("find sla policy by name: %w", err)
 	}
-	ref.Duration = duration
+	ref.Duration = time.Duration(durationSeconds * float64(time.Second))
 	return ref, nil
 }
 
