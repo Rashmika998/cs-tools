@@ -106,7 +106,45 @@ func (d Duration) Duration() time.Duration {
 	return time.Duration(d)
 }
 
-// Load falls back to the CONFIG_PATH env var, then DefaultPath, when path is empty.
+// defaults holds every tunable's production value, matching config.toml. Used as-is when
+// config.toml is absent, and as the base a present config.toml overrides field by field.
+func defaults() Config {
+	return Config{
+		Poll: PollConfig{
+			Interval:        Duration(10 * time.Second),
+			Concurrency:     128,
+			ReadConcurrency: 64,
+			MaxWindow:       2000,
+			GapTimeout:      Duration(10 * time.Minute),
+		},
+		Lease: LeaseConfig{
+			TTL:           Duration(15 * time.Second),
+			RenewInterval: Duration(5 * time.Second),
+		},
+		Cassandra: CassandraConfig{
+			ConnectMaxAttempts: 5,
+			ConnectBaseDelay:   Duration(2 * time.Second),
+			ConnectTimeout:     Duration(10 * time.Second),
+			QueryTimeout:       Duration(10 * time.Second),
+		},
+		Notify: NotifyConfig{
+			MaxAttempts:        3,
+			RetryBaseDelay:     Duration(200 * time.Millisecond),
+			HTTPTimeout:        Duration(10 * time.Second),
+			RetrySweepInterval: Duration(30 * time.Second),
+			MaxCSMAttempts:     20,
+			ServiceCacheTTL:    Duration(15 * time.Minute),
+			StateCheckInterval: Duration(1 * time.Minute),
+		},
+		Server: ServerConfig{
+			ShutdownGrace: Duration(15 * time.Second),
+		},
+	}
+}
+
+// Load falls back to the CONFIG_PATH env var, then DefaultPath, when path is empty. Every tunable
+// starts at its built-in default; if config.toml exists, its values override the defaults field by
+// field, so a partial file works fine. A missing file is not an error - the defaults apply as-is.
 func Load(path string) (Config, error) {
 	if path == "" {
 		path = os.Getenv("CONFIG_PATH")
@@ -115,9 +153,11 @@ func Load(path string) (Config, error) {
 		path = DefaultPath
 	}
 
-	var cfg Config
+	cfg := defaults()
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return Config{}, fmt.Errorf("load config %s: %w", path, err)
+		if !os.IsNotExist(err) {
+			return Config{}, fmt.Errorf("load config %s: %w", path, err)
+		}
 	}
 	if err := cfg.validate(); err != nil {
 		return Config{}, fmt.Errorf("validate config %s: %w", path, err)
