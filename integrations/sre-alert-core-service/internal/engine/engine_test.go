@@ -150,6 +150,15 @@ func (f *fakeIncidents) RecordCSMIncident(_ context.Context, fingerprint, incide
 	return nil
 }
 
+func (f *fakeIncidents) RecordCSMAttemptStarted(_ context.Context, fingerprint string, attempts int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	inc := f.byFP[fingerprint]
+	inc.CSMAttempts = attempts
+	f.byFP[fingerprint] = inc
+	return nil
+}
+
 func (f *fakeIncidents) RecordCSMAttemptFailure(_ context.Context, fingerprint string, attempts, maxAttempts int, permanent bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -592,5 +601,74 @@ func TestPrepare_DistinguishesNotFoundFromOtherReadErrors(t *testing.T) {
 	}
 	if _, _, outcome, ready, notFound := e.Prepare(ctx, "DBERR"); ready || outcome != Retry || notFound {
 		t.Fatalf("Prepare(DBERR) = outcome=%v ready=%v notFound=%v, want Retry/false/false: a real read error must never be treated as the gap-timeout-eligible case", outcome, ready, notFound)
+	}
+}
+
+// TestAnnotate_UsesFreshReadNotStaleSnapshot is the race CodeRabbit flagged: RetrySweep's
+// flushPendingNotes runs concurrently with the poller's Handle calls, both writing PendingNotes from
+// their own snapshot. If annotate wrote from the (possibly stale) `existing` it was handed rather than
+// re-reading under the fingerprint lock, a note a concurrent flush already cleared to CSM could be
+// resurrected. This simulates that ordering directly: `stale` still shows the flushed note as pending,
+// but the store has since moved on.
+func TestAnnotate_UsesFreshReadNotStaleSnapshot(t *testing.T) {
+	// Push fails so the newly appended note stays visible in PendingNotes for inspection, rather than
+	// being immediately flushed away by annotate's own deliverAndPersist call.
+	notifier := &fakeNotifier{csmOK: true, csmID: "csm-1", csmNumber: "INC0000001", pushNoteErr: fmt.Errorf("csm patch failed")}
+	e, incidents := newTestEngine(nil, notifier)
+	ctx := context.Background()
+	fp := model.Fingerprint("vendor", "svc", "cpu", "", "")
+
+	stale := model.Incident{
+		Fingerprint: fp, IncidentID: "csm-1", IncidentNumber: "INC0000001", CSMConfirmed: true,
+		PendingNotes: []string{"OLD (already flushed concurrently)"},
+	}
+	incidents.byFP[fp] = stale
+	// Simulate a concurrent RetrySweep flush completing between Handle's read and this annotate call.
+	current := stale
+	current.PendingNotes = nil
+	incidents.byFP[fp] = current
+
+	e.annotate(ctx, stale, "ALT2", "Duplicate", model.Alert{Service: "svc", MetricName: "cpu", Source: "vendor"})
+
+	inc := incidents.byFP[fp]
+	if len(inc.PendingNotes) != 1 {
+		t.Fatalf("expected annotate to append to the fresh (already-flushed) state, got %d pending: %v", len(inc.PendingNotes), inc.PendingNotes)
+	}
+	if inc.PendingNotes[0] == "OLD (already flushed concurrently)" {
+		t.Fatalf("annotate resurrected a note a concurrent flush had already cleared: %v", inc.PendingNotes)
+	}
+}
+
+// TestDeliverAndPersist_CSMAttemptsAdvanceEvenWhenConfirmPersistFails is the case CodeRabbit flagged:
+// NotifyCSM's fail-open dedup search relies on CSMAttempts to know whether a prior CreateIncident could
+// have happened. If attempts were only recorded after an observed failure, a lost success (CSM created
+// the incident but RecordCSMIncident then fails) would leave CSMAttempts unchanged, so the next call
+// would still look like a genuine first attempt and could fail open into a duplicate create. Attempts
+// must now be persisted before NotifyCSM is even called, so they advance regardless.
+func TestDeliverAndPersist_CSMAttemptsAdvanceEvenWhenConfirmPersistFails(t *testing.T) {
+	notifier := &fakeNotifier{csmOK: true, csmID: "csm-1", csmNumber: "INC0000001"}
+	incidents := newFakeIncidents()
+	incidents.recordCSMIncidentErr = fmt.Errorf("cassandra write failed")
+	e := New(testLogger(), &fakeAlerts{}, incidents, notifier, model.Defaults{}, 5, 0)
+	ctx := context.Background()
+
+	fp := model.Fingerprint("vendor", "svc", "cpu", "", "")
+	incidents.byFP[fp] = model.Incident{
+		Fingerprint: fp, IncidentNumber: "PENDING-abc", Status: "new",
+		Service: "svc", MetricName: "cpu", Source: "vendor", AlertIDs: []string{"ALT1"}, AlertCount: 1,
+	}
+
+	e.deliverAndPersist(ctx, fp) // CSM "accepts" but persisting the confirmation fails
+	e.deliverAndPersist(ctx, fp) // a second sweep must not look like the first attempt again
+
+	if got := notifier.csmAttemptsAt; len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Fatalf("CSMAttempts observed by NotifyCSM = %v, want [1 2]: attempts must advance even when confirming success fails to persist", got)
+	}
+	inc := incidents.byFP[fp]
+	if inc.CSMConfirmed {
+		t.Fatalf("expected the incident to remain unconfirmed since RecordCSMIncident always fails, got %+v", inc)
+	}
+	if inc.CSMAttempts < 2 {
+		t.Fatalf("expected CSMAttempts to have advanced past the first attempt, got %d", inc.CSMAttempts)
 	}
 }

@@ -39,6 +39,7 @@ type incidentStore interface {
 	Upsert(ctx context.Context, alertID string, a model.Alert, severityNum int) (model.Incident, bool, error)
 	RecordAlertID(ctx context.Context, existing model.Incident, alertID string) error
 	RecordCSMIncident(ctx context.Context, fingerprint, incidentID, incidentNumber string) error
+	RecordCSMAttemptStarted(ctx context.Context, fingerprint string, attempts int) error
 	RecordCSMAttemptFailure(ctx context.Context, fingerprint string, attempts, maxAttempts int, permanent bool) error
 	SyncStatus(ctx context.Context, fingerprint, status string, checkedAt time.Time) error
 	RecordStateChecked(ctx context.Context, fingerprint string, checkedAt time.Time) error
@@ -201,22 +202,46 @@ func (e *Engine) Handle(ctx context.Context, alertID string, alert model.Alert) 
 
 // annotate appends an OK/Duplicate work note, records alertID for idempotency, and pushes the note
 // (this one plus any earlier ones still owed) to CSM via deliverAndPersist's shared retry machinery.
+// It holds the fingerprint lock across the read-modify-write of PendingNotes: RetrySweep's
+// flushPendingNotes (via deliverAndPersist) runs concurrently with the poller and writes the same
+// list from its own snapshot, so appending here without the lock could resurrect a note CSM already
+// received, or discard one this call just added.
 func (e *Engine) annotate(ctx context.Context, existing model.Incident, alertID, kind string, alert model.Alert) Outcome {
+	fp := existing.Fingerprint
+	unlock := e.locks.lock(fp)
+
+	current, found, err := e.incidents.FindByFingerprint(ctx, fp)
+	if err != nil {
+		unlock()
+		e.logger.Warn("incident re-read failed, will retry", "alert_id", alertID, "error", err)
+		return Retry
+	}
+	if !found {
+		unlock()
+		e.logger.Warn("incident vanished before annotate", "fingerprint", fp, "alert_id", alertID)
+		return Retry
+	}
+
 	note := model.BuildWorkNote(kind, alertID, alert.MetricName, alert.Source, time.Now())
-	if err := e.incidents.AppendWorkNote(ctx, existing, note); err != nil {
+	if err := e.incidents.AppendWorkNote(ctx, current, note); err != nil {
+		unlock()
 		e.logger.Warn("work note append failed, will retry", "alert_id", alertID, "error", err)
 		return Retry
 	}
-	if err := e.incidents.RecordAlertID(ctx, existing, alertID); err != nil {
+	if err := e.incidents.RecordAlertID(ctx, current, alertID); err != nil {
 		// Best-effort: failure just risks a redundant note on a future replay, not a lost alert.
 		e.logger.Warn("failed to record alert id for idempotency, continuing", "alert_id", alertID, "error", err)
 	}
+	incidentID, incidentNumber := current.IncidentID, current.IncidentNumber
+	unlock()
+
 	// Push now if CSM already has this incident; if not (CSM unconfirmed), the note stays in
-	// PendingNotes and RetrySweep's ListPending will flush it once CSM confirms.
-	if existing.IncidentID != "" {
-		e.deliverAndPersist(ctx, existing.Fingerprint)
+	// PendingNotes and RetrySweep's ListPending will flush it once CSM confirms. deliverAndPersist
+	// re-acquires the lock itself, so it must run after this one is released.
+	if incidentID != "" {
+		e.deliverAndPersist(ctx, fp)
 	}
-	e.logger.Info("alert recorded on existing incident", "incident_number", existing.IncidentNumber, "alert_id", alertID, "kind", kind)
+	e.logger.Info("alert recorded on existing incident", "incident_number", incidentNumber, "alert_id", alertID, "kind", kind)
 	return Processed
 }
 
@@ -294,29 +319,44 @@ func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 	// fire and tell a human about an incident that already exists on CSM.
 	csmSucceeded := csmConfirmed
 	if !csmConfirmed {
-		id, number, ok, permanent := e.notifier.NotifyCSM(ctx, inc)
-		if ok {
-			csmSucceeded = true
-			pctx, cancel := persistCtx(ctx)
-			err := e.incidents.RecordCSMIncident(pctx, inc.Fingerprint, id, number)
-			cancel()
-			if err != nil {
-				// Don't mark confirmed locally; the next attempt's dedup-by-tag search will find this incident instead of duplicating it.
-				e.logger.Error("failed to persist csm incident, will retry", "incident_number", inc.IncidentNumber, "csm_incident_id", id, "csm_incident_number", number, "error", err)
-			} else {
-				csmConfirmed = true
-				inc.IncidentNumber = number
-				inc.IncidentID = id
-			}
+		// Persist the bumped attempt count *before* calling NotifyCSM, not after a failure. NotifyCSM's
+		// own dedup search fails open only when CSMAttempts <= 1 (this being the very first attempt for
+		// this incident generation); if we only recorded attempts after an observed failure, a lost
+		// response (CSM created it but RecordCSMIncident below fails) or a failed RecordCSMAttemptFailure
+		// write would leave CSMAttempts unchanged, and the next call would wrongly fail open on a search
+		// error and create a duplicate. Persisting first makes CSMAttempts a lower bound on "attempts
+		// that may have reached CSM," which is what the fail-open decision actually needs.
+		attempts := inc.CSMAttempts + 1
+		pctx, cancel := persistCtx(ctx)
+		startErr := e.incidents.RecordCSMAttemptStarted(pctx, inc.Fingerprint, attempts)
+		cancel()
+		if startErr != nil {
+			e.logger.Error("failed to record csm attempt start, will retry", "incident_number", inc.IncidentNumber, "error", startErr)
 		} else {
-			attempts := inc.CSMAttempts + 1
-			pctx, cancel := persistCtx(ctx)
-			err := e.incidents.RecordCSMAttemptFailure(pctx, inc.Fingerprint, attempts, e.maxCSMAttempts, permanent)
-			cancel()
-			if err != nil {
-				e.logger.Error("failed to record csm attempt failure", "incident_number", inc.IncidentNumber, "error", err)
-			} else if permanent || attempts >= e.maxCSMAttempts {
-				e.logger.Error("csm permanently failed for incident, giving up", "incident_number", inc.IncidentNumber, "attempts", attempts, "permanent", permanent)
+			inc.CSMAttempts = attempts
+			id, number, ok, permanent := e.notifier.NotifyCSM(ctx, inc)
+			if ok {
+				csmSucceeded = true
+				pctx, cancel := persistCtx(ctx)
+				err := e.incidents.RecordCSMIncident(pctx, inc.Fingerprint, id, number)
+				cancel()
+				if err != nil {
+					// Don't mark confirmed locally; the next attempt's dedup-by-tag search will find this incident instead of duplicating it.
+					e.logger.Error("failed to persist csm incident, will retry", "incident_number", inc.IncidentNumber, "csm_incident_id", id, "csm_incident_number", number, "error", err)
+				} else {
+					csmConfirmed = true
+					inc.IncidentNumber = number
+					inc.IncidentID = id
+				}
+			} else {
+				pctx, cancel := persistCtx(ctx)
+				err := e.incidents.RecordCSMAttemptFailure(pctx, inc.Fingerprint, attempts, e.maxCSMAttempts, permanent)
+				cancel()
+				if err != nil {
+					e.logger.Error("failed to record csm attempt failure", "incident_number", inc.IncidentNumber, "error", err)
+				} else if permanent || attempts >= e.maxCSMAttempts {
+					e.logger.Error("csm permanently failed for incident, giving up", "incident_number", inc.IncidentNumber, "attempts", attempts, "permanent", permanent)
+				}
 			}
 		}
 	}

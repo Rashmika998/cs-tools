@@ -213,6 +213,26 @@ func (r *IncidentRepo) RecordCSMIncident(ctx context.Context, fingerprint, incid
 	return nil
 }
 
+// RecordCSMAttemptStarted persists the bumped attempt count before NotifyCSM is called, not after an
+// observed failure: a lost success response, or a failed write here or in RecordCSMAttemptFailure,
+// must never leave csm_attempts understating how many attempts may have already reached CSM, since
+// NotifyCSM's own dedup-search fail-open decision depends on that count being at least as large as
+// the number of CreateIncident calls actually made.
+func (r *IncidentRepo) RecordCSMAttemptStarted(ctx context.Context, fingerprint string, attempts int) error {
+	stmt, names := qb.Update("incidents_processed").
+		Set("csm_attempts").
+		Where(qb.Eq("fingerprint")).
+		ToCql()
+	err := r.session.Query(stmt, names).WithContext(ctx).BindMap(qb.M{
+		"fingerprint":  fingerprint,
+		"csm_attempts": attempts,
+	}).ExecRelease()
+	if err != nil {
+		return fmt.Errorf("record csm attempt started for %s: %w", fingerprint, err)
+	}
+	return nil
+}
+
 // RecordCSMAttemptFailure sets csm_permanently_failed once attempts are exhausted or CSM rejects non-retryably, stopping RetrySweep from retrying forever.
 func (r *IncidentRepo) RecordCSMAttemptFailure(ctx context.Context, fingerprint string, attempts, maxAttempts int, permanent bool) error {
 	failed := permanent || attempts >= maxAttempts
