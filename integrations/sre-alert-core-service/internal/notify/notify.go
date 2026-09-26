@@ -102,14 +102,16 @@ func DedupTag(fingerprint string, firstSeen time.Time) string {
 
 // NotifyCSM returns permanent=true when CSM rejected the payload (non-429 4xx); retrying won't help.
 // Every call from deliverAndPersist while CSMConfirmed is false is itself a retry (RetrySweep calls it
-// again every sweep interval until confirmed), so inc.CSMAttempts > 0 means an earlier attempt may
-// already have called CreateIncident and lost the response. Failing open on this search in that case
-// would create a second CSM incident; only the very first attempt (no prior create could have happened)
-// may fail open.
+// again every sweep interval until confirmed). deliverAndPersist durably bumps inc.CSMAttempts *before*
+// calling this method, so the value observed here already counts the current attempt: CSMAttempts == 1
+// means this is the very first attempt for this incident generation (no prior CreateIncident could have
+// happened), and CSMAttempts > 1 means an earlier attempt may already have called CreateIncident and
+// lost the response. Failing open on a search error in the latter case would create a second CSM
+// incident; only the genuine first attempt may fail open.
 func (n *Notifier) NotifyCSM(ctx context.Context, inc model.Incident) (incidentID, incidentNumber string, ok bool, permanent bool) {
 	tag := DedupTag(inc.Fingerprint, inc.FirstSeen)
 	if id, number, found, err := n.csm.SearchIncidentByTag(ctx, tag); err != nil {
-		if inc.CSMAttempts > 0 {
+		if inc.CSMAttempts > 1 {
 			n.logger.Warn("csm dedup search failed on retry, deferring to avoid a duplicate create", "incident_number", inc.IncidentNumber, "error", err)
 			return "", "", false, false
 		}

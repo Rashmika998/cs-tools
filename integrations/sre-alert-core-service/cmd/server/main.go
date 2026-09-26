@@ -116,7 +116,18 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go processorLease.Run(ctx, depCfg.Lease.RenewInterval.Duration())
+
+	// leaseCtx is separate from ctx (which SIGTERM cancels immediately) so renewal keeps running for
+	// the full drain window below; a window can take longer than lease.ttl (max_window alerts, each
+	// possibly making CSM/Chat calls), and if renewal stopped at SIGTERM the lease could expire and a
+	// standby could steal it while this replica still has Handle calls in flight, duplicating notifications.
+	leaseCtx, cancelLease := context.WithCancel(context.Background())
+	defer cancelLease()
+	leaseDone := make(chan struct{})
+	go func() {
+		defer close(leaseDone)
+		processorLease.Run(leaseCtx, depCfg.Lease.RenewInterval.Duration())
+	}()
 
 	// pollCtx is separate from ctx so shutdown can drain the poller before releasing the lease, avoiding duplicate sends.
 	pollCtx, cancelPoll := context.WithCancel(context.Background())
@@ -169,12 +180,21 @@ func main() {
 		defer cancel()
 
 		// Cancels the poller and waits for drain before releasing the lease, to avoid duplicate delivery.
+		// Renewal (leaseCtx) must keep running throughout this wait -- stopping it early would let the
+		// lease expire and a standby steal it while this replica still has in-flight Handle calls.
 		cancelPoll()
 		select {
 		case <-pollerDone:
 		case <-shutdownCtx.Done():
 			logger.Warn("poller did not drain within shutdown_grace")
 		}
+		cancelLease()
+		// Join Run before releasing: cancelLease alone doesn't wait for its in-flight
+		// tryAcquireOrRenew CAS to finish. Without this join, Release's "IF owner = self" CAS could run
+		// concurrently with a stale acquire CAS (lease was free/expired) and lose the race -- Release
+		// observes a mismatched owner and no-ops, while the acquire then completes and holds the lease
+		// until its own expiry, defeating the immediate-release-on-shutdown guarantee.
+		<-leaseDone
 
 		// Released only after drain, so a standby resumes immediately and never races a mid-delivery replica.
 		if err := processorLease.Release(shutdownCtx); err != nil {
