@@ -71,20 +71,21 @@ type Config struct {
 type jwtClaims struct {
 	Email  string     `json:"email"`
 	UserID string     `json:"userid"`
-	Roles  StringList `json:"roles"`
+	Roles  stringList `json:"roles"`
 	jwt.RegisteredClaims
 }
 
-// StringList decodes a field that Asgardeo emits as a bare string when it holds
-// one value and as an array when it holds several -- both the JWT's "roles"
-// claim and SCIM's "roles" attribute do this. A plain []string would reject a
-// single-role user's whole value, so both shapes are accepted; anything else
-// fails to decode. Exported so other packages needing the same string-or-array
-// decoding (the scim package's own "roles" attribute) can reuse it rather than
-// duplicating this UnmarshalJSON.
-type StringList []string
+// stringList decodes a claim that Asgardeo emits as a bare string when it holds
+// one value and as an array when it holds several (its "roles" claim does
+// this). A plain []string would reject a single-role user's whole token, so
+// both shapes are accepted; anything else fails the token.
+//
+// SCIM's own "roles" attribute was assumed to follow this same convention but
+// does not -- observed in practice as an array of {value, ...} objects, a
+// different-enough shape (see scim.scimRoles) that it isn't reused here.
+type stringList []string
 
-func (l *StringList) UnmarshalJSON(b []byte) error {
+func (l *stringList) UnmarshalJSON(b []byte) error {
 	var one string
 	if err := json.Unmarshal(b, &one); err == nil {
 		if one == "" {
