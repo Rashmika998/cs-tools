@@ -238,9 +238,12 @@ func RenderStatusChangedEmail(caseNumber, newStatus, caseLink, commentLink strin
 // (same strap-line-above-a-mostly-empty-card layout, same Add
 // Comment/View Case links), just with oldSeverity/newSeverity in place of
 // a single newStatus. oldSeverity/newSeverity are expected to already be
-// display-formatted (e.g. "High (P2)") — dispatch.severityLabelAndColor's
-// concern, not this function's — matching the Chat card's own severity
-// labels so an email and its matching Chat alert read consistently.
+// display-formatted (e.g. "High(S2)") — dispatch.emailSeverityLabel's
+// concern, not this function's. This is deliberately a different label
+// format from the matching Chat card (dispatch.severityLabelAndColor's
+// "High (P2)") — email uses entity-service's own S0..S4 severity notation,
+// Chat keeps its established P0..P4 convention; the two are not meant to
+// match.
 func RenderSeverityChangedEmail(caseNumber, oldSeverity, newSeverity, caseLink, commentLink string) string {
 	replacer := strings.NewReplacer(
 		"<!-- [CASE_NUMBER] -->", escapeHTML(caseNumber),
