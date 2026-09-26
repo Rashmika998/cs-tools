@@ -27,7 +27,6 @@ replay_pid*
 .DS_Store
 target
 Config.toml
-config.toml
 .env
 
 # Local session handoff documents — never committed/pushed

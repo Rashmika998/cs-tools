@@ -59,6 +59,9 @@ max_csm_attempts = 20
 # How long a resolved alert-Service-label -> CMDB-service-id mapping is reused before a fresh
 # live /services/search call.
 service_cache_ttl = "15m"
+# Throttles how often a confirmed incident's status is re-checked against CSM; without this, a
+# flapping alert on an open incident costs one CSM search per duplicate during a storm.
+state_check_interval = "1m"
 
 [server]
 # Bounds how long SIGTERM/SIGINT waits for in-flight work before forcing exit.

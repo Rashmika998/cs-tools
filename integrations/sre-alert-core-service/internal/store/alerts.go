@@ -32,6 +32,12 @@ import (
 // ErrMalformedAlert marks a decode failure as permanent, unlike retryable transient read errors.
 var ErrMalformedAlert = errors.New("malformed alert payload")
 
+// ErrAlertNotFound marks a row not yet visible -- expected during replication lag right after
+// alert-ingestion writes it. Distinct from other read errors (e.g. Cosmos being unreachable), so
+// callers may bound only this specific, expected case with a timeout; a real outage must never be
+// silently skipped, since that would drop an alert rather than just delay it.
+var ErrAlertNotFound = errors.New("alert not found")
+
 type alertRow struct {
 	Payload string `db:"alert"`
 }
@@ -50,6 +56,9 @@ func (r *AlertRepo) Get(ctx context.Context, id string) (model.Alert, error) {
 	stmt, names := qb.Select("alerts").Columns("alert").Where(qb.Eq("id")).ToCql()
 	var row alertRow
 	if err := r.session.Query(stmt, names).WithContext(ctx).BindMap(qb.M{"id": id}).GetRelease(&row); err != nil {
+		if errors.Is(err, gocql.ErrNotFound) {
+			return model.Alert{}, fmt.Errorf("read alert %s: %w", id, ErrAlertNotFound)
+		}
 		return model.Alert{}, fmt.Errorf("read alert %s: %w", id, err)
 	}
 	var a model.Alert

@@ -185,12 +185,16 @@ func (p *Poller) processWindow(ctx context.Context, cursor, latest int64) int64 
 		}
 		outcomes[i] = slots[i].outcome // Failed: terminal, skip past it
 	}
+	// The window head is only "stuck" in the gap-timeout sense when it's specifically not-visible-yet
+	// (replication lag); a real read error (e.g. a Cosmos outage) must block indefinitely instead of
+	// eventually being skipped, or a long outage would silently drop one alert per gap timeout.
+	headNotFound := n > 0 && readStop == 0 && slots[0].notFound
 	for i := readStop; i < n; i++ {
 		outcomes[i] = engine.Retry // deferred to the next cycle
 	}
 
 	// A missing row at the window head blocks everything after it indefinitely; GapTimeout bounds the wait before skipping it.
-	if n > 0 && p.stuck.observe(base, readStop == 0, time.Now(), p.settings.GapTimeout) {
+	if n > 0 && p.stuck.observe(base, headNotFound, time.Now(), p.settings.GapTimeout) {
 		id := cassandra.FormatSeq(alertIDPrefix, alertIDWidth, base)
 		p.logger.Error("alert id stuck beyond gap timeout, skipping to unblock the pipeline", "alert_id", id, "gap_timeout", p.settings.GapTimeout)
 		outcomes[0] = engine.Failed
@@ -218,12 +222,14 @@ func (p *Poller) processWindow(ctx context.Context, cursor, latest int64) int64 
 	return target
 }
 
-// prepared holds the result of reading and normalizing one alert id.
+// prepared holds the result of reading and normalizing one alert id. notFound is only meaningful when
+// !ready: see engine.Prepare for why it must not be conflated with other read errors.
 type prepared struct {
-	alert   model.Alert
-	fp      string
-	outcome engine.Outcome
-	ready   bool
+	alert    model.Alert
+	fp       string
+	outcome  engine.Outcome
+	ready    bool
+	notFound bool
 }
 
 // readWindow reads n alert ids starting at base concurrently, bounded by ReadConcurrency.
@@ -238,8 +244,8 @@ func (p *Poller) readWindow(ctx context.Context, base int64, n int) []prepared {
 			defer wg.Done()
 			defer func() { <-sem }()
 			id := cassandra.FormatSeq(alertIDPrefix, alertIDWidth, base+int64(i))
-			alert, fp, outcome, ready := p.engine.Prepare(ctx, id)
-			slots[i] = prepared{alert: alert, fp: fp, outcome: outcome, ready: ready}
+			alert, fp, outcome, ready, notFound := p.engine.Prepare(ctx, id)
+			slots[i] = prepared{alert: alert, fp: fp, outcome: outcome, ready: ready, notFound: notFound}
 		}(i)
 	}
 	wg.Wait()

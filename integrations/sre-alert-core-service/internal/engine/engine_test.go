@@ -18,28 +18,36 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"alert-core-service/internal/model"
+	"alert-core-service/internal/store"
 )
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// fakeAlerts is a minimal in-memory alertReader.
+// fakeAlerts is a minimal in-memory alertReader. errByID lets a test force a specific error (e.g.
+// store.ErrAlertNotFound or a generic read failure) for an id not present in byID.
 type fakeAlerts struct {
-	byID map[string]model.Alert
+	byID    map[string]model.Alert
+	errByID map[string]error
 }
 
 func (f *fakeAlerts) Get(_ context.Context, id string) (model.Alert, error) {
 	a, ok := f.byID[id]
 	if !ok {
-		return model.Alert{}, context.DeadlineExceeded // any non-ErrMalformedAlert error, simulating "not visible yet"
+		if err, ok := f.errByID[id]; ok {
+			return model.Alert{}, err
+		}
+		return model.Alert{}, context.DeadlineExceeded // a generic read error, distinct from "not visible yet"
 	}
 	return a, nil
 }
@@ -49,6 +57,9 @@ func (f *fakeAlerts) Get(_ context.Context, id string) (model.Alert, error) {
 type fakeIncidents struct {
 	mu   sync.Mutex
 	byFP map[string]model.Incident
+	// recordCSMIncidentErr forces RecordCSMIncident to fail, simulating a persist failure right
+	// after CSM has already accepted the incident.
+	recordCSMIncidentErr error
 }
 
 func newFakeIncidents() *fakeIncidents {
@@ -104,6 +115,8 @@ func (f *fakeIncidents) Upsert(_ context.Context, alertID string, a model.Alert,
 		existing.CSMConfirmed = false
 		existing.CSMAttempts = 0
 		existing.CSMPermanentlyFailed = false
+		existing.PendingNotes = nil
+		existing.StateCheckedAt = time.Time{}
 	}
 	f.byFP[fp] = existing
 	return existing, false, nil
@@ -126,6 +139,9 @@ func (f *fakeIncidents) RecordAlertID(_ context.Context, existing model.Incident
 func (f *fakeIncidents) RecordCSMIncident(_ context.Context, fingerprint, incidentID, incidentNumber string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.recordCSMIncidentErr != nil {
+		return f.recordCSMIncidentErr
+	}
 	inc := f.byFP[fingerprint]
 	inc.IncidentID = incidentID
 	inc.IncidentNumber = incidentNumber
@@ -144,11 +160,21 @@ func (f *fakeIncidents) RecordCSMAttemptFailure(_ context.Context, fingerprint s
 	return nil
 }
 
-func (f *fakeIncidents) SyncStatus(_ context.Context, fingerprint, status string) error {
+func (f *fakeIncidents) SyncStatus(_ context.Context, fingerprint, status string, checkedAt time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	inc := f.byFP[fingerprint]
 	inc.Status = status
+	inc.StateCheckedAt = checkedAt
+	f.byFP[fingerprint] = inc
+	return nil
+}
+
+func (f *fakeIncidents) RecordStateChecked(_ context.Context, fingerprint string, checkedAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	inc := f.byFP[fingerprint]
+	inc.StateCheckedAt = checkedAt
 	f.byFP[fingerprint] = inc
 	return nil
 }
@@ -158,7 +184,17 @@ func (f *fakeIncidents) AppendWorkNote(_ context.Context, existing model.Inciden
 	defer f.mu.Unlock()
 	inc := f.byFP[existing.Fingerprint]
 	inc.WorkNotes = append(inc.WorkNotes, note)
+	inc.PendingNotes = append(inc.PendingNotes, note)
 	f.byFP[existing.Fingerprint] = inc
+	return nil
+}
+
+func (f *fakeIncidents) ClearPendingNotes(_ context.Context, fingerprint string, remaining []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	inc := f.byFP[fingerprint]
+	inc.PendingNotes = remaining
+	f.byFP[fingerprint] = inc
 	return nil
 }
 
@@ -176,7 +212,9 @@ func (f *fakeIncidents) ListPending(_ context.Context) ([]model.Incident, error)
 	defer f.mu.Unlock()
 	var out []model.Incident
 	for _, inc := range f.byFP {
-		if !inc.CSMConfirmed && !inc.CSMPermanentlyFailed {
+		owesCSMOrChat := !inc.CSMConfirmed && !inc.CSMPermanentlyFailed
+		owesNotes := inc.CSMConfirmed && len(inc.PendingNotes) > 0
+		if owesCSMOrChat || owesNotes {
 			out = append(out, inc)
 		}
 	}
@@ -186,16 +224,26 @@ func (f *fakeIncidents) ListPending(_ context.Context) ([]model.Incident, error)
 // fakeNotifier counts NotifyCSM calls so tests can assert an incident is never delivered to CSM
 // twice, and lets tests control whether CSM confirms.
 type fakeNotifier struct {
-	csmCalls   atomic.Int32
 	csmOK      bool
 	csmID      string
 	csmNumber  string
 	chatOK     bool
 	openStates map[string]bool // incident number -> open
+
+	mu            sync.Mutex
+	csmCalls      atomic.Int32
+	csmAttemptsAt []int // CSMAttempts observed on each NotifyCSM call, in order
+	chatCalls     atomic.Int32
+	pushNoteCalls atomic.Int32
+	pushNoteErr   error
+	pushedNotes   []string
 }
 
 func (n *fakeNotifier) NotifyCSM(_ context.Context, inc model.Incident) (string, string, bool, bool) {
 	n.csmCalls.Add(1)
+	n.mu.Lock()
+	n.csmAttemptsAt = append(n.csmAttemptsAt, inc.CSMAttempts)
+	n.mu.Unlock()
 	if !n.csmOK {
 		return "", "", false, false
 	}
@@ -203,10 +251,18 @@ func (n *fakeNotifier) NotifyCSM(_ context.Context, inc model.Incident) (string,
 }
 
 func (n *fakeNotifier) NotifyChat(_ context.Context, inc model.Incident) bool {
+	n.chatCalls.Add(1)
 	return n.chatOK
 }
 
 func (n *fakeNotifier) PushWorkNote(_ context.Context, incidentID, note string) error {
+	n.pushNoteCalls.Add(1)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.pushNoteErr != nil {
+		return n.pushNoteErr
+	}
+	n.pushedNotes = append(n.pushedNotes, note)
 	return nil
 }
 
@@ -217,7 +273,7 @@ func (n *fakeNotifier) IncidentState(_ context.Context, incidentNumber string) (
 
 func newTestEngine(alerts map[string]model.Alert, notifier *fakeNotifier) (*Engine, *fakeIncidents) {
 	incidents := newFakeIncidents()
-	e := New(testLogger(), &fakeAlerts{byID: alerts}, incidents, notifier, model.Defaults{}, 3)
+	e := New(testLogger(), &fakeAlerts{byID: alerts}, incidents, notifier, model.Defaults{}, 3, 0)
 	return e, incidents
 }
 
@@ -374,5 +430,167 @@ func TestHandle_RecurrenceAfterCsmCloses_NotifiesAgain(t *testing.T) {
 	inc := incidents.byFP[fp]
 	if inc.IncidentNumber != "INC0000002" || !inc.CSMConfirmed {
 		t.Fatalf("expected the recurrence to be recorded against its own new CSM incident, got %+v", inc)
+	}
+}
+
+// TestHandle_PermanentlyFailedIncident_RecoversOnNextAlert is the case the latest review flagged:
+// model.Incident.IsOpen() used to treat any CSM-unconfirmed incident as open forever, so once an
+// incident was marked CSMPermanentlyFailed (CSM will never confirm it), every later alert on that
+// fingerprint was folded into it as a silent local Duplicate note -- no further CSM attempt, no
+// further Chat message, forever. IsOpen() now treats a permanently-failed incident as closed, so the
+// next alert starts a fresh delivery generation instead.
+func TestHandle_PermanentlyFailedIncident_RecoversOnNextAlert(t *testing.T) {
+	notifier := &fakeNotifier{csmOK: false, chatOK: true}
+	incidents := newFakeIncidents()
+	// maxCSMAttempts=1 so the very first failed attempt already exhausts retries and marks permanent failure.
+	e := New(testLogger(), &fakeAlerts{}, incidents, notifier, model.Defaults{}, 1, 0)
+	ctx := context.Background()
+
+	alert := model.Alert{Service: "svc", MetricName: "cpu", Severity: "critical", Source: "vendor"}
+	e.Handle(ctx, "ALT1", alert) // CSM create fails, exhausts the single attempt, falls back to Chat
+
+	fp := model.Fingerprint(alert.Source, alert.Service, alert.MetricName, alert.Environment, alert.UniqueIdentifier)
+	inc := incidents.byFP[fp]
+	if !inc.CSMPermanentlyFailed || inc.CSMConfirmed {
+		t.Fatalf("expected the incident to be marked permanently failed after exhausting attempts, got %+v", inc)
+	}
+	if inc.IsOpen() {
+		t.Fatalf("expected a permanently-failed incident to report IsOpen()=false")
+	}
+
+	// CSM recovers; a later alert on the same fingerprint must get its own fresh delivery attempt,
+	// not be silently swallowed as a local Duplicate note forever.
+	notifier.csmOK = true
+	notifier.csmID, notifier.csmNumber = "csm-2", "INC0000002"
+	outcome := e.Handle(ctx, "ALT2", alert)
+	if outcome != Processed {
+		t.Fatalf("outcome = %v, want Processed", outcome)
+	}
+	if calls := notifier.csmCalls.Load(); calls != 2 {
+		t.Fatalf("NotifyCSM calls = %d, want 2: a permanently-failed incident's recurrence must be retried, not swallowed", calls)
+	}
+
+	inc = incidents.byFP[fp]
+	if !inc.CSMConfirmed || inc.CSMPermanentlyFailed || inc.IncidentNumber != "INC0000002" {
+		t.Fatalf("expected the recurrence to be confirmed against a fresh CSM incident, got %+v", inc)
+	}
+}
+
+// TestAnnotate_PushesPendingNoteImmediately_AndRetriesOnFailure is the case the latest review
+// flagged: engine.go's old annotate() pushed a work note to CSM at most once, best-effort, with no
+// retry on PATCH failure and no path at all for a note written before CSM confirmed the incident.
+// Notes now go through PendingNotes and deliverAndPersist's shared retry machinery.
+func TestAnnotate_PushesPendingNoteImmediately_AndRetriesOnFailure(t *testing.T) {
+	notifier := &fakeNotifier{csmOK: true, csmID: "csm-1", csmNumber: "INC0000001"}
+	e, incidents := newTestEngine(nil, notifier)
+	ctx := context.Background()
+
+	alert := model.Alert{Service: "svc", MetricName: "cpu", Severity: "critical", Source: "vendor"}
+	e.Handle(ctx, "ALT1", alert) // creates + confirms the incident
+	fp := model.Fingerprint(alert.Source, alert.Service, alert.MetricName, alert.Environment, alert.UniqueIdentifier)
+
+	// The CSM PATCH fails on this duplicate's note: it must stay pending, not be dropped.
+	notifier.pushNoteErr = fmt.Errorf("csm patch failed")
+	e.Handle(ctx, "ALT2", alert)
+	inc := incidents.byFP[fp]
+	if len(inc.PendingNotes) != 1 {
+		t.Fatalf("expected the failed push to leave exactly one note pending, got %d: %v", len(inc.PendingNotes), inc.PendingNotes)
+	}
+	if calls := notifier.pushNoteCalls.Load(); calls != 1 {
+		t.Fatalf("PushWorkNote calls = %d, want 1", calls)
+	}
+
+	// CSM recovers; RetrySweep must flush the note that was left pending, in order.
+	notifier.pushNoteErr = nil
+	e.RetrySweep(ctx, func() bool { return true })
+	inc = incidents.byFP[fp]
+	if len(inc.PendingNotes) != 0 {
+		t.Fatalf("expected RetrySweep to flush the pending note, got %d still pending: %v", len(inc.PendingNotes), inc.PendingNotes)
+	}
+	if len(notifier.pushedNotes) != 1 {
+		t.Fatalf("expected exactly one note successfully pushed to csm, got %d: %v", len(notifier.pushedNotes), notifier.pushedNotes)
+	}
+}
+
+// TestAnnotate_NoteWrittenBeforeCsmConfirmed_FlushesOnceConfirmed covers the other half of the same
+// review comment: a work note written while CSM is still unconfirmed had no path to CSM at all before.
+func TestAnnotate_NoteWrittenBeforeCsmConfirmed_FlushesOnceConfirmed(t *testing.T) {
+	notifier := &fakeNotifier{csmOK: false} // CSM create keeps failing (transient) while the duplicate arrives
+	incidents := newFakeIncidents()
+	e := New(testLogger(), &fakeAlerts{}, incidents, notifier, model.Defaults{}, 5, 0)
+	ctx := context.Background()
+
+	alert := model.Alert{Service: "svc", MetricName: "cpu", Severity: "critical", Source: "vendor"}
+	e.Handle(ctx, "ALT1", alert)            // incident created, but CSM create fails -- still unconfirmed
+	outcome := e.Handle(ctx, "ALT2", alert) // duplicate on an incident with no IncidentID yet
+	if outcome != Processed {
+		t.Fatalf("outcome = %v, want Processed", outcome)
+	}
+
+	fp := model.Fingerprint(alert.Source, alert.Service, alert.MetricName, alert.Environment, alert.UniqueIdentifier)
+	inc := incidents.byFP[fp]
+	if len(inc.PendingNotes) != 1 || inc.CSMConfirmed {
+		t.Fatalf("expected the note to be queued pending, unconfirmed, got %+v", inc)
+	}
+	if calls := notifier.pushNoteCalls.Load(); calls != 0 {
+		t.Fatalf("PushWorkNote calls = %d, want 0 before CSM confirms", calls)
+	}
+
+	// CSM recovers; the sweep must both confirm the incident and flush the note now that it has an id.
+	notifier.csmOK = true
+	notifier.csmID, notifier.csmNumber = "csm-1", "INC0000001"
+	e.RetrySweep(ctx, func() bool { return true })
+
+	inc = incidents.byFP[fp]
+	if !inc.CSMConfirmed {
+		t.Fatalf("expected the incident to be csm-confirmed after the sweep, got %+v", inc)
+	}
+	if len(inc.PendingNotes) != 0 {
+		t.Fatalf("expected the pending note to be flushed once CSM confirmed, got %d still pending: %v", len(inc.PendingNotes), inc.PendingNotes)
+	}
+}
+
+// TestDeliverAndPersist_ChatNotSentWhenCsmSucceedsButPersistFails is the minor issue the latest
+// review flagged: if CSM accepts the incident but persisting that result locally fails, the old code
+// still fell back to Chat, telling a human about an incident that already exists on CSM.
+func TestDeliverAndPersist_ChatNotSentWhenCsmSucceedsButPersistFails(t *testing.T) {
+	notifier := &fakeNotifier{csmOK: true, csmID: "csm-1", csmNumber: "INC0000001", chatOK: true}
+	incidents := newFakeIncidents()
+	e := New(testLogger(), &fakeAlerts{}, incidents, notifier, model.Defaults{}, 3, 0)
+	ctx := context.Background()
+
+	fp := model.Fingerprint("vendor", "svc", "cpu", "", "")
+	incidents.byFP[fp] = model.Incident{
+		Fingerprint: fp, IncidentNumber: "PENDING-abc", Status: "new",
+		Service: "svc", MetricName: "cpu", Source: "vendor", AlertIDs: []string{"ALT1"}, AlertCount: 1,
+	}
+	incidents.recordCSMIncidentErr = fmt.Errorf("cassandra write failed")
+
+	e.deliverAndPersist(ctx, fp)
+
+	if calls := notifier.chatCalls.Load(); calls != 0 {
+		t.Fatalf("NotifyChat calls = %d, want 0: CSM already has the incident even though persisting the result failed", calls)
+	}
+}
+
+// TestPrepare_DistinguishesNotFoundFromOtherReadErrors is the case the latest review flagged in
+// poll.go: the gap-timeout skip used to fire on any read error after GapTimeout, not only on a row
+// that genuinely doesn't exist yet. A real read error (e.g. a Cosmos outage) must never report
+// notFound=true, since the poller only bounds the "not visible yet" case with a timeout.
+func TestPrepare_DistinguishesNotFoundFromOtherReadErrors(t *testing.T) {
+	alerts := &fakeAlerts{
+		errByID: map[string]error{
+			"NOTFOUND": store.ErrAlertNotFound,
+			"DBERR":    context.DeadlineExceeded,
+		},
+	}
+	e := New(testLogger(), alerts, newFakeIncidents(), &fakeNotifier{}, model.Defaults{}, 3, 0)
+	ctx := context.Background()
+
+	if _, _, outcome, ready, notFound := e.Prepare(ctx, "NOTFOUND"); ready || outcome != Retry || !notFound {
+		t.Fatalf("Prepare(NOTFOUND) = outcome=%v ready=%v notFound=%v, want Retry/false/true", outcome, ready, notFound)
+	}
+	if _, _, outcome, ready, notFound := e.Prepare(ctx, "DBERR"); ready || outcome != Retry || notFound {
+		t.Fatalf("Prepare(DBERR) = outcome=%v ready=%v notFound=%v, want Retry/false/false: a real read error must never be treated as the gap-timeout-eligible case", outcome, ready, notFound)
 	}
 }

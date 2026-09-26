@@ -49,8 +49,10 @@ CREATE TABLE IF NOT EXISTS alertintegration.incidents_processed (
   alert_ids               list<text>,
   alert_count             int,
   work_notes              list<text>,
+  pending_notes           list<text>, -- FIFO subset of work_notes not yet confirmed pushed to CSM
   first_seen              timestamp,
   last_seen               timestamp,
+  state_checked_at        timestamp,  -- last time syncIncidentState refreshed status from CSM, throttling that call during storms
   notified                boolean,
   csm_confirmed           boolean,
   csm_attempts            int,        -- failed CreateIncident attempts against this incident

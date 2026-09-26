@@ -43,23 +43,30 @@ type Alert struct {
 type Incident struct {
 	Fingerprint string `json:"fingerprint" db:"fingerprint"`
 	// IncidentID is CSM's UUID for PATCH; empty until confirmed. IncidentNumber is the human-readable display id.
-	IncidentID     string    `json:"incident_id" db:"incident_id"`
-	IncidentNumber string    `json:"incident_number" db:"incident_number"`
-	Status         string    `json:"status" db:"status"`
-	Severity       int       `json:"severity" db:"severity"`
-	Impact         string    `json:"impact" db:"impact"`
-	Urgency        string    `json:"urgency" db:"urgency"`
-	Service        string    `json:"service" db:"service"`
-	MetricName     string    `json:"metric_name" db:"metric_name"`
-	Description    string    `json:"description" db:"description"`
-	Category       string    `json:"category" db:"category"`
-	Environment    string    `json:"environment" db:"environment"`
-	Source         string    `json:"source" db:"source"`
-	AlertIDs       []string  `json:"alert_ids" db:"alert_ids"`
-	AlertCount     int       `json:"alert_count" db:"alert_count"`
-	WorkNotes      []string  `json:"work_notes" db:"work_notes"`
-	FirstSeen      time.Time `json:"first_seen" db:"first_seen"`
-	LastSeen       time.Time `json:"last_seen" db:"last_seen"`
+	IncidentID     string   `json:"incident_id" db:"incident_id"`
+	IncidentNumber string   `json:"incident_number" db:"incident_number"`
+	Status         string   `json:"status" db:"status"`
+	Severity       int      `json:"severity" db:"severity"`
+	Impact         string   `json:"impact" db:"impact"`
+	Urgency        string   `json:"urgency" db:"urgency"`
+	Service        string   `json:"service" db:"service"`
+	MetricName     string   `json:"metric_name" db:"metric_name"`
+	Description    string   `json:"description" db:"description"`
+	Category       string   `json:"category" db:"category"`
+	Environment    string   `json:"environment" db:"environment"`
+	Source         string   `json:"source" db:"source"`
+	AlertIDs       []string `json:"alert_ids" db:"alert_ids"`
+	AlertCount     int      `json:"alert_count" db:"alert_count"`
+	WorkNotes      []string `json:"work_notes" db:"work_notes"`
+	// PendingNotes is the FIFO subset of WorkNotes not yet confirmed pushed to CSM; cleared as CSM accepts
+	// each one, in order. Separate from WorkNotes (the full local audit log) because WorkNotes is capped
+	// and tail-trimmed, which would misalign a simple "notes pushed so far" counter.
+	PendingNotes []string  `json:"pending_notes" db:"pending_notes"`
+	FirstSeen    time.Time `json:"first_seen" db:"first_seen"`
+	LastSeen     time.Time `json:"last_seen" db:"last_seen"`
+	// StateCheckedAt throttles how often syncIncidentState calls CSM to refresh Status, so a flapping
+	// alert on a confirmed incident doesn't cost one CSM round trip per duplicate during a storm.
+	StateCheckedAt time.Time `json:"state_checked_at" db:"state_checked_at"`
 	// Notified and CSMConfirmed are independent obligations, each retried separately until true.
 	Notified     bool `json:"notified" db:"notified"`
 	CSMConfirmed bool `json:"csm_confirmed" db:"csm_confirmed"`
@@ -69,7 +76,15 @@ type Incident struct {
 }
 
 // IsOpen defaults to true until CSM confirms "closed", since this service never closes incidents and unsynced rows must not look closed.
+// A permanently-failed incident is treated as closed too: CSM will never confirm it, so without this
+// every later alert on the same fingerprint would be folded into it as a silent local Duplicate note
+// forever, with no further CSM attempt and no further Chat message. Upsert's existing closed-incident
+// handling already resets delivery state and starts a fresh generation, which is exactly what a
+// permanently-failed incident needs on its next occurrence.
 func (i Incident) IsOpen() bool {
+	if i.CSMPermanentlyFailed {
+		return false
+	}
 	if !i.CSMConfirmed {
 		return true
 	}

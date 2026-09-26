@@ -73,7 +73,7 @@ func main() {
 	}
 
 	alerts := store.NewAlertRepo(session)
-	incidents, err := store.NewIncidentRepo(session)
+	incidents, err := store.NewIncidentRepo(session, depCfg.Poll.MaxWindow)
 	if err != nil {
 		logger.Error("failed to initialise incident repository", "error", err)
 		os.Exit(1)
@@ -99,7 +99,7 @@ func main() {
 		RetryBaseDelay:   depCfg.Notify.RetryBaseDelay.Duration(),
 		HTTPTimeout:      depCfg.Notify.HTTPTimeout.Duration(),
 	})
-	eng := engine.New(base.With("component", "engine"), alerts, incidents, notifier, defaults, depCfg.Notify.MaxCSMAttempts)
+	eng := engine.New(base.With("component", "engine"), alerts, incidents, notifier, defaults, depCfg.Notify.MaxCSMAttempts, depCfg.Notify.StateCheckInterval.Duration())
 	poller, err := poll.New(base.With("component", "poll"), session, eng, processorLease, poll.Settings{
 		Interval:            depCfg.Poll.Interval.Duration(),
 		Concurrency:         depCfg.Poll.Concurrency,

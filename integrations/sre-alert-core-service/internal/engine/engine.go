@@ -40,8 +40,10 @@ type incidentStore interface {
 	RecordAlertID(ctx context.Context, existing model.Incident, alertID string) error
 	RecordCSMIncident(ctx context.Context, fingerprint, incidentID, incidentNumber string) error
 	RecordCSMAttemptFailure(ctx context.Context, fingerprint string, attempts, maxAttempts int, permanent bool) error
-	SyncStatus(ctx context.Context, fingerprint, status string) error
+	SyncStatus(ctx context.Context, fingerprint, status string, checkedAt time.Time) error
+	RecordStateChecked(ctx context.Context, fingerprint string, checkedAt time.Time) error
 	AppendWorkNote(ctx context.Context, existing model.Incident, note string) error
+	ClearPendingNotes(ctx context.Context, fingerprint string, remaining []string) error
 	MarkNotified(ctx context.Context, fingerprint string) error
 	ListPending(ctx context.Context) ([]model.Incident, error)
 }
@@ -63,13 +65,19 @@ type Engine struct {
 	defaults  model.Defaults
 	// maxCSMAttempts caps failed CreateIncident attempts before RetrySweep gives up on the incident.
 	maxCSMAttempts int
+	// stateCheckInterval throttles syncIncidentState's CSM round trips, so a flapping alert on a
+	// confirmed incident costs at most one CSM search per interval rather than one per duplicate.
+	stateCheckInterval time.Duration
 	// locks is per-fingerprint so distinct incidents never serialize; racing callers re-read the row under lock.
 	locks *fpLocks
 }
 
-// New wires the engine's collaborators, alert defaults, and CSM attempt cap together.
-func New(logger *slog.Logger, alerts alertReader, incidents incidentStore, n notifier, defaults model.Defaults, maxCSMAttempts int) *Engine {
-	return &Engine{logger: logger, alerts: alerts, incidents: incidents, notifier: n, defaults: defaults, maxCSMAttempts: maxCSMAttempts, locks: newFPLocks()}
+// New wires the engine's collaborators, alert defaults, CSM attempt cap, and state-check throttle together.
+func New(logger *slog.Logger, alerts alertReader, incidents incidentStore, n notifier, defaults model.Defaults, maxCSMAttempts int, stateCheckInterval time.Duration) *Engine {
+	return &Engine{
+		logger: logger, alerts: alerts, incidents: incidents, notifier: n, defaults: defaults,
+		maxCSMAttempts: maxCSMAttempts, stateCheckInterval: stateCheckInterval, locks: newFPLocks(),
+	}
 }
 
 // Outcome tells the poller whether it may advance its cursor past an alert id or must retry it.
@@ -99,27 +107,35 @@ func (o Outcome) String() string {
 
 // Process handles one stored alert id end to end via Prepare and Handle.
 func (e *Engine) Process(ctx context.Context, alertID string) Outcome {
-	alert, _, outcome, ready := e.Prepare(ctx, alertID)
+	alert, _, outcome, ready, _ := e.Prepare(ctx, alertID)
 	if !ready {
 		return outcome
 	}
 	return e.Handle(ctx, alertID, alert)
 }
 
-// Prepare reads and normalizes one alert; ready is false when unprocessable (see outcome).
-func (e *Engine) Prepare(ctx context.Context, alertID string) (alert model.Alert, fingerprint string, outcome Outcome, ready bool) {
+// Prepare reads and normalizes one alert; ready is false when unprocessable (see outcome). notFound is
+// only meaningful when !ready && outcome == Retry: it's true when the row simply isn't visible yet
+// (expected, temporary replication lag) and false for any other read error (e.g. Cosmos unreachable).
+// The poller's gap-timeout skip must only ever fire on the former -- skipping on the latter would
+// silently drop an alert during a real database outage instead of just waiting it out.
+func (e *Engine) Prepare(ctx context.Context, alertID string) (alert model.Alert, fingerprint string, outcome Outcome, ready bool, notFound bool) {
 	alert, err := e.alerts.Get(ctx, alertID)
 	if err != nil {
 		if errors.Is(err, store.ErrMalformedAlert) {
 			e.logger.Error("alert unprocessable, skipping", "alert_id", alertID, "error", err)
-			return model.Alert{}, "", Failed, false
+			return model.Alert{}, "", Failed, false, false
 		}
-		e.logger.Info("alert read failed or not visible yet, will retry", "alert_id", alertID, "error", err)
-		return model.Alert{}, "", Retry, false
+		if errors.Is(err, store.ErrAlertNotFound) {
+			e.logger.Info("alert not visible yet, will retry", "alert_id", alertID, "error", err)
+			return model.Alert{}, "", Retry, false, true
+		}
+		e.logger.Warn("alert read failed, will retry", "alert_id", alertID, "error", err)
+		return model.Alert{}, "", Retry, false, false
 	}
 	e.defaults.Apply(&alert)
 	fingerprint = model.Fingerprint(alert.Source, alert.Service, alert.MetricName, alert.Environment, alert.UniqueIdentifier)
-	return alert, fingerprint, Processed, true
+	return alert, fingerprint, Processed, true, false
 }
 
 // Handle folds a normalized alert into its incident; concurrent calls must use distinct fingerprints.
@@ -183,7 +199,8 @@ func (e *Engine) Handle(ctx context.Context, alertID string, alert model.Alert) 
 	return Processed
 }
 
-// annotate appends an OK/Duplicate work note, records alertID for idempotency, and best-effort pushes to CSM.
+// annotate appends an OK/Duplicate work note, records alertID for idempotency, and pushes the note
+// (this one plus any earlier ones still owed) to CSM via deliverAndPersist's shared retry machinery.
 func (e *Engine) annotate(ctx context.Context, existing model.Incident, alertID, kind string, alert model.Alert) Outcome {
 	note := model.BuildWorkNote(kind, alertID, alert.MetricName, alert.Source, time.Now())
 	if err := e.incidents.AppendWorkNote(ctx, existing, note); err != nil {
@@ -194,41 +211,54 @@ func (e *Engine) annotate(ctx context.Context, existing model.Incident, alertID,
 		// Best-effort: failure just risks a redundant note on a future replay, not a lost alert.
 		e.logger.Warn("failed to record alert id for idempotency, continuing", "alert_id", alertID, "error", err)
 	}
+	// Push now if CSM already has this incident; if not (CSM unconfirmed), the note stays in
+	// PendingNotes and RetrySweep's ListPending will flush it once CSM confirms.
 	if existing.IncidentID != "" {
-		if err := e.notifier.PushWorkNote(ctx, existing.IncidentID, note); err != nil {
-			// Best-effort: note is already durably recorded locally.
-			e.logger.Warn("failed to push work note to csm", "incident_number", existing.IncidentNumber, "alert_id", alertID, "error", err)
-		}
+		e.deliverAndPersist(ctx, existing.Fingerprint)
 	}
 	e.logger.Info("alert recorded on existing incident", "incident_number", existing.IncidentNumber, "alert_id", alertID, "kind", kind)
 	return Processed
 }
 
-// syncIncidentState refreshes inc's local Status from CSM so IsOpen reflects reality, not stale local state.
+// syncIncidentState refreshes inc's local Status from CSM so IsOpen reflects reality, not stale local
+// state. Throttled by stateCheckInterval: without it, a flapping alert on a confirmed incident would
+// cost one CSM search per duplicate during a storm.
 func (e *Engine) syncIncidentState(ctx context.Context, inc model.Incident) model.Incident {
 	if !inc.CSMConfirmed {
 		return inc // nothing created on CSM yet.
 	}
+	if e.stateCheckInterval > 0 && time.Since(inc.StateCheckedAt) < e.stateCheckInterval {
+		return inc
+	}
 	open, found, err := e.notifier.IncidentState(ctx, inc.IncidentNumber)
 	if err != nil {
+		// Don't stamp StateCheckedAt: a failed check shouldn't extend the throttle window past a
+		// successful one, or the next duplicate would wait a full interval for a check that never happened.
 		e.logger.Warn("csm incident state check failed, using last known state", "incident_number", inc.IncidentNumber, "error", err)
 		return inc
 	}
-	if !found {
-		return inc
-	}
-	status := "closed"
-	if open {
-		status = "open"
+	now := time.Now()
+	status := inc.Status
+	if found {
+		status = "closed"
+		if open {
+			status = "open"
+		}
 	}
 	if status == inc.Status {
+		if err := e.incidents.RecordStateChecked(ctx, inc.Fingerprint, now); err != nil {
+			e.logger.Warn("failed to persist state check timestamp", "incident_number", inc.IncidentNumber, "error", err)
+			return inc
+		}
+		inc.StateCheckedAt = now
 		return inc
 	}
-	if err := e.incidents.SyncStatus(ctx, inc.Fingerprint, status); err != nil {
+	if err := e.incidents.SyncStatus(ctx, inc.Fingerprint, status, now); err != nil {
 		e.logger.Warn("failed to persist synced incident status", "incident_number", inc.IncidentNumber, "error", err)
 		return inc
 	}
 	inc.Status = status
+	inc.StateCheckedAt = now
 	return inc
 }
 
@@ -254,14 +284,19 @@ func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 		e.logger.Warn("delivery: incident vanished before delivery", "fingerprint", fingerprint)
 		return
 	}
-	if inc.CSMConfirmed && inc.Notified {
-		return // already delivered by a caller that beat us to this lock.
+	if inc.CSMConfirmed && inc.Notified && len(inc.PendingNotes) == 0 {
+		return // already delivered by a caller that beat us to this lock, and no notes still owed.
 	}
 
 	csmConfirmed := inc.CSMConfirmed
+	// csmSucceeded tracks CSM acceptance itself, independent of whether persisting that result below
+	// succeeds: even if RecordCSMIncident fails, CSM already has this incident, so Chat must not also
+	// fire and tell a human about an incident that already exists on CSM.
+	csmSucceeded := csmConfirmed
 	if !csmConfirmed {
 		id, number, ok, permanent := e.notifier.NotifyCSM(ctx, inc)
 		if ok {
+			csmSucceeded = true
 			pctx, cancel := persistCtx(ctx)
 			err := e.incidents.RecordCSMIncident(pctx, inc.Fingerprint, id, number)
 			cancel()
@@ -286,8 +321,12 @@ func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 		}
 	}
 
+	if csmConfirmed && len(inc.PendingNotes) > 0 {
+		inc = e.flushPendingNotes(ctx, inc)
+	}
+
 	chatNotified := inc.Notified
-	if !csmConfirmed && !chatNotified {
+	if !csmSucceeded && !chatNotified {
 		// Fall back to chat so a human sees it, but only the first time to avoid spamming retries.
 		chatNotified = e.notifier.NotifyChat(ctx, inc)
 	}
@@ -299,6 +338,32 @@ func (e *Engine) deliverAndPersist(ctx context.Context, fingerprint string) {
 			e.logger.Error("failed to persist notified flag", "incident_number", inc.IncidentNumber, "error", err)
 		}
 	}
+}
+
+// flushPendingNotes pushes inc's PendingNotes to CSM in order, stopping at the first failure so a note
+// is never skipped ahead of one still pending. Persists whatever progress was made even on partial failure.
+func (e *Engine) flushPendingNotes(ctx context.Context, inc model.Incident) model.Incident {
+	remaining := inc.PendingNotes
+	for i, note := range inc.PendingNotes {
+		if err := e.notifier.PushWorkNote(ctx, inc.IncidentID, note); err != nil {
+			e.logger.Warn("failed to push work note to csm, will retry", "incident_number", inc.IncidentNumber, "error", err)
+			remaining = inc.PendingNotes[i:]
+			break
+		}
+		remaining = inc.PendingNotes[i+1:]
+	}
+	if len(remaining) == len(inc.PendingNotes) {
+		return inc // no progress made; nothing to persist.
+	}
+	pctx, cancel := persistCtx(ctx)
+	err := e.incidents.ClearPendingNotes(pctx, inc.Fingerprint, remaining)
+	cancel()
+	if err != nil {
+		e.logger.Error("failed to persist pending notes progress", "incident_number", inc.IncidentNumber, "error", err)
+		return inc
+	}
+	inc.PendingNotes = remaining
+	return inc
 }
 
 // RetrySweep retries delivery for every pending incident, stopping early if leadership is lost.

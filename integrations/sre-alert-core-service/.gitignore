@@ -1,5 +1,6 @@
 # Secrets / local config
 .env
+config.toml
 
 # Build output (cmd/server -> bin/alert-core-service)
 /bin/

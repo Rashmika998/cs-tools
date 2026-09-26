@@ -78,6 +78,9 @@ type NotifyConfig struct {
 	MaxCSMAttempts int `toml:"max_csm_attempts"`
 	// ServiceCacheTTL bounds how long a label->CMDB-service-id resolution is reused before a fresh live /services/search call.
 	ServiceCacheTTL Duration `toml:"service_cache_ttl"`
+	// StateCheckInterval throttles how often a confirmed incident's status is re-checked against CSM;
+	// without it, a flapping alert costs one CSM search per duplicate during a storm.
+	StateCheckInterval Duration `toml:"state_check_interval"`
 }
 
 // ServerConfig tunes how long the HTTP server waits for in-flight requests to drain during a graceful shutdown before forcing the process to exit.
@@ -161,6 +164,8 @@ func (c Config) validate() error {
 		return fmt.Errorf("notify.max_csm_attempts must be positive")
 	case c.Notify.ServiceCacheTTL <= 0:
 		return fmt.Errorf("notify.service_cache_ttl must be positive")
+	case c.Notify.StateCheckInterval <= 0:
+		return fmt.Errorf("notify.state_check_interval must be positive")
 	case c.Server.ShutdownGrace <= 0:
 		return fmt.Errorf("server.shutdown_grace must be positive")
 	}

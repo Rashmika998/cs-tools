@@ -101,10 +101,20 @@ func DedupTag(fingerprint string, firstSeen time.Time) string {
 }
 
 // NotifyCSM returns permanent=true when CSM rejected the payload (non-429 4xx); retrying won't help.
+// Every call from deliverAndPersist while CSMConfirmed is false is itself a retry (RetrySweep calls it
+// again every sweep interval until confirmed), so inc.CSMAttempts > 0 means an earlier attempt may
+// already have called CreateIncident and lost the response. Failing open on this search in that case
+// would create a second CSM incident; only the very first attempt (no prior create could have happened)
+// may fail open.
 func (n *Notifier) NotifyCSM(ctx context.Context, inc model.Incident) (incidentID, incidentNumber string, ok bool, permanent bool) {
 	tag := DedupTag(inc.Fingerprint, inc.FirstSeen)
 	if id, number, found, err := n.csm.SearchIncidentByTag(ctx, tag); err != nil {
-		// Fail open: a search error doesn't prove no incident exists, so proceed to create.
+		if inc.CSMAttempts > 0 {
+			n.logger.Warn("csm dedup search failed on retry, deferring to avoid a duplicate create", "incident_number", inc.IncidentNumber, "error", err)
+			return "", "", false, false
+		}
+		// Fail open: this is the first attempt, so no prior create could have happened; a search error
+		// doesn't prove no incident exists, but there's nothing yet to duplicate.
 		n.logger.Warn("csm dedup search failed, proceeding to create", "incident_number", inc.IncidentNumber, "error", err)
 	} else if found {
 		n.logger.Info("found existing csm incident via dedup search, reusing", "incident_id", id, "incident_number", number)
@@ -124,6 +134,9 @@ func (n *Notifier) NotifyCSM(ctx context.Context, inc model.Incident) (incidentI
 		Impact:    inc.Impact,
 		Urgency:   inc.Urgency,
 		Subject:   tag + " " + incidentSubject(inc),
+	}
+	if inc.Description != "" {
+		req.WorkNotes = &inc.Description
 	}
 
 	res, err := n.createIncidentWithRetry(ctx, tag, req)
