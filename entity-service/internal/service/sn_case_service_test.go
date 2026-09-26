@@ -1117,7 +1117,7 @@ func TestSNCaseService_UpdateCase_FieldCountValidation(t *testing.T) {
 // TestSNCaseService_PatchCaseFields_NoGetCaseByIDOrEventPublish) is the only
 // place markFixIssued legitimately reaches ServiceNow.
 func TestSNCaseService_UpdateCase_RejectsMarkFixIssued(t *testing.T) {
-	svc := NewServiceNowCaseService(nil, nil, nil, nil, nil)
+	svc := NewServiceNowCaseService(nil, nil, nil, nil, nil, "", nil)
 	markFixIssued := true
 
 	_, err := svc.UpdateCase(contextWithUserIDToken("token"), domain.UpdateCaseRequest{ID: testCaseUUID, MarkFixIssued: &markFixIssued})

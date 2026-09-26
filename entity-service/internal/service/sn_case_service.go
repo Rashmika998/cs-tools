@@ -1183,6 +1183,9 @@ func publishCaseCreatedEvent(ctx context.Context, publisher EventPublisherServic
 	reporterName := ""
 	if cv.CreatedBy != nil {
 		reporterName = cv.CreatedBy.Name
+		if reporterName == "" {
+			reporterName = cv.CreatedBy.Email
+		}
 	}
 	product := caseProductName(cv)
 
