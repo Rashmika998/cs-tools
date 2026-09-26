@@ -95,8 +95,9 @@ func splitURLs(raw string) []string {
 }
 
 // DedupTag includes FirstSeen so a tag changes when a closed incident's fingerprint recurs.
+// Millisecond precision matches Cassandra's timestamp column, so a same-second recurrence still gets a distinct tag.
 func DedupTag(fingerprint string, firstSeen time.Time) string {
-	return fmt.Sprintf("[fp:%s:%d]", fingerprint[:12], firstSeen.Unix())
+	return fmt.Sprintf("[fp:%s:%d]", fingerprint[:12], firstSeen.UnixMilli())
 }
 
 // NotifyCSM returns permanent=true when CSM rejected the payload (non-429 4xx); retrying won't help.
@@ -161,7 +162,13 @@ func (n *Notifier) createIncidentWithRetry(ctx context.Context, tag string, req 
 	err := backoff.Retry(func() error {
 		attempt++
 		if attempt > 1 {
-			if id, number, found, err := n.csm.SearchIncidentByTag(ctx, tag); err == nil && found {
+			// A prior attempt may have succeeded on CSM's side with its response lost; CreateIncident
+			// isn't idempotent, so a search error must not fall through to another create.
+			id, number, found, err := n.csm.SearchIncidentByTag(ctx, tag)
+			if err != nil {
+				return fmt.Errorf("dedup search before retry: %w", err)
+			}
+			if found {
 				n.logger.Info("found existing csm incident via dedup search on retry, reusing", "incident_id", id, "incident_number", number)
 				result = &csm.CreateIncidentResult{IncidentID: id, IncidentNumber: number}
 				return nil

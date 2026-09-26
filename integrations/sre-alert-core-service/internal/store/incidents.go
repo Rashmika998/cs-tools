@@ -143,6 +143,7 @@ func (r *IncidentRepo) Upsert(ctx context.Context, alertID string, a model.Alert
 	// Handle only reaches here for a closed incident: reset delivery fields or the recurrence is
 	// silently swallowed. FirstSeen reset also gives DedupTag a fresh value for NotifyCSM.
 	if !existing.IsOpen() {
+		updated.Status = "new"
 		updated.IncidentID = ""
 		updated.IncidentNumber = pendingIncidentNumber(fp)
 		updated.Notified = false
@@ -150,7 +151,7 @@ func (r *IncidentRepo) Upsert(ctx context.Context, alertID string, a model.Alert
 		updated.CSMAttempts = 0
 		updated.CSMPermanentlyFailed = false
 		updated.FirstSeen = updated.LastSeen
-		setCols = append(setCols, "incident_id", "incident_number", "notified", "csm_confirmed", "csm_attempts", "csm_permanently_failed", "first_seen")
+		setCols = append(setCols, "status", "incident_id", "incident_number", "notified", "csm_confirmed", "csm_attempts", "csm_permanently_failed", "first_seen")
 	}
 
 	stmt, names := qb.Update("incidents_processed").
