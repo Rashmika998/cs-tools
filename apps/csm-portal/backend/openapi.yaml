@@ -3435,6 +3435,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorPayload'
 
+  /projects/{id}/onboarding-steps:
+    get:
+      summary: Customer-onboarding status of a project's contacts.
+      description: >
+        The recorded onboarding steps of every membership (Salesforce
+        Project_Contact__c — one invited email on this project), grouped per
+        membership with the steps in flow order (IDENTITY, DATABASE, EMAIL,
+        REGISTRATION). Backed by the entity service's onboarding ledger
+        (`POST /onboarding-steps/search` filtered to this project), paged
+        through server-side; `truncated` is true if the ledger held more
+        pages than the server was willing to walk. A project with no recorded
+        steps returns an empty list. Only registered when the
+        `CSM_MIGRATION_ONBOARDING_STATUS_ENABLED` feature flag is exactly
+        `true` — otherwise the path is unknown to the server and 404s.
+      operationId: getProjectsIdOnboardingSteps
+      parameters:
+        - name: id
+          in: path
+          description: UUID of the project.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOnboardingStepsResponse'
+        "400":
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        "404":
+          description: NotFound
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        "500":
+          description: InternalServerError
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+
   /cases/search:
     post:
       summary: Search cases.
@@ -12347,6 +12408,91 @@ components:
         total:
           type: integer
           description: Total number of matching contacts
+
+    ProjectOnboardingStep:
+      type: object
+      description: >
+        The latest recorded outcome of one onboarding step for one membership,
+        exactly as the entity service's ledger holds it — nothing is derived
+        here.
+      required: [step, status, attemptCount, eventType, eventModifiedOn, updatedOn]
+      properties:
+        step:
+          type: string
+          enum: [IDENTITY, DATABASE, EMAIL, REGISTRATION]
+          description: >
+            DATABASE is the csm-platform write done by the Salesforce membership
+            ingest; IDENTITY the Asgardeo user provisioned via the SCIM service;
+            EMAIL the invitation email; REGISTRATION the member's first sign-in.
+        status:
+          type: string
+          enum: [SUCCEEDED, FAILED, SKIPPED]
+          description: SKIPPED marks a step that does not apply (e.g. IDENTITY and EMAIL for an integration user).
+        attemptCount:
+          type: integer
+          description: How many times this step has been recorded for the membership; 1 on first write.
+        lastError:
+          type: string
+          nullable: true
+          description: >
+            The error of the most recent FAILED write, null once the step
+            succeeds. Upstream error text — render as plain text.
+        eventType:
+          type: string
+          description: The Salesforce event type (CREATED, UPDATED, RESTORED, ...) or caller-defined trigger that produced this write.
+        eventModifiedOn:
+          type: string
+          format: date-time
+        updatedOn:
+          type: string
+          format: date-time
+
+    ProjectOnboardingMembership:
+      type: object
+      description: >
+        Every recorded onboarding step of one Salesforce Project_Contact__c
+        membership (one invited email on this project), in flow order. Match
+        to a project contact row by lower-cased `email`.
+      required: [membershipSfId, email, steps]
+      properties:
+        membershipSfId:
+          type: string
+          description: Salesforce Project_Contact__c Id.
+        contactSfId:
+          type: string
+          nullable: true
+          description: Salesforce Contact Id of the member, when recorded.
+        email:
+          type: string
+          description: The invited email, lower-cased.
+        projectContactId:
+          type: string
+          format: uuid
+          nullable: true
+          description: csm-platform project_contact row, set once DATABASE succeeded.
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectOnboardingStep'
+
+    ProjectOnboardingStepsResponse:
+      type: object
+      required: [memberships, total, truncated]
+      properties:
+        memberships:
+          type: array
+          description: Ordered by email, then membership id.
+          items:
+            $ref: '#/components/schemas/ProjectOnboardingMembership'
+        total:
+          type: integer
+          description: Number of memberships returned (not of step rows).
+        truncated:
+          type: boolean
+          description: >
+            True when the project's ledger had more step rows than the server
+            walks (40 upstream pages of 50 rows), so some memberships may be
+            missing or incomplete.
 
     ProjectClosureFields:
       type: object

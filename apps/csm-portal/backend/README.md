@@ -142,6 +142,14 @@ Backs `entity.EngineeringEntityClient.CreateGitIssue` (a separate internal engin
 
 On this path the target must be `repoOverride` and must match an entry of `GITHUB_ISSUE_REPO_OPTIONS` (owner/repo, case-insensitive), so the service account can only file in the curated repositories; the catalogue's `owner` is passed as both the GitHub organisation and owner (the engineering service selects its GitHub access token by that organisation name, so it must be one it is configured with). The service's response has no issue URL, so the URL returned to the web app is built as `https://github.com/<owner>/<repo>/issues/<number>`. The title (max 256 characters) and description are sent, with `updateLevel`, `publicIssueUrl` and `hotFixRequired` appended to the body, and the labels are the repo option's `githubLabel`, `issueTypeLabel`, `priorityLevel` (only for `Type/Incident`) and `regression`. `reason` is ignored, since it only steers the entity service's own routing. Unlike the entity service's implementation, this path does **not** write the issue URL back into the case's work notes or tag the case as a regression.
 
+### Customer-onboarding status (optional, off by default)
+
+Backs `GET /projects/{id}/onboarding-steps` — the per-contact onboarding status the CSM Portal's project Contacts tab shows (which of IDENTITY / DATABASE / EMAIL / REGISTRATION succeeded, failed or was skipped for each invited email, with the attempt count and last error). It reads the entity service's onboarding ledger (`POST /onboarding-steps/search`) through the existing `CustomerEntityClient`; no extra URL or credential is needed.
+
+| Variable | Description |
+|---|---|
+| `CSM_MIGRATION_ONBOARDING_STATUS_ENABLED` | Exactly `true` registers the route. Unset, empty or any other value (including `1`, `TRUE`, `yes`) keeps it off: the route is not registered (the path 404s) and nothing else in the backend changes. Stricter than the `strconv.ParseBool` parsing `SFTPGO_*` uses on purpose — every `CSM_MIGRATION_*` flag is a cutover switch |
+
 ### Updates service
 
 | Variable | Description |
@@ -333,6 +341,7 @@ backend/
 │   │   ├── doc.go               # Package overview — one config/client pair per entity service
 │   │   ├── customer_client.go   # OAuth2 HTTP client for the customer entity service (this repo's entity-service)
 │   │   ├── customer.go          # CustomerEntityClient operations (cases, accounts, projects, ...)
+│   │   ├── onboarding.go        # CustomerEntityClient.SearchOnboardingSteps — typed onboarding-ledger search
 │   │   └── engineering.go       # EngineeringEntityClient — CreateGitIssue (wired when ENGINEERING_ENTITY_BASE_URL is set)
 │   ├── githubissue/
 │   │   ├── options.go          # RepoOption + ParseRepoOptions (GITHUB_ISSUE_REPO_OPTIONS)
@@ -361,6 +370,7 @@ backend/
 │       ├── deployments.go                # HTTP handlers for deployment endpoints
 │       ├── products.go                   # HTTP handlers for product endpoints
 │       ├── projects.go                   # HTTP handlers for project endpoints
+│       ├── onboarding_steps.go           # GET /projects/{id}/onboarding-steps (behind CSM_MIGRATION_ONBOARDING_STATUS_ENABLED)
 │       ├── incidents.go                  # HTTP handlers for incident endpoints (ServiceNow only)
 │       ├── problems.go                   # HTTP handlers for problem endpoints (ServiceNow only)
 │       ├── updates.go                    # HTTP handlers for updates endpoints
@@ -415,6 +425,7 @@ backend/
 
 - `GET /projects/{id}` — Get project by ID
 - `POST /projects/search` — Search projects
+- `GET /projects/{id}/onboarding-steps` — Customer-onboarding steps of the project's contacts, grouped per membership (invited email) in flow order; only registered when `CSM_MIGRATION_ONBOARDING_STATUS_ENABLED=true` (see Configuration)
 
 ### Products
 

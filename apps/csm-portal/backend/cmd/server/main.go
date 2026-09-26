@@ -346,6 +346,14 @@ func main() {
 	route("GET /announcement-requests/{id}/deliveries", handler.PermView, announcementRequestHandler.ListAnnouncementRequestDeliveries)
 	route("POST /projects/{id}/contacts/search", handler.PermView, projectHandler.SearchProjectContacts)
 	route("GET /projects/{id}/contacts/{contactId}", handler.PermView, projectHandler.GetProjectContact)
+	// Customer-onboarding status per project contact — off by default (see
+	// loadOnboardingStatusEnabled). When off the handler is not constructed
+	// and the route is not registered, so the path 404s like any unknown one
+	// and nothing else in this backend changes.
+	if loadOnboardingStatusEnabled() {
+		onboardingStepHandler := handler.NewOnboardingStepHandler(customerEntityClient)
+		route("GET /projects/{id}/onboarding-steps", handler.PermView, onboardingStepHandler.GetProjectOnboardingSteps)
+	}
 	route("PATCH /projects/{id}", handler.PermWrite, projectHandler.UpdateProject)
 	route("POST /products/search", handler.PermView, productHandler.SearchProducts)
 	route("POST /products/{id}/versions/search", handler.PermView, productHandler.SearchProductVersions)
@@ -816,6 +824,37 @@ func validateAnnouncementDataSourceCompatibility(dataSource string, excludedProj
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+// onboardingStatusFlag is the env var gating GET /projects/{id}/onboarding-steps.
+const onboardingStatusFlag = "CSM_MIGRATION_ONBOARDING_STATUS_ENABLED"
+
+// loadOnboardingStatusEnabled resolves the customer-onboarding status feature
+// flag:
+//
+//	CSM_MIGRATION_ONBOARDING_STATUS_ENABLED  Exactly "true" (after trimming
+//	                                         whitespace) turns the feature on.
+//	                                         Off by default — unset, empty, or
+//	                                         any other value (including "1",
+//	                                         "TRUE", "yes") keeps it dark and
+//	                                         changes nothing else in this
+//	                                         backend. Deliberately stricter
+//	                                         than the strconv.ParseBool
+//	                                         parsing SFTPGO_* uses: every
+//	                                         CSM_MIGRATION_* flag is a
+//	                                         cutover switch that must not
+//	                                         flip on by accident.
+func loadOnboardingStatusEnabled() bool {
+	enabled := onboardingStatusEnabled(os.Getenv(onboardingStatusFlag))
+	if enabled {
+		slog.Info(onboardingStatusFlag + " is on: GET /projects/{id}/onboarding-steps is registered")
+	}
+	return enabled
+}
+
+// onboardingStatusEnabled is the pure parse behind loadOnboardingStatusEnabled.
+func onboardingStatusEnabled(raw string) bool {
+	return strings.TrimSpace(raw) == "true"
 }
 
 // loadSftpgoConfig resolves the SFTPGo-backed attachment-storage feature
