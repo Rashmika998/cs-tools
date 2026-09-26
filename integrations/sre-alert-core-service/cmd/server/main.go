@@ -123,7 +123,11 @@ func main() {
 	// standby could steal it while this replica still has Handle calls in flight, duplicating notifications.
 	leaseCtx, cancelLease := context.WithCancel(context.Background())
 	defer cancelLease()
-	go processorLease.Run(leaseCtx, depCfg.Lease.RenewInterval.Duration())
+	leaseDone := make(chan struct{})
+	go func() {
+		defer close(leaseDone)
+		processorLease.Run(leaseCtx, depCfg.Lease.RenewInterval.Duration())
+	}()
 
 	// pollCtx is separate from ctx so shutdown can drain the poller before releasing the lease, avoiding duplicate sends.
 	pollCtx, cancelPoll := context.WithCancel(context.Background())
@@ -185,6 +189,12 @@ func main() {
 			logger.Warn("poller did not drain within shutdown_grace")
 		}
 		cancelLease()
+		// Join Run before releasing: cancelLease alone doesn't wait for its in-flight
+		// tryAcquireOrRenew CAS to finish. Without this join, Release's "IF owner = self" CAS could run
+		// concurrently with a stale acquire CAS (lease was free/expired) and lose the race -- Release
+		// observes a mismatched owner and no-ops, while the acquire then completes and holds the lease
+		// until its own expiry, defeating the immediate-release-on-shutdown guarantee.
+		<-leaseDone
 
 		// Released only after drain, so a standby resumes immediately and never races a mid-delivery replica.
 		if err := processorLease.Release(shutdownCtx); err != nil {
