@@ -107,7 +107,7 @@ func TestSNCaseService_CreateCase_PublishesCaseCreated(t *testing.T) {
 
 	client := newTestCreateCaseClient(t, caseSysid, getCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseRequest{
 		Type:              "case",
@@ -206,7 +206,7 @@ func TestSNCaseService_CreateCase_SkipsPublishWhenNoWatchers(t *testing.T) {
 
 	client := newTestCreateCaseClient(t, caseSysid, getCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseRequest{
 		Type:              "case",
@@ -261,7 +261,7 @@ func TestSNCaseService_CreateCase_SkipsPublishWhenNoSeverity(t *testing.T) {
 
 	client := newTestCreateCaseClient(t, caseSysid, getCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseRequest{
 		Type:        "announcement",
@@ -309,7 +309,7 @@ func TestSNCaseService_CreateCase_PublishFailureDoesNotFailCreateCase(t *testing
 
 	client := newTestCreateCaseClient(t, caseSysid, getCaseBody)
 	publisher := &mockEventPublisher{err: errors.New("event hub unreachable")}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseRequest{
 		Type:              "case",
@@ -352,7 +352,7 @@ func TestSNCaseService_CreateCase_NoPublisherConfigured(t *testing.T) {
 			"case": {"id": "` + caseSysid + `", "number": "CS0012001", "createdBy": "jane.doe@example.com", "createdOn": "2026-01-02 10:00:00", "state": {"id": 1, "label": "Open"}}
 		}`))
 	})
-	svc := NewServiceNowCaseService(client, nil, nil, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, nil, nil, nil, "", nil)
 
 	req := domain.CreateCaseRequest{
 		Type:              "case",
@@ -439,7 +439,7 @@ func TestSNCaseService_CreateCaseComment_PublishesCommentAdded(t *testing.T) {
 
 	client := newTestCommentClient(t, getCaseBody, createCommentBody, searchCommentsBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseCommentRequest{
 		CaseID:  caseID,
@@ -541,7 +541,7 @@ func TestSNCaseService_CreateCaseComment_WorkNote_FiltersRecipientsToWso2Domain(
 
 	client := newTestCommentClient(t, getCaseBody, createCommentBody, searchCommentsBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseCommentRequest{
 		CaseID:  caseID,
@@ -612,7 +612,7 @@ func TestSNCaseService_CreateCaseComment_WorkNote_SkipsPublishWhenNoWso2Watchers
 
 	client := newTestCommentClient(t, getCaseBody, createCommentBody, searchCommentsBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseCommentRequest{
 		CaseID:  caseID,
@@ -658,7 +658,7 @@ func TestSNCaseService_CreateCaseComment_SkipsPublishWhenNoWatchers(t *testing.T
 
 	client := newTestCommentClient(t, getCaseBody, createCommentBody, `{"comments":[],"offset":0,"limit":20,"totalRecords":0}`)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseCommentRequest{CaseID: caseID, Type: domain.CommentTypeComment, Content: "hi"}
 	if _, err := svc.CreateCaseComment(contextWithUserIDToken("token"), req); err != nil {
@@ -718,7 +718,7 @@ func TestSNCaseService_CreateCaseComment_NoWatchersSkipsAuthorLookup(t *testing.
 		}
 	})
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseCommentRequest{CaseID: caseID, Type: domain.CommentTypeComment, Content: "hi"}
 	if _, err := svc.CreateCaseComment(contextWithUserIDToken("token"), req); err != nil {
@@ -770,7 +770,7 @@ func TestSNCaseService_CreateCaseComment_SkipsPublishWhenAuthorNameUnresolved(t 
 
 	client := newTestCommentClient(t, getCaseBody, createCommentBody, searchCommentsBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	req := domain.CreateCaseCommentRequest{CaseID: caseID, Type: domain.CommentTypeComment, Content: "hi"}
 	if _, err := svc.CreateCaseComment(contextWithUserIDToken("token"), req); err != nil {
@@ -836,7 +836,7 @@ func TestSNCaseService_UpdateCase_PublishesStatusChanged(t *testing.T) {
 
 	client := newTestUpdateCaseClient(t, getCaseBody, updateCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	newState := domain.CaseStateWorkInProgress
 	req := domain.UpdateCaseRequest{ID: caseID, State: &newState}
@@ -904,7 +904,7 @@ func TestSNCaseService_UpdateCase_SkipsPublishWhenNoWatchers(t *testing.T) {
 
 	client := newTestUpdateCaseClient(t, getCaseBody, updateCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	newState := domain.CaseStateWorkInProgress
 	req := domain.UpdateCaseRequest{ID: caseID, State: &newState}
@@ -953,7 +953,7 @@ func TestSNCaseService_UpdateCase_SkipsPublishWhenStateUnchanged(t *testing.T) {
 
 	client := newTestUpdateCaseClient(t, getCaseBody, updateCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	newState := domain.CaseStateWorkInProgress
 	req := domain.UpdateCaseRequest{ID: caseID, State: &newState}
@@ -1001,7 +1001,7 @@ func TestSNCaseService_UpdateCase_DoesNotPublishStatusChangedForOtherFields(t *t
 
 	client := newTestUpdateCaseClient(t, getCaseBody, updateCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	assigneeEmail := "alex@example.com"
 	req := domain.UpdateCaseRequest{ID: caseID, AssigneeEmail: &assigneeEmail}
@@ -1052,7 +1052,7 @@ func TestSNCaseService_UpdateCase_PublishesCaseAssigned(t *testing.T) {
 
 	client := newTestUpdateCaseClient(t, getCaseBody, updateCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	assigneeEmail := "alex@example.com"
 	req := domain.UpdateCaseRequest{ID: caseID, AssigneeEmail: &assigneeEmail}
@@ -1124,7 +1124,7 @@ func TestSNCaseService_UpdateCase_SkipsPublishCaseAssignedWhenNoWatchers(t *test
 
 	client := newTestUpdateCaseClient(t, getCaseBody, updateCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	assigneeEmail := "alex@example.com"
 	req := domain.UpdateCaseRequest{ID: caseID, AssigneeEmail: &assigneeEmail}
@@ -1175,7 +1175,7 @@ func TestSNCaseService_UpdateCase_SkipsPublishCaseAssignedWhenAssigneeUnchanged(
 
 	client := newTestUpdateCaseClient(t, getCaseBody, updateCaseBody)
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil)
 
 	assigneeEmail := "alex@example.com"
 	req := domain.UpdateCaseRequest{ID: caseID, AssigneeEmail: &assigneeEmail}
@@ -1220,7 +1220,7 @@ func TestSNCaseService_CreateBareCaseComment_NoSideEffects(t *testing.T) {
 		}`))
 	})
 	publisher := &mockEventPublisher{}
-	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil).(*snCaseService)
+	svc := NewServiceNowCaseService(client, nil, publisher, nil, nil, "", nil).(*snCaseService)
 
 	detail, err := svc.CreateBareCaseComment(contextWithUserIDToken("token"), caseID, domain.CommentTypeComment, "Working on it")
 	if err != nil {

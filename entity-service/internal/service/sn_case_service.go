@@ -73,6 +73,19 @@ const publishCaseAcknowledgedTimeout = 5 * time.Second
 // needs.
 const publishSeverityChangedTimeout = 5 * time.Second
 
+// applyResponseSLATimeout bounds registerCaseSLAClocks'/
+// applyResponseSLAOnComment's own GetCaseByID/author resolution
+// (SearchCaseComments) + role lookup (SearchUsers) + SLAEngineService calls
+// — same reasoning as publishCaseCreatedTimeout, though these aren't
+// publishes at all (see SLAEngineService's own doc comment for why they're
+// independent of s.publisher/Event Hub entirely).
+const applyResponseSLATimeout = 5 * time.Second
+
+// applyCaseStateSLATimeout bounds registerCaseSLAClocks'/
+// applyCaseStateSLAEffects' own GetCaseByID/SLAEngineService calls — same
+// reasoning as applyResponseSLATimeout.
+const applyCaseStateSLATimeout = 5 * time.Second
+
 // applyCustomerReplyTimeout bounds applyCustomerReplyStateTransition's own
 // GetCaseByID + author resolution + role lookup + UpdateCase calls — same
 // reasoning as applyResponseSLATimeout.
@@ -824,20 +837,36 @@ type snCaseService struct {
 	// customerRoles backs applyCustomerReplyStateTransition — see that
 	// function's own doc comment and config.Config.CustomerRoles'. May be
 	// empty (unconfigured), treated the same "can't confirm authorship,
-	// skip" way supportEngineerRole == "" is.
+	// skip" way csEngineerRole == "" is.
 	customerRoles []string
+	// csEngineerRole backs applyResponseSLAOnComment — see that
+	// function's own doc comment and config.Config.CSEngineerRole's.
+	// May be empty (unconfigured), treated as "can't confirm authorship,
+	// skip" rather than an error.
+	csEngineerRole string
+	// slaEngine is nil when this service is running with no database
+	// configured (see config.Config.HasDatabase/routes.go's own comment on
+	// its construction) — every call site must check before using it, same
+	// as publisher. Backs publishCaseCreated's registration step (via
+	// registerCaseSLAClocks), applyResponseSLAOnComment, and
+	// applyCaseStateSLAEffects. See internal/service/sla_engine_service.go.
+	slaEngine SLAEngineService
 }
 
 // NewSNCaseService constructs a CaseService that delegates SearchCases to the
 // Choreo API and all write/read-by-id operations to pgFallback. publisher may
-// be nil (see snCaseService.publisher's doc comment).
-func NewServiceNowCaseService(client *integrationservice.Client, pgFallback CaseService, publisher EventPublisherService, userSvc SNUserService, customerRoles []string) CaseService {
+// be nil (see snCaseService.publisher's doc comment). slaEngine may also be
+// nil (see snCaseService.slaEngine's doc comment); csEngineerRole may be
+// "" (unconfigured).
+func NewServiceNowCaseService(client *integrationservice.Client, pgFallback CaseService, publisher EventPublisherService, userSvc SNUserService, customerRoles []string, csEngineerRole string, slaEngine SLAEngineService) CaseService {
 	return &snCaseService{
-		client:        client,
-		pgFallback:    pgFallback,
-		publisher:     publisher,
-		userSvc:       userSvc,
-		customerRoles: customerRoles,
+		client:         client,
+		pgFallback:     pgFallback,
+		publisher:      publisher,
+		userSvc:        userSvc,
+		customerRoles:  customerRoles,
+		csEngineerRole: csEngineerRole,
+		slaEngine:      slaEngine,
 	}
 }
 
@@ -1026,7 +1055,46 @@ func (s *snCaseService) CreateCase(ctx context.Context, req domain.CreateCaseReq
 		},
 	}
 	s.publishCaseCreated(ctx, req, resp.Case.ID)
+	// SLA-clock registration is scoped to req.Type == "case" only (plain
+	// support cases) -- service_request/engagement/security_report_analysis/
+	// announcement have no sla_policy naming convention this engine's
+	// resolver understands (see sla_policy_resolver.go's own doc comment on
+	// scope), and are out of scope for this change. Runs after
+	// publishCaseCreated, sharing its own s.slaEngine==nil guard implicitly
+	// (RegisterCaseClocks is itself a no-op-safe best-effort call), and
+	// deliberately does its own GetCaseByID fetch rather than reusing
+	// publishCaseCreated's internal one (which isn't exposed to this call
+	// site) -- same "independent re-fetch" pattern every other best-effort
+	// hook in this file already uses (applyResponseSLAOnComment,
+	// applyCustomerReplyStateTransition).
+	if req.Type == "case" {
+		s.registerCaseSLAClocks(ctx, resp.Case.ID)
+	}
 	return resp, nil
+}
+
+// registerCaseSLAClocks best-effort registers the CSM-native SLA engine's
+// clocks for a newly created case (see SLAEngineService.RegisterCaseClocks).
+// Skips entirely when s.slaEngine is nil (no database configured — see
+// snCaseService.slaEngine's own doc comment) or when the re-fetch below
+// fails; both are logged, neither fails case creation.
+func (s *snCaseService) registerCaseSLAClocks(ctx context.Context, caseID string) {
+	if s.slaEngine == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, applyCaseStateSLATimeout)
+	defer cancel()
+
+	cv, err := s.GetCaseByID(ctx, caseID)
+	if err != nil {
+		slog.ErrorContext(ctx, "sn create case: sla clock registration not evaluated, get case failed", "caseId", caseID)
+		return
+	}
+	projectID := ""
+	if cv.ProjectDetails != nil {
+		projectID = cv.ProjectDetails.ID
+	}
+	s.slaEngine.RegisterCaseClocks(ctx, caseID, cv.Severity, projectID)
 }
 
 // publishCaseCreated best-effort publishes a case.created event for a newly
@@ -1340,6 +1408,81 @@ func publishCommentAddedEvent(ctx context.Context, publisher EventPublisherServi
 // for its own, separate purpose, but never returns or shares it, and is
 // itself skipped when s.publisher is nil — not something this can rely on).
 //
+// applyResponseSLAOnComment marks the case's CSM-native "response" SLA
+// clock complete (via SLAEngineService.CompleteResponseClock, idempotently
+// — a clock already ACHIEVED/BREACHED/etc. is simply not touched again,
+// see repository.SLAEngineRepository.CompleteClock's own doc comment) when
+// the new comment is a customer-visible reply (req.Type ==
+// domain.CommentTypeComment — work notes and system activity entries don't
+// count as a response) from a user holding s.csEngineerRole.
+//
+// This is a pure in-process DB operation, deliberately NOT gated on
+// s.publisher — unlike every publishXxx function in this file, it never
+// touches Event Hub at all, so a deployment without Event Hub configured
+// must not lose SLA tracking as a side effect. It IS gated on s.slaEngine
+// being non-nil (no database configured — see snCaseService.slaEngine's
+// own doc comment).
+//
+// entity-service has no auth/identity layer of its own (the
+// x-user-id-token it forwards is opaque), so "is this comment's author a
+// support engineer" can't be answered from anything in this request — it's
+// answered by resolving the comment's author (resolveCommentAuthor, the
+// same lookup publishCommentAdded already needs for its own display name)
+// and checking their ServiceNow role via s.userSvc.SearchUsers, filtered
+// by the author's email. s.csEngineerRole being "" (unconfigured — see
+// config.Config.CSEngineerRole's own doc comment) means this can
+// never be confirmed, so this skips entirely rather than guessing.
+func (s *snCaseService) applyResponseSLAOnComment(ctx context.Context, req domain.CreateCaseCommentRequest, commentID string) {
+	if req.Type != domain.CommentTypeComment || s.csEngineerRole == "" || s.slaEngine == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, applyResponseSLATimeout)
+	defer cancel()
+
+	author := s.resolveCommentAuthor(ctx, req.CaseID, commentID)
+	if author == nil || author.Email == "" {
+		slog.InfoContext(ctx, "sn create comment: response SLA not evaluated, could not resolve comment author's email", "caseId", req.CaseID)
+		return
+	}
+
+	usersResp, err := s.userSvc.SearchUsers(ctx, domain.SearchUsersRequest{
+		Pagination: domain.Pagination{Limit: 1},
+		Filters:    domain.SearchUsersFilters{Emails: []string{author.Email}},
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "sn create comment: response SLA not evaluated, user role lookup failed", "caseId", req.CaseID)
+		return
+	}
+
+	isSupportEngineer := false
+	for _, u := range usersResp.Users {
+		if slices.Contains(u.Roles, s.csEngineerRole) {
+			isSupportEngineer = true
+			break
+		}
+	}
+	if !isSupportEngineer {
+		return
+	}
+
+	s.slaEngine.CompleteResponseClock(ctx, req.CaseID)
+}
+
+// applyCaseStateSLAEffects best-effort applies the CSM-native SLA engine's
+// state-transition effects (see SLAEngineService.ApplyCaseStateEffects'
+// own doc comment for the exact per-state behavior) after UpdateCase
+// changes a case's state. A pure in-process DB operation, deliberately
+// independent of s.publisher — see this method's own call site in
+// UpdateCase for why. Skipped entirely when s.slaEngine is nil (no
+// database configured — see snCaseService.slaEngine's own doc comment);
+// that guard lives at the call site, not here, matching every other
+// nil-publisher guard in this file.
+func (s *snCaseService) applyCaseStateSLAEffects(ctx context.Context, caseID string, state domain.CaseState) {
+	ctx, cancel := context.WithTimeout(ctx, applyCaseStateSLATimeout)
+	defer cancel()
+	s.slaEngine.ApplyCaseStateEffects(ctx, caseID, state)
+}
+
 // Same role-lookup mechanism as applyResponseSLAOnComment (this service has
 // no auth/identity layer of its own, so "is this comment's author a
 // customer" is answered by resolving the author and checking their
@@ -2036,6 +2179,7 @@ func (s *snCaseService) CreateCaseComment(ctx context.Context, req domain.Create
 		},
 	}
 	s.publishCommentAdded(ctx, req, result.Comment.ID)
+	s.applyResponseSLAOnComment(ctx, req, result.Comment.ID)
 	s.applyCustomerReplyStateTransition(ctx, req, result.Comment.ID)
 	return result, nil
 }
@@ -3049,6 +3193,25 @@ func (s *snCaseService) UpdateCase(ctx context.Context, req domain.UpdateCaseReq
 
 	if publishStatusChange && snResp.Case.State != nil {
 		s.publishStatusChanged(ctx, req.ID, snResp.Case.State.Label, caseBeforeUpdate)
+	}
+	// Deliberately independent of publishStatusChange (which is also gated
+	// on s.publisher != nil) — see SLAEngineService.ApplyCaseStateEffects'
+	// own doc comment for why pause/resume/completion must not depend on
+	// Event Hub being configured. req.State != nil alone (not the
+	// no-op-detecting publishStatusChange flag) is enough: every effect
+	// ApplyCaseStateEffects applies is idempotent, so a caller re-PATCHing
+	// the case's own current state just redundantly re-applies the same
+	// effect harmlessly.
+	//
+	// Guards on resp.Case.State (the converted domain state), not
+	// snResp.Case.State (the raw SN label) -- snCaseStateLabelToEnum can
+	// fail on an unrecognised label, leaving resp.Case.State nil while
+	// snResp.Case.State is still non-nil; guarding on the raw field would
+	// then pass derefState(resp.Case.State)'s zero value ("") through to
+	// ApplyCaseStateSLAEffects' default branch, which resumes both clocks
+	// for a case whose real new state was never actually established.
+	if s.slaEngine != nil && req.State != nil && resp.Case.State != nil {
+		s.applyCaseStateSLAEffects(ctx, req.ID, derefState(resp.Case.State))
 	}
 	if publishCaseAssign {
 		assigneeName := *req.AssigneeEmail
