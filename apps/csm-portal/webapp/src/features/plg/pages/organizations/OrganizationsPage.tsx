@@ -57,6 +57,15 @@ export default function OrganizationsPage() {
   const [stage, setStage] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [ownerRef, setOwnerRef] = useState<UserRef | null>(null);
+  // Bumped by Clear to remount the owner picker.
+  //
+  // The picker holds its own search term, and that term is state Clear has no
+  // other way to reach: resetting ownerId alone left the dropdown still showing
+  // the previous search — the field read "Anyone" and the table unfiltered,
+  // while the list underneath was still the matches for whatever had been typed.
+  // Remounting retires the child's state with the parent's, which an effect
+  // syncing the two could always drift out of.
+  const [pickerKey, setPickerKey] = useState(0);
   const [page, setPage] = useState(0);
 
   const request = useMemo(
@@ -142,6 +151,7 @@ export default function OrganizationsPage() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 2.5 }}>
             <CSUserSelect
+              key={pickerKey}
               label="CS owner"
               value={ownerId}
               extraOptions={OWNER_FILTER_OPTIONS}
@@ -162,6 +172,10 @@ export default function OrganizationsPage() {
                 setProductCode("");
                 setStage("");
                 setOwnerId("");
+                // Without this the picker would keep offering the engineer it
+                // last pinned, as an option nothing had selected.
+                setOwnerRef(null);
+                setPickerKey((n) => n + 1);
                 setPage(0);
               }}
             >
