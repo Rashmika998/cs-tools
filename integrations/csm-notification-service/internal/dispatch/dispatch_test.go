@@ -323,35 +323,26 @@ func TestDispatcher_Handle_CaseCreated_NonCaseTypesSkipChatButStillEmail(t *test
 	}
 }
 
-// TestDispatcher_Handle_CaseCreated_LowSeveritySkipsChatButStillEmail verifies
-// a LOW/S4-severity "case" sends no Google Chat alert — S4 is WSO2's own
-// best-efforts support tier and doesn't warrant one — while the email
-// reaction still fires normally, and a non-LOW severity is unaffected.
-func TestDispatcher_Handle_CaseCreated_LowSeveritySkipsChatButStillEmail(t *testing.T) {
-	testCases := []struct {
-		name     string
-		priority string
-		wantChat bool
-	}{
-		{"LOW skips chat", "LOW", false},
-		{"lowercase low still matches (case-insensitive)", "low", false},
-		{"HIGH still sends chat", "HIGH", true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+// TestDispatcher_Handle_CaseCreated_SendsChatRegardlessOfSeverity verifies a
+// "case" sends a Google Chat alert for every severity, LOW/S4 included --
+// this used to skip Chat for LOW specifically (S4 is WSO2's own
+// best-efforts support tier), reversed per explicit product direction.
+func TestDispatcher_Handle_CaseCreated_SendsChatRegardlessOfSeverity(t *testing.T) {
+	testCases := []string{"LOW", "low", "HIGH", ""}
+	for _, priority := range testCases {
+		t.Run(priority, func(t *testing.T) {
 			email := &mockEmailSender{}
 			chat := &mockGoogleChatSender{}
 			d := newTestDispatcher(email, chat, &mockCallSender{})
 
-			record := eventbus.Record{Value: []byte(`{"type":"case.created","entityId":"C-1","payload":{"reporterName":"Reporter","projectName":"Proj","projectId":"PROJ-1","caseId":"C-1","caseTitle":"Something broke","caseType":"CASE","priority":"` + tc.priority + `","product":"api-manager","createdAt":"2026-01-01","description":"desc","recipients":["test-recipient@example.com"]}}`)}
+			record := eventbus.Record{Value: []byte(`{"type":"case.created","entityId":"C-1","payload":{"reporterName":"Reporter","projectName":"Proj","projectId":"PROJ-1","caseId":"C-1","caseTitle":"Something broke","caseType":"CASE","priority":"` + priority + `","product":"api-manager","createdAt":"2026-01-01","description":"desc","recipients":["test-recipient@example.com"]}}`)}
 
 			if err := d.Handle(context.Background(), record); err != nil {
 				t.Fatalf("Handle() error = %v", err)
 			}
 
-			gotChat := len(chat.caseCreatedCalls) > 0
-			if gotChat != tc.wantChat {
-				t.Errorf("SendCaseCreatedAlert called = %v, want %v", gotChat, tc.wantChat)
+			if len(chat.caseCreatedCalls) != 1 {
+				t.Errorf("SendCaseCreatedAlert call count = %d, want 1 regardless of severity", len(chat.caseCreatedCalls))
 			}
 			if len(email.calls) != 1 {
 				t.Errorf("expected the email reaction to still fire, got %d call(s)", len(email.calls))

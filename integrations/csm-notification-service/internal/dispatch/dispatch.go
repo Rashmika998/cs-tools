@@ -580,11 +580,9 @@ func (d *Dispatcher) handleCaseCreated(ctx context.Context, record eventbus.Reco
 	// file's own established "don't suppress on an unrecognized value"
 	// convention (see e.g. the unmatched-product Chat-space fallback).
 	//
-	// Also skipped for a LOW/S4-severity "case" — explicit product
-	// direction: S4 is WSO2's own best-efforts support tier and doesn't
-	// warrant a Chat alert the way S0-S3 do. Only affects "case" in
-	// practice (the other four types never carry a severity at all, so
-	// p.Priority is always "" for them, never "LOW").
+	// A LOW/S4-severity "case" used to be excluded here too (S4 is WSO2's
+	// own best-efforts support tier) — reversed per explicit product
+	// direction: a Chat alert now goes out for every severity.
 	//
 	// chatKey is simply never claimed when skipped; forgetting an unclaimed
 	// key below is a harmless no-op (see Dispatcher.forget), so nothing
@@ -594,7 +592,7 @@ func (d *Dispatcher) handleCaseCreated(ctx context.Context, record eventbus.Reco
 	// unconfigured audience is a no-op inside SendCaseCreatedAlert itself,
 	// not distinguishable here from a genuine send, so there's no "empty
 	// product, skip" branch left the way there used to be.
-	if !isNonCaseCaseType(p.CaseType) && !isLowSeverity(p.Priority) {
+	if !isNonCaseCaseType(p.CaseType) {
 		chatOwned := d.claim(chatKey)
 		if chatOwned {
 			caseLink := d.links.CSMLink(p.CaseID)
@@ -1135,13 +1133,6 @@ var nonCaseCaseTypes = map[string]bool{
 // this is an exclude-list, not an include-list.
 func isNonCaseCaseType(caseType string) bool {
 	return nonCaseCaseTypes[caseType]
-}
-
-// isLowSeverity reports whether severity is entity-service's LOW/S4 value
-// (case/whitespace-insensitive) — handleCaseCreated's own gate for skipping
-// its Google Chat alert on a LOW-severity "case".
-func isLowSeverity(severity string) bool {
-	return strings.EqualFold(strings.TrimSpace(severity), "LOW")
 }
 
 // severityLabelAndColor resolves severity to its Chat display label/color
