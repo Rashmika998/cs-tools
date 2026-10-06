@@ -6244,7 +6244,44 @@ in this order:**
 Every chip submitted must belong to the submitted `emojiId`'s own option
 set — a chip from a different emoji's question is rejected with a
 `ValidationError`, not silently accepted. `CreateCaseFeedback` validates
-`emojiId` against `work_item_feedback_metric.is_active` the same way.
+`emojiId` against both `work_item_feedback_metric.is_active` and
+`selected_image IS NOT NULL` — the exact same definition `ListFeedbackEmojis`
+uses for "a real catalog emoji", so a submission can never be accepted for
+an id `GET /metadata` would never have offered as a choice in the first
+place.
+
+**`GetCaseFeedback` (the read side) is internal-caller-only — an
+external/customer caller gets `403 Forbidden` before the repository is even
+reached, by explicit product decision.** A case's submitted feedback (the
+customer's own satisfaction rating/comment) is a one-way signal meant for
+WSO2 staff, never shown back to the customer who submitted it — not even
+for a case they are themselves a registered contact on. `caseService.
+requireInternalCaller` delegates to the shared `RequireInternalCaller`
+(`require_internal.go`), the identical "no scope short of internal is safe
+to hand this out under" gate `slaStatusService`'s own `requireInternalCaller`
+already uses for the same reasoning.
+
+**`CreateCaseFeedback` (the write side) needs no equivalent explicit
+check** — a caller may only submit feedback for a case they actually have
+access to, but this is enforced entirely by RLS on the existence/state query
+above, not by a second access check in the service layer. Every request's
+identity is already stamped onto its context once, by
+`callerIdentityMiddleware` (`internal/server/identity_middleware.go`),
+before any handler runs; `CreateCaseFeedback` runs inside a transaction that
+reads that same identity and sets it as session GUCs, so `work_item`'s own
+`FORCE ROW LEVEL SECURITY` already makes a case outside the caller's scope
+return zero rows on that one query — the same "exists, just not yours ->
+NotFoundError" posture every by-id case read already has. An earlier
+revision added an explicit `GetCaseByID` call here (mirroring
+`EscalationService.CreateEscalation`'s own check-then-mutate shape) before
+realizing it was pure duplication: `GetCaseByID` is the single most
+expensive read in this file (~15 joins plus two extra round trips for
+tags/watchers), re-proving something the one lightweight query
+`CreateCaseFeedback` already runs provides for free. Removed; see
+`TestCaseFeedbackIntegration_RejectsSubmissionForAnOutOfScopeCase`
+(`case_feedback_repo_integration_test.go`) for the real, RLS-level
+regression guard — a service-layer test with a stub repository cannot
+exercise this at all, since RLS only exists in real Postgres.
 
 **Identity, not invention.** `AssessmentID` (`CaseEmojiFeedback`/
 `CaseFeedbackResult`'s own wire field) is left at its Go zero value on this

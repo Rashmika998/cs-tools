@@ -218,6 +218,66 @@ func TestCaseFeedbackIntegration_RejectsSubmissionOnAnOpenCase(t *testing.T) {
 	}
 }
 
+// TestCaseFeedbackIntegration_RejectsSubmissionForAnOutOfScopeCase is the
+// regression guard for "a caller may only submit feedback for a case they
+// actually have access to". This is enforced entirely by RLS on
+// CreateCaseFeedback's own existence/state query -- not by any explicit
+// access check in case_service.go (see that method's own doc comment for
+// why an earlier revision's extra GetCaseByID call was removed: it was
+// redundant with, and far more expensive than, the protection this single
+// query already provides for free). A service-layer test with a stub
+// CaseRepository cannot exercise this at all -- RLS only exists in real
+// Postgres -- so this is the one real test of that guarantee.
+//
+// Known environment limitation (same as other RLS integration tests in this
+// package -- e.g. change_request_repo_integration_test.go's own note on
+// this): a CASE_STATS_TEST_DSN that connects as a Postgres superuser (the
+// local compose stack's own "postgres" role, confirmed live) bypasses RLS
+// unconditionally, so this assertion only genuinely exercises the policy
+// against a non-superuser connection role. Verified by hand against this
+// package's own schema with a real non-superuser role and the exact session
+// GUCs Scoped itself sets (app.is_internal/app.viewer_project_ids): an
+// internal identity sees a no-project work_item row, a non-internal one
+// with an empty viewer_project_ids does not -- confirming the mechanism
+// this test exercises is real, even on a run where the DSN's own role
+// can't surface a failure if it ever regressed.
+func TestCaseFeedbackIntegration_RejectsSubmissionForAnOutOfScopeCase(t *testing.T) {
+	pool := caseStatsPool(t)
+	seedCaseFeedbackFixture(t, pool)
+	repo := repository.NewCaseRepository(repository.NewScoped(pool))
+
+	// cfCaseID has no project_id at all (see seedCaseFeedbackFixture), so it
+	// can never be in any non-Unrestricted caller's app.viewer_project_ids --
+	// a stranger scope is rejected the same way a genuinely unregistered
+	// contact would be.
+	strangerCtx := repository.WithCallerIdentity(context.Background(), repository.SearchScope{
+		Unrestricted: false,
+		ViewerEmail:  "cf-stranger@test.local",
+	})
+	_, err := repo.CreateCaseFeedback(strangerCtx, cfCaseID, repository.CreateCaseFeedbackParams{
+		EmojiID:           cfEmojiID,
+		ChipIDs:           []string{cfChipID},
+		SubmittedByUserID: cfUserID,
+		ActorEmail:        "cf-stranger@test.local",
+	})
+	var notFound *apierror.NotFoundError
+	if !errors.As(err, &notFound) {
+		t.Fatalf("got %v, want *apierror.NotFoundError for a case outside the caller's scope", err)
+	}
+
+	// Confirm it genuinely never wrote anything -- checked as an internal
+	// (Unrestricted) caller, since the stranger scope above couldn't see
+	// this case well enough to even ask.
+	systemCtx := repository.WithSystemIdentity(context.Background())
+	_, found, getErr := repo.GetCaseFeedback(systemCtx, cfCaseID)
+	if getErr != nil {
+		t.Fatalf("GetCaseFeedback: %v", getErr)
+	}
+	if found {
+		t.Fatal("a rejected out-of-scope submission left a feedback row behind")
+	}
+}
+
 func TestCaseFeedbackIntegration_UnknownEmojiIsRejected(t *testing.T) {
 	pool := caseStatsPool(t)
 	seedCaseFeedbackFixture(t, pool)

@@ -91,6 +91,32 @@ func TestCaseService_GetCaseFeedback_MapsRow(t *testing.T) {
 	}
 }
 
+// TestCaseService_GetCaseFeedback_RejectsExternalCaller is the regression
+// guard for the explicit product decision that a case's submitted feedback
+// (the customer's own satisfaction rating/comment) is never shown back to
+// an external/customer caller -- only internal users may view it, regardless
+// of whether the external caller is themselves a registered contact on the
+// case's own project. The repository must never even be reached.
+func TestCaseService_GetCaseFeedback_RejectsExternalCaller(t *testing.T) {
+	reached := false
+	repo := &stubCaseRepo{
+		getCaseFeedback: func(context.Context, string) (repository.CaseFeedbackRow, bool, error) {
+			reached = true
+			return repository.CaseFeedbackRow{}, false, nil
+		},
+	}
+	svc := NewCaseService(repo, stubUserRepo{}, nil, stubAccess{scope: AccessScope{Unrestricted: false}}, nil)
+
+	_, err := svc.GetCaseFeedback(context.Background(), testFeedbackCaseUUID)
+	var forbidden *apierror.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("expected ForbiddenError, got %v", err)
+	}
+	if reached {
+		t.Fatal("GetCaseFeedback reached the repository for a non-internal caller")
+	}
+}
+
 func TestCaseService_GetCaseFeedback_RejectsInvalidID(t *testing.T) {
 	svc := NewCaseService(&stubCaseRepo{}, stubUserRepo{}, nil, alwaysUnrestrictedAccess{}, nil)
 
@@ -158,6 +184,14 @@ func TestCaseService_SubmitCaseFeedback_PropagatesConflict(t *testing.T) {
 		t.Fatalf("expected ConflictError, got %v", err)
 	}
 }
+
+// "A caller may only submit feedback for a case they actually have access
+// to" is NOT tested here: it's enforced entirely by RLS on the real
+// CreateCaseFeedback query (case_feedback_repo.go), driven by the identity
+// callerIdentityMiddleware stamps onto every request's context -- a stub
+// CaseRepository has no RLS to exercise, so the real regression guard is
+// TestCaseFeedbackIntegration_RejectsSubmissionForAnOutOfScopeCase
+// (case_feedback_repo_integration_test.go), against a real Postgres.
 
 func TestCaseService_SubmitCaseFeedback_RejectsInvalidIDs(t *testing.T) {
 	svc := NewCaseService(&stubCaseRepo{}, stubUserRepo{}, nil, alwaysUnrestrictedAccess{}, nil)

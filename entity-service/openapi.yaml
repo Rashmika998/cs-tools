@@ -9698,6 +9698,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Case feedback can only be viewed by internal users.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Case not found, or no feedback has been submitted for this case yet.
           content:
@@ -9747,7 +9753,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
-          description: Case not found.
+          description: Case not found, or not accessible to the caller.
           content:
             application/json:
               schema:
