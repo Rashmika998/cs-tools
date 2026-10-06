@@ -57,7 +57,14 @@ CREATE TABLE IF NOT EXISTS sla_duration_policy (
 --                                        implies is handled downstream in
 --                                        csm-notification-service, which
 --                                        alone knows real elapsed time)
---   S4 (Low):           24h / (none) / (none) -- "best efforts", response only
+--   S4 (Low):           24h / (none) / (none) -- "best efforts", response only.
+--                                        24h is the identical flat-duration
+--                                        approximation of "1 Business Day" --
+--                                        same known gap as S3's own "1
+--                                        Business Week" above (no weekend/
+--                                        US-holiday calendar exists anywhere
+--                                        in this schema to compute either
+--                                        properly against), not fixed here.
 INSERT INTO sla_duration_policy (severity, clock_type, duration) VALUES
     ('S0', 'response',   '15 minutes'),
     ('S0', 'workaround', '4 hours'),
