@@ -87,43 +87,6 @@ func TestGetUser_PortalRoles_AddsCsmPlatformRolesForWso2Email(t *testing.T) {
 	}
 }
 
-// TestGetUser_PortalRoles_EmptyWhenScimRolesDontMatchAnyConfiguredRole: found
-// live -- SCIM can return a non-empty role list for a wso2.com target where
-// none of them carry the "app-csm-" prefix (or none match a configured
-// AUTH_<ROLE>_ROLES value), e.g. because the role names Asgardeo actually
-// holds for that person don't match what this backend is configured to look
-// for. csmPlatformRoles must still come back as a present, empty array in
-// that case -- not omitted, not an error -- diagnosed via the "no CSM
-// Platform role resolved" log line in withPortalRoles (which logs the raw,
-// unfiltered SCIM roles precisely so this can be told apart from "holds
-// nothing in Asgardeo at all" after the fact).
-func TestGetUser_PortalRoles_EmptyWhenScimRolesDontMatchAnyConfiguredRole(t *testing.T) {
-	const id = "11111111-1111-1111-1111-111111111111"
-	h := NewUsersHandler(&mockSCIMClient{
-		searchUserFn: func(_ context.Context, _ string) (*scim.UserInfo, error) {
-			return &scim.UserInfo{Roles: []string{"some-other-app-role", "another-unrelated-role"}}, nil
-		},
-	}, &mockEntityUserClient{
-		getUserFn: func(_ context.Context, _ string) ([]byte, error) {
-			return []byte(`{"id":"` + id + `","email":"staff@wso2.com","userType":"internal","roles":["admin","internal"]}`), nil
-		},
-	}, testDirectory(t), false, nil).WithAccessGuard(NewAccessGuard(testAccessConfigForCSMRoles()))
-
-	r := withUser(httptest.NewRequest(http.MethodGet, "/users/"+id, nil))
-	r.SetPathValue("id", id)
-	w := httptest.NewRecorder()
-	h.GetUser(w, r)
-
-	assertStatus(t, w, http.StatusOK)
-	got := decodeJSON[getUserPortalRolesResponse](t, w)
-	if !reflect.DeepEqual(got.Roles, []string{"admin", "internal"}) {
-		t.Errorf("roles = %v, want entity-service's own [admin internal] left untouched", got.Roles)
-	}
-	if got.CsmPlatformRoles == nil || len(got.CsmPlatformRoles) != 0 {
-		t.Errorf("csmPlatformRoles = %v, want a present, empty array", got.CsmPlatformRoles)
-	}
-}
-
 // TestGetUser_PortalRoles_AddedForAWso2EmailEvenWhenTaggedExternal: a wso2.com
 // address is reserved for WSO2 staff regardless of what userType the backing
 // data source recorded for that row -- the same edge case

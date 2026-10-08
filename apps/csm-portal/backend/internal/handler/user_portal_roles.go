@@ -93,22 +93,7 @@ func (h *UsersHandler) withPortalRoles(ctx context.Context, raw []byte, callerID
 		}
 	}
 
-	portalRoleKeys := h.access.RolesFor(csmRoles)
-	// Diagnostic only, not a failure: a staff member can legitimately hold no
-	// CSM Platform role. Logs the raw, unfiltered SCIM role names (not PII)
-	// whenever the resolved list comes back empty, so a report of "this
-	// person's real Asgardeo role isn't showing" can be checked against what
-	// SCIM actually returned -- without it there is no way to tell a genuine
-	// "holds nothing" apart from "info.Roles didn't have the 'app-csm-'
-	// prefix" apart from "had it, but didn't match any configured
-	// AUTH_<ROLE>_ROLES value" after the fact, since none of that survives
-	// into the API response itself.
-	if len(portalRoleKeys) == 0 {
-		slog.InfoContext(ctx, "withPortalRoles: no CSM Platform role resolved",
-			"userID", callerID, "scimRoles", info.Roles, "csmPrefixedRoles", csmRoles)
-	}
-
-	encoded, err := json.Marshal(portalRoleKeys)
+	encoded, err := json.Marshal(h.access.RolesFor(csmRoles))
 	if err != nil {
 		slog.WarnContext(ctx, "withPortalRoles: encode roles failed", "userID", callerID, "err", err)
 		return raw
