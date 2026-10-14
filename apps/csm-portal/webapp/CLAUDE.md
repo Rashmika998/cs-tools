@@ -480,20 +480,32 @@ everything past the cap rolls into a response `othersCount`).
   mixing together every account past the top N adds noise, not information). `useWidgetGroupByData`'s
   own `total` is derived from the slices it actually returns, so hiding Others also drops it from the
   widget's displayed total, not just from the chart. A widget's own JSON config sets this directly —
-  there's no frontend toggle for it.
-- **`DashboardBarChart`'s x-axis category labels (account/bucket names) always render at a fixed
-  angle, not the library's default horizontal tick.** Found live: recharts' own default `<XAxis>` tick
-  silently drops a label it decides doesn't fit at the tile's rendered width — with several real,
+  there's no frontend toggle for it. **`shape: "bar"` ignores this config and always hides Others
+  anyway** — `DashboardWidgetTile` forces `hideOthers: true` onto the `groupBy` it passes to
+  `useWidgetGroupByData` whenever `shape === "bar"`, regardless of what a widget's own JSON config
+  says (reported live on "Top customers by open cases," which had `hideOthers` unset). A bar chart's
+  whole point is comparing named, labeled categories side by side; an unlabeled "everything else"
+  catch-all bar sitting among them reads as confusing rather than informative, unlike a pie chart,
+  where an "Others" wedge is a legitimate completeness signal — so this is a deliberate, bar-specific
+  override, not something a widget's config can opt back into. `shape: "pie"` is unaffected and still
+  honors `groupBy.hideOthers` as configured.
+- **`DashboardBarChart`'s x-axis category labels (account/bucket names) always render horizontally,
+  word-wrapped onto up to two lines — never rotated.** Found live: recharts' own default `<XAxis>`
+  tick silently drops a label it decides doesn't fit at the tile's rendered width — with several real,
   reasonably long account names on one "Top customers" bar chart, this meant *no* label rendered under
   *any* bar, not even on hover (the chart's own `tooltip` still showed the name, but only on hover,
   which was the actual reported complaint). Fixed by suppressing the library wrapper's own `<XAxis>`
   (`xAxis={{ show: false }}` on `<BarChart>`) and rendering a custom one as a plain child instead,
   with `interval={0}` (forces every tick to render, instead of recharts deciding some don't fit) and a
-  custom `tick` render function (`renderAngledAxisTick`) that rotates the label -35° and truncates it
-  past `MAX_X_AXIS_LABEL_CHARS` (14) — the chart's own hover tooltip still shows the untruncated name,
-  so nothing is actually lost, just not all shown under every bar at once. This is shared by every
-  `shape: "bar"` widget (`DashboardBarChart` has no per-widget config), not just "Top customers" —
-  there's no mechanism to special-case one widget's axis rendering today.
+  custom `tick` render function (`renderAxisTick`) that calls `wrapAxisLabel` to word-wrap the label
+  onto at most `MAX_X_AXIS_LABEL_LINES` (2) lines of at most `MAX_X_AXIS_LABEL_LINE_CHARS` (11)
+  characters each, rendered as stacked `<tspan>`s under a centered (`textAnchor="middle"`), unrotated
+  `<text>`. A first version of this rotated the label -35° instead — reported live as hard to read at
+  a glance, replaced with this horizontal two-line wrap. Whatever still doesn't fit after two lines is
+  dropped with an ellipsis on the second line; the chart's own hover tooltip still shows the
+  untruncated name either way, so nothing is actually lost, just not all shown under every bar at
+  once. This is shared by every `shape: "bar"` widget (`DashboardBarChart` has no per-widget config),
+  not just "Top customers" — there's no mechanism to special-case one widget's axis rendering today.
 - **Test-mocking note**: `DashboardWidgetTile.test.tsx`'s `vi.mock("@wso2/oxygen-ui-charts-react", ...)`
   must export a (no-op) `XAxis` alongside its existing `Pie`/`Bar`/`PieChart`/`BarChart`/`Cell` stand-ins
   now that `DashboardBarChart` renders one — omitting it fails every test that renders a `shape: "bar"`

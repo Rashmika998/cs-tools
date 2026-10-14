@@ -462,7 +462,23 @@ function DashboardWidgetTile({
     widgetId,
     resourceType,
     filters,
-    shape === "pie" || shape === "bar" ? (groupBy?.bucket ? undefined : groupBy) : undefined,
+    shape === "pie" || shape === "bar"
+      ? groupBy?.bucket
+        ? undefined
+        : // A bar chart has no good way to show an unlabeled "everything
+          // else" catch-all bucket alongside named, comparable categories —
+          // unlike a pie, where "Others" is a legitimate completeness
+          // slice, a bar chart's whole point is comparing named bars, and a
+          // stray extra bar with no real label just reads as confusing
+          // (reported live on "Top customers by open cases"). Forced here,
+          // not left to each widget's own `hideOthers` config: bar charts
+          // never show it, full stop, regardless of what an individual
+          // widget's config (set outside this repo, in deployment-specific
+          // dashboard JSON) happens to say.
+          shape === "bar" && groupBy
+          ? { ...groupBy, hideOthers: true }
+          : groupBy
+      : undefined,
     selectedTeamCreGroupId,
     selectedTeamSreGroupId,
     currentUserId,

@@ -46,7 +46,9 @@ import DirectoryEntityChip from "@features/csm-admin/components/DirectoryEntityC
 import QueryErrorState from "@components/QueryErrorState";
 import { useNavTransition } from "@hooks/useNavTransition";
 import { usePortalAccess } from "@context/current-user/usePortalAccess";
-import { useGetAccountEscalations } from "@features/csm-accounts/api/useGetAccountEscalations";
+// Unused while EscalationsSection below is commented out — see that
+// function's own doc comment.
+// import { useGetAccountEscalations } from "@features/csm-accounts/api/useGetAccountEscalations";
 import { GoogleDrive } from "@features/csm-accounts/components/GoogleDrive";
 
 /** "managed_cloud_subscription" -> "Managed Cloud Subscription". */
@@ -209,11 +211,13 @@ function ProjectsSection({ accountId }: { accountId: string }): JSX.Element {
   );
 }
 
-function formatDateTime(value?: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
-}
+// Unused while EscalationsSection below is commented out — see that
+// function's own doc comment.
+// function formatDateTime(value?: string | null): string {
+//   if (!value) return "—";
+//   const d = new Date(value);
+//   return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+// }
 
 /**
  * Account escalations — a former Support Portal Lite-only section, kept
@@ -225,93 +229,100 @@ function formatDateTime(value?: string | null): string {
  * check — a correctness risk not worth taking for a write action nobody
  * reported missing. Revisit if a viewer specifically needs to raise one from
  * here.
+ *
+ * Temporarily disabled (and its one call site commented out below): the
+ * underlying account-escalations upstream call is currently failing
+ * ("Upstream connection failed") in production. Re-enable once that's
+ * fixed — the whole function is commented out, not just its call site,
+ * since `noUnusedLocals` would otherwise fail the build on this file's now
+ * entirely unused `useGetAccountEscalations` import.
  */
-function EscalationsSection({ accountId }: { accountId: string }): JSX.Element {
-  const [page, setPage] = useState(0);
-  const rowsPerPage = 10;
-  const { data, isLoading, isError, error } = useGetAccountEscalations(
-    accountId,
-    page * rowsPerPage,
-    rowsPerPage,
-  );
-  const escalations = data ?? [];
-
-  return (
-    <Card sx={{ p: 2.5, display: "flex", flexDirection: "column", gap: 2 }}>
-      <Typography variant="subtitle2">Escalations</Typography>
-      <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}>
-        <Table size="small" sx={{ "& .MuiTableCell-root": { borderColor: "divider" } }}>
-          <TableHead>
-            <TableRow sx={{ bgcolor: "action.hover" }}>
-              <TableCell>ID</TableCell>
-              <TableCell>Severity</TableCell>
-              <TableCell>State</TableCell>
-              <TableCell>Escalated Date</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><Skeleton variant="rounded" width="60%" height={18} /></TableCell>
-                  <TableCell><Skeleton variant="rounded" width={90} height={22} /></TableCell>
-                  <TableCell><Skeleton variant="rounded" width={80} height={22} /></TableCell>
-                  <TableCell><Skeleton variant="rounded" width="50%" height={18} /></TableCell>
-                </TableRow>
-              ))
-            ) : isError ? (
-              <TableRow>
-                <TableCell colSpan={4} align="center">
-                  <QueryErrorState
-                    message={error instanceof Error && error.message.trim() ? error.message : "Failed to load escalations."}
-                    error={error}
-                  />
-                </TableCell>
-              </TableRow>
-            ) : escalations.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No escalations found for this account.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              escalations.map((e) => (
-                <TableRow key={e.id} hover>
-                  <TableCell>{e.id}</TableCell>
-                  <TableCell>
-                    <Chip size="small" label={e.severity} variant="outlined" />
-                  </TableCell>
-                  <TableCell>{e.state}</TableCell>
-                  <TableCell>{formatDateTime(e.escalatedOn)}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
-        <Button
-          size="small"
-          variant="outlined"
-          disabled={page === 0}
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-        >
-          Previous
-        </Button>
-        <Button
-          size="small"
-          variant="outlined"
-          disabled={escalations.length < rowsPerPage}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          Next
-        </Button>
-      </Box>
-    </Card>
-  );
-}
+// function EscalationsSection({ accountId }: { accountId: string }): JSX.Element {
+//   const [page, setPage] = useState(0);
+//   const rowsPerPage = 10;
+//   const { data, isLoading, isError, error } = useGetAccountEscalations(
+//     accountId,
+//     page * rowsPerPage,
+//     rowsPerPage,
+//   );
+//   const escalations = data ?? [];
+//
+//   return (
+//     <Card sx={{ p: 2.5, display: "flex", flexDirection: "column", gap: 2 }}>
+//       <Typography variant="subtitle2">Escalations</Typography>
+//       <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}>
+//         <Table size="small" sx={{ "& .MuiTableCell-root": { borderColor: "divider" } }}>
+//           <TableHead>
+//             <TableRow sx={{ bgcolor: "action.hover" }}>
+//               <TableCell>ID</TableCell>
+//               <TableCell>Severity</TableCell>
+//               <TableCell>State</TableCell>
+//               <TableCell>Escalated Date</TableCell>
+//             </TableRow>
+//           </TableHead>
+//           <TableBody>
+//             {isLoading ? (
+//               Array.from({ length: 3 }).map((_, i) => (
+//                 <TableRow key={i}>
+//                   <TableCell><Skeleton variant="rounded" width="60%" height={18} /></TableCell>
+//                   <TableCell><Skeleton variant="rounded" width={90} height={22} /></TableCell>
+//                   <TableCell><Skeleton variant="rounded" width={80} height={22} /></TableCell>
+//                   <TableCell><Skeleton variant="rounded" width="50%" height={18} /></TableCell>
+//                 </TableRow>
+//               ))
+//             ) : isError ? (
+//               <TableRow>
+//                 <TableCell colSpan={4} align="center">
+//                   <QueryErrorState
+//                     message={error instanceof Error && error.message.trim() ? error.message : "Failed to load escalations."}
+//                     error={error}
+//                   />
+//                 </TableCell>
+//               </TableRow>
+//             ) : escalations.length === 0 ? (
+//               <TableRow>
+//                 <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+//                   <Typography variant="body2" color="text.secondary">
+//                     No escalations found for this account.
+//                   </Typography>
+//                 </TableCell>
+//               </TableRow>
+//             ) : (
+//               escalations.map((e) => (
+//                 <TableRow key={e.id} hover>
+//                   <TableCell>{e.id}</TableCell>
+//                   <TableCell>
+//                     <Chip size="small" label={e.severity} variant="outlined" />
+//                   </TableCell>
+//                   <TableCell>{e.state}</TableCell>
+//                   <TableCell>{formatDateTime(e.escalatedOn)}</TableCell>
+//                 </TableRow>
+//               ))
+//             )}
+//           </TableBody>
+//         </Table>
+//       </TableContainer>
+//       <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+//         <Button
+//           size="small"
+//           variant="outlined"
+//           disabled={page === 0}
+//           onClick={() => setPage((p) => Math.max(0, p - 1))}
+//         >
+//           Previous
+//         </Button>
+//         <Button
+//           size="small"
+//           variant="outlined"
+//           disabled={escalations.length < rowsPerPage}
+//           onClick={() => setPage((p) => p + 1)}
+//         >
+//           Next
+//         </Button>
+//       </Box>
+//     </Card>
+//   );
+// }
 
 /**
  * Artifacts Repository — the account's linked Google Drive folder, another
@@ -510,7 +521,10 @@ export default function CsmAccountDetailPage(): JSX.Element {
 
       <ProjectsSection accountId={a.id} />
 
-      {isSplAudience && <EscalationsSection accountId={a.id} />}
+      {/* Temporarily disabled: the account-escalations upstream call is
+          currently failing ("Upstream connection failed") in production.
+          Re-enable once that's fixed. */}
+      {/* {isSplAudience && <EscalationsSection accountId={a.id} />} */}
       {isSplAudience && a.driveLocation && (
         <ArtifactsSection driveLocation={a.driveLocation} />
       )}
