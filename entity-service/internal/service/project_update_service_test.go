@@ -108,7 +108,7 @@ func TestPgProjectUpdateService_StoresSuspensionProcessState(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			repo := &stubProjectUpdateRepo{}
-			svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, testAdminRoles)
+			svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{})
 			ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
 
 			if _, err := svc.UpdateProject(ctx, "11111111-1111-1111-1111-111111111111", req); err != nil {
@@ -153,7 +153,7 @@ func TestPgProjectUpdateService_CallerResolution(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &stubProjectUpdateRepo{}
-			svc := NewProjectUpdateService(repo, testProjectUserRepo(), tc.access, testAdminRoles)
+			svc := NewProjectUpdateService(repo, testProjectUserRepo(), tc.access)
 			_, err := svc.UpdateProject(tc.ctx, "11111111-1111-1111-1111-111111111111", domain.ProjectUpdateRequest{EndDateClosureState: &open})
 			if tc.wantErr {
 				var unauth *apierror.UnauthorizedError
@@ -185,7 +185,7 @@ func TestPgProjectUpdateService_RejectsCallerOutsideProjectScope(t *testing.T) {
 	open := "Open"
 	repo := &stubProjectUpdateRepo{}
 	access := stubAccess{scope: AccessScope{ProjectIDs: []string{"22222222-2222-2222-2222-222222222222"}}}
-	svc := NewProjectUpdateService(repo, testProjectUserRepo(), access, testAdminRoles)
+	svc := NewProjectUpdateService(repo, testProjectUserRepo(), access)
 	ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
 
 	_, err := svc.UpdateProject(ctx, "11111111-1111-1111-1111-111111111111", domain.ProjectUpdateRequest{EndDateClosureState: &open})
@@ -203,7 +203,7 @@ func TestPgProjectUpdateService_RejectsCallerOutsideProjectScope(t *testing.T) {
 // ServiceNow-mode contract's own "at least one field must be provided" rule.
 func TestPgProjectUpdateService_RequiresAtLeastOneField(t *testing.T) {
 	repo := &stubProjectUpdateRepo{}
-	svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, testAdminRoles)
+	svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{})
 	ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
 
 	_, err := svc.UpdateProject(ctx, "11111111-1111-1111-1111-111111111111", domain.ProjectUpdateRequest{})
@@ -234,7 +234,7 @@ func TestPgProjectUpdateService_PlainPostgresUpdatesFieldsAndNeverCallsSN(t *tes
 			return wantResult, nil
 		},
 	}
-	svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, testAdminRoles)
+	svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{})
 	ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
 
 	resp, err := svc.UpdateProject(ctx, wantResult.ID, domain.ProjectUpdateRequest{
@@ -260,61 +260,22 @@ func TestPgProjectUpdateService_PlainPostgresUpdatesFieldsAndNeverCallsSN(t *tes
 	}
 }
 
-// testAdminRoles is AUTH_ADMIN_ROLES as this test file's own stand-in --
-// the only role holdsAnyRole(identity.Roles, adminRoles) accepts in these
-// tests.
-var testAdminRoles = []string{"admin"}
-
-// contextWithAdminIdentity layers an admin-role identity (what
-// auth.Middleware would populate from a real token's roles claim) on top of
-// a user-id-token context, so UpdateProject's holdsAnyRole check against
-// auth.IdentityFromContext(ctx).Roles passes.
-func contextWithAdminIdentity(ctx context.Context) context.Context {
-	return auth.WithIdentity(ctx, auth.Identity{Validated: true, Roles: []string{"admin"}})
-}
-
 // TestPgProjectUpdateService_AcceptsClosureStateOverride pins that a request
-// naming only ClosureState, from a caller holding an admin role, is
-// recognized as having something to store and reaches the repository, the
-// same as any other stored field.
+// naming only ClosureState (the admin-only direct override -- fine-grained
+// authorization for it lives in the BFF, not here) is recognized as having
+// something to store and reaches the repository, the same as any other
+// stored field.
 func TestPgProjectUpdateService_AcceptsClosureStateOverride(t *testing.T) {
 	closureState := "SUSPENDED"
 	repo := &stubProjectUpdateRepo{}
-	svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, testAdminRoles)
-	ctx := contextWithAdminIdentity(contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com")))
+	svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{})
+	ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
 
 	if _, err := svc.UpdateProject(ctx, "11111111-1111-1111-1111-111111111111", domain.ProjectUpdateRequest{ClosureState: &closureState}); err != nil {
 		t.Fatalf("UpdateProject() error = %v, want success", err)
 	}
 	if !repo.called || repo.gotReq.ClosureState == nil || *repo.gotReq.ClosureState != closureState {
 		t.Fatalf("repo called = %v with closureState %v, want %q", repo.called, repo.gotReq.ClosureState, closureState)
-	}
-}
-
-// TestPgProjectUpdateService_ClosureStateRequiresAdminRole is the regression
-// guard for a real gap caught in review: PATCH /projects/{id} is not
-// internalOnly, and AccessScope.Unrestricted cannot distinguish an admin
-// from a plain cs_engineer (both resolve to the identical scope), so without
-// this check any internal caller -- or any project's own external contact,
-// who already legitimately reaches this same route for hasAgent/
-// hasKbReferences via the customer portal -- could set closureState
-// directly, bypassing the BFF's own PermAdmin gate entirely.
-func TestPgProjectUpdateService_ClosureStateRequiresAdminRole(t *testing.T) {
-	closureState := "SUSPENDED"
-	repo := &stubProjectUpdateRepo{}
-	svc := NewProjectUpdateService(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, testAdminRoles)
-	// No admin role on this caller's identity -- contextWithUserIDToken alone,
-	// same as a plain internal cs_engineer or an external project contact.
-	ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
-
-	_, err := svc.UpdateProject(ctx, "11111111-1111-1111-1111-111111111111", domain.ProjectUpdateRequest{ClosureState: &closureState})
-
-	var forbidden *apierror.ForbiddenError
-	if !errors.As(err, &forbidden) {
-		t.Fatalf("UpdateProject() error = %v, want *apierror.ForbiddenError", err)
-	}
-	if repo.called {
-		t.Fatal("UpdateProject() reached the repository for a non-admin closureState request")
 	}
 }
 
@@ -331,8 +292,8 @@ func TestPgProjectUpdateService_ClosureStateOnlyNeverDispatchesSNMirror(t *testi
 	mirror := &stubProjectMirror{}
 	failures := &recordingSNWritebackFailures{}
 	dispatcher := NewSNWritebackDispatcher(failures)
-	svc := NewProjectUpdateServiceWithSNWriteback(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, testAdminRoles, dispatcher, mirror)
-	ctx := contextWithAdminIdentity(contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com")))
+	svc := NewProjectUpdateServiceWithSNWriteback(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, dispatcher, mirror)
+	ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
 
 	if _, err := svc.UpdateProject(ctx, "11111111-1111-1111-1111-111111111111", domain.ProjectUpdateRequest{ClosureState: &closureState}); err != nil {
 		t.Fatalf("UpdateProject() error = %v, want success", err)
@@ -362,7 +323,7 @@ func TestPgProjectUpdateService_DualWriteDispatchesExactlyOneMirrorCallOnSuccess
 	mirror := &stubProjectMirror{err: errors.New("sn unreachable")}
 	failures := &recordingSNWritebackFailures{}
 	dispatcher := NewSNWritebackDispatcher(failures)
-	svc := NewProjectUpdateServiceWithSNWriteback(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, testAdminRoles, dispatcher, mirror)
+	svc := NewProjectUpdateServiceWithSNWriteback(repo, testProjectUserRepo(), alwaysUnrestrictedAccess{}, dispatcher, mirror)
 	ctx := contextWithUserIDToken(fakeJWTWithEmail(t, "jane.doe@example.com"))
 
 	id := "11111111-1111-1111-1111-111111111111"

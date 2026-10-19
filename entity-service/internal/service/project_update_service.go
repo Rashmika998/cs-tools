@@ -65,22 +65,12 @@ type pgProjectUpdateService struct {
 	// variant was needed here.
 	snWriteback *SNWritebackDispatcher
 	snMirror    ProjectUpdateService
-	// adminRoles is AUTH_ADMIN_ROLES (config.Config.AuthAdminRoles) -- the
-	// real, already-shipped mechanism this file's own ClosureState check
-	// uses, identical to case_alert_settings_service.go's/
-	// rota_access_service.go's own holdsAnyRole(identity.Roles, adminRoles)
-	// pattern. This is NOT the same thing as AccessScope.Unrestricted:
-	// that only distinguishes "internal" from "external" callers (cs_engineer
-	// and admin both resolve to the identical Unrestricted scope -- see
-	// authorizeProject's own doc comment), so it cannot by itself answer "is
-	// this caller specifically an admin."
-	adminRoles []string
 }
 
 // NewProjectUpdateService constructs a ProjectUpdateService backed by
 // Postgres alone (DATA_SOURCE=postgres) -- it never touches ServiceNow.
-func NewProjectUpdateService(repo repository.ProjectRepository, userRepo repository.UserRepository, access AccessService, adminRoles []string) ProjectUpdateService {
-	return &pgProjectUpdateService{repo: repo, userRepo: userRepo, access: access, adminRoles: adminRoles}
+func NewProjectUpdateService(repo repository.ProjectRepository, userRepo repository.UserRepository, access AccessService) ProjectUpdateService {
+	return &pgProjectUpdateService{repo: repo, userRepo: userRepo, access: access}
 }
 
 // NewProjectUpdateServiceWithSNWriteback is NewProjectUpdateService plus the
@@ -91,8 +81,8 @@ func NewProjectUpdateService(repo repository.ProjectRepository, userRepo reposit
 // otherwise made the active path -- reads stay on Postgres in this mode, the
 // same as every other dual-write pilot (case/incident/change_request/
 // problem).
-func NewProjectUpdateServiceWithSNWriteback(repo repository.ProjectRepository, userRepo repository.UserRepository, access AccessService, adminRoles []string, dispatcher *SNWritebackDispatcher, mirror ProjectUpdateService) ProjectUpdateService {
-	return &pgProjectUpdateService{repo: repo, userRepo: userRepo, access: access, adminRoles: adminRoles, snWriteback: dispatcher, snMirror: mirror}
+func NewProjectUpdateServiceWithSNWriteback(repo repository.ProjectRepository, userRepo repository.UserRepository, access AccessService, dispatcher *SNWritebackDispatcher, mirror ProjectUpdateService) ProjectUpdateService {
+	return &pgProjectUpdateService{repo: repo, userRepo: userRepo, access: access, snWriteback: dispatcher, snMirror: mirror}
 }
 
 // UpdateProject implements ProjectUpdateService.
@@ -106,21 +96,6 @@ func NewProjectUpdateServiceWithSNWriteback(repo repository.ProjectRepository, u
 // project's settings just by knowing its UUID -- a real IDOR, caught in
 // review once that permission was first granted to an external-facing
 // role.
-//
-// ClosureState additionally requires the caller to hold one of adminRoles,
-// enforced here rather than left to the BFF alone. This route is NOT
-// internalOnly (apps/customer-portal/backend-v2's own RoleCustomerAdmin
-// already reaches it today for hasAgent/hasKbReferences), and
-// AccessScope.Unrestricted cannot distinguish an admin from a plain
-// cs_engineer -- both resolve to the identical scope (see
-// authorizeProject's own doc comment) -- so a BFF-only PermAdmin check
-// (apps/csm-portal/backend) can be bypassed entirely by any internal
-// caller, or any project's own registered external contact, calling this
-// endpoint directly with a valid token. Mirrors
-// case_alert_settings_service.go's/rota_access_service.go's own
-// holdsAnyRole(identity.Roles, adminRoles) pattern -- the real mechanism
-// already used elsewhere in this codebase for exactly this shape of
-// problem, not a new one invented for this field.
 func (s *pgProjectUpdateService) UpdateProject(ctx context.Context, id string, req domain.ProjectUpdateRequest) (domain.ProjectUpdateResponse, error) {
 	// A nil access (only possible via direct construction -- routes.go always
 	// wires a real AccessService) can't resolve anyone's scope, so it must
@@ -131,9 +106,6 @@ func (s *pgProjectUpdateService) UpdateProject(ctx context.Context, id string, r
 	}
 	if _, err := authorizeProject(ctx, s.access, id); err != nil {
 		return domain.ProjectUpdateResponse{}, err
-	}
-	if req.ClosureState != nil && !holdsAnyRole(auth.IdentityFromContext(ctx).Roles, s.adminRoles) {
-		return domain.ProjectUpdateResponse{}, &apierror.ForbiddenError{Msg: "only an admin may set closureState"}
 	}
 	if !hasStoredProjectFields(req) {
 		return domain.ProjectUpdateResponse{}, &apierror.ValidationError{Msg: "at least one field must be provided"}

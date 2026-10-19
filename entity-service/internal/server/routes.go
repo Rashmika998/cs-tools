@@ -680,9 +680,9 @@ func NewRouter(db *pgxpool.Pool, cfg *config.Config) (http.Handler, func()) {
 		activeProjectUpdateSvc = service.NewServiceNowProjectUpdateService(serviceNowIntegrationServiceClient)
 	case config.DataSourcePostgresServiceNowDualWrite:
 		snProjectMirrorSvc := service.NewServiceNowProjectUpdateService(serviceNowIntegrationServiceClient)
-		activeProjectUpdateSvc = service.NewProjectUpdateServiceWithSNWriteback(projectRepo, userRepo, accessSvc, cfg.AuthAdminRoles, snWritebackDispatcher, snProjectMirrorSvc)
+		activeProjectUpdateSvc = service.NewProjectUpdateServiceWithSNWriteback(projectRepo, userRepo, accessSvc, snWritebackDispatcher, snProjectMirrorSvc)
 	default:
-		activeProjectUpdateSvc = service.NewProjectUpdateService(projectRepo, userRepo, accessSvc, cfg.AuthAdminRoles)
+		activeProjectUpdateSvc = service.NewProjectUpdateService(projectRepo, userRepo, accessSvc)
 	}
 	projectUpdateHandler := handler.NewProjectUpdateHandler(activeProjectUpdateSvc)
 
