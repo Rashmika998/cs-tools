@@ -150,6 +150,10 @@ var permissionMatrix = map[Module]map[Action][]CanonicalRole{
 		// -- see entity.UpdateProjectRequest), not general project data, so
 		// this doesn't reopen the broader write access this permission used
 		// to (over-)grant before RoleCustomerAdmin was first removed here.
+		// This grant's safety depends on entity.UpdateProjectRequest staying
+		// that narrow -- it must never gain entity-service's closureState
+		// field (a direct, admin-only closure-status override), which would
+		// silently hand that override to a customer admin through this route.
 		ActionUpdate: {RoleAdmin, RoleAgent, RoleInternal, RoleCustomerAdmin},
 		ActionDelete: {RoleAdmin},
 	},

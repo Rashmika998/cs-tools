@@ -171,6 +171,11 @@ func TestPatchProject_RejectsUnknownFields(t *testing.T) {
 		{"a valid field plus an unknown one", `{"hasAgent":true,"bogus":1}`},
 		{"a plausible misspelling", `{"hasKbReference":true}`},
 		{"only an unknown field", `{"enabled":true}`},
+		// closureState is entity-service's admin-only direct override of a
+		// project's overall closure status (see that repo's own CLAUDE.md) --
+		// RoleCustomerAdmin reaches this route for hasAgent/hasKbReferences
+		// only, so it must never ride along, same as any other unknown field.
+		{"closureState (entity-service's admin-only closure override)", `{"closureState":"SUSPENDED"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
