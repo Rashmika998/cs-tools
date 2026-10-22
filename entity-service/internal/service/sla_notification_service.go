@@ -18,7 +18,9 @@ package service
 
 import (
 	"context"
+	"net"
 	"net/url"
+	"strings"
 
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/apierror"
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/domain"
@@ -76,6 +78,55 @@ func (s *slaNotificationRuleService) Get(ctx context.Context, id string) (domain
 // Mirrors apps/csm-portal/backend's own validateSecureURL (a different Go
 // module, so not importable here), minus its "no path" rule: a webhook
 // URL's whole point is a path.
+// disallowedWebhookHostnames are hostnames that resolve (or self-identify)
+// as this machine regardless of DNS -- net.ParseIP never matches a plain
+// name like "localhost", so it needs its own check alongside the IP-literal
+// one below.
+var disallowedWebhookHostnames = map[string]bool{
+	"localhost":             true,
+	"localhost.localdomain": true,
+}
+
+// isDisallowedWebhookIP reports whether ip is loopback, private, link-local
+// (unicast or multicast), unspecified ("any address") or multicast -- every
+// category of address that has no business being dialed as a public
+// chat-provider webhook. net.IP's own IsLoopback/IsPrivate/etc. already
+// normalize an IPv4 address embedded in an IPv6 one (e.g.
+// "::ffff:169.254.169.254", a cloud metadata endpoint written in
+// IPv6-mapped form) internally, so no separate To4() handling is needed
+// here.
+func isDisallowedWebhookIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast()
+}
+
+// validateWebhookURL requires an absolute https URL with a public host --
+// not just a non-empty string, and not just "https with some host".
+// csm-notification-service will later dial this URL from inside the
+// network on a threshold-crossing event; a value such as
+// "https://169.254.169.254/..." (a cloud metadata endpoint) or
+// "https://localhost/..." would otherwise be stored and later dispatched
+// to unchecked. This route is admin-only, so an attacker would need to
+// already be an admin to exploit it -- a hardening gap, not an open one --
+// but it costs little to close. Mirrors apps/csm-portal/backend's own
+// validateSecureURL (a different Go module, so not importable here), minus
+// its "no path" rule (a webhook URL's whole point is a path), plus the
+// IP-literal/loopback/private/link-local/localhost checks that function
+// doesn't need for its own callers (fixed, operator-configured base URLs,
+// never a value an admin types in through a browser form).
+//
+// What this does NOT close: a hostname that is public today (passes every
+// check here) but is later re-pointed by its own DNS at a private address
+// (DNS rebinding), or one whose A/AAAA record already resolves to a private
+// address at request time despite looking like an ordinary public name --
+// this function only ever sees the literal host string, never a resolved
+// IP. Closing that needs the *dispatching* HTTP client (in
+// csm-notification-service, which does not exist yet -- see this change's
+// own plan file) to validate the IP it actually connects to, e.g. via a
+// custom net.Dialer.Control or a DialContext that re-checks
+// isDisallowedWebhookIP against the resolved address before completing the
+// connection. Flagged here rather than silently left for whoever builds
+// that piece to discover on their own.
 func validateWebhookURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -84,11 +135,18 @@ func validateWebhookURL(raw string) error {
 	if parsed.Scheme != "https" {
 		return &apierror.ValidationError{Msg: "webhookUrl must use the https scheme"}
 	}
-	if parsed.Hostname() == "" {
+	host := parsed.Hostname()
+	if host == "" {
 		return &apierror.ValidationError{Msg: "webhookUrl must include a host"}
 	}
 	if parsed.User != nil {
 		return &apierror.ValidationError{Msg: "webhookUrl must not contain embedded userinfo"}
+	}
+	if disallowedWebhookHostnames[strings.ToLower(host)] {
+		return &apierror.ValidationError{Msg: "webhookUrl must not point at this machine"}
+	}
+	if ip := net.ParseIP(host); ip != nil && isDisallowedWebhookIP(ip) {
+		return &apierror.ValidationError{Msg: "webhookUrl must not point at a private, loopback or link-local address"}
 	}
 	return nil
 }
