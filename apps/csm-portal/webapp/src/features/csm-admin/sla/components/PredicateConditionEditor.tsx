@@ -16,7 +16,7 @@
 
 import { Box, Button, IconButton, MenuItem, Select, TextField, Tooltip, Typography } from "@wso2/oxygen-ui";
 import { Plus, Trash2 } from "@wso2/oxygen-ui-icons-react";
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import type { SlaFieldCatalogEntry } from "../types";
 import {
   emptyLeaf,
@@ -75,12 +75,27 @@ function LeafEditor({
   const valueAsArray: string[] = Array.isArray(leaf.value) ? (leaf.value as string[]) : [];
   const valueAsString = typeof leaf.value === "string" ? leaf.value : "";
 
+  // Raw text of the free-form comma-separated list field, kept in local
+  // state while the user is typing. The committed value (leaf.value, what
+  // is actually saved) is derived from this on every keystroke, but the
+  // *displayed* text is this draft, not a re-join of the parsed array --
+  // deriving the displayed value from the parsed array drops a trailing
+  // comma or space the instant it's typed (split+trim+filter(Boolean)
+  // removes the empty segment it would produce), making it impossible to
+  // type a second value by hand. null means "not currently editing this
+  // field" -- falls back to the committed value, e.g. right after the
+  // field/op selection changes it from elsewhere.
+  const [listDraft, setListDraft] = useState<string | null>(null);
+
   return (
     <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
       <Select
         size="small"
         value={leaf.field}
-        onChange={(e) => onChange({ ...leaf, field: String(e.target.value), value: "" })}
+        onChange={(e) => {
+          setListDraft(null);
+          onChange({ ...leaf, field: String(e.target.value), value: "" });
+        }}
         sx={{ minWidth: 180 }}
       >
         {fields.map((f) => (
@@ -92,7 +107,18 @@ function LeafEditor({
       <Select
         size="small"
         value={leaf.op}
-        onChange={(e) => onChange({ ...leaf, op: e.target.value as PredicateOp })}
+        onChange={(e) => {
+          // The new operator may take a differently-shaped value (or none)
+          // than the old one -- switching from "is any of" (an array) to
+          // "is" (a single value) must not leave the array in place, and
+          // switching to an operator that takes no value at all (is_null,
+          // is_not_null, changed) must not leave a stale one a predicate
+          // evaluator would never read but which still reaches storage.
+          const op = e.target.value as PredicateOp;
+          const value = !OPS_WITH_VALUE.has(op) ? undefined : OPS_WITH_LIST_VALUE.has(op) ? [] : "";
+          setListDraft(null);
+          onChange(value === undefined ? { field: leaf.field, op } : { field: leaf.field, op, value });
+        }}
         sx={{ minWidth: 160 }}
       >
         {ALL_OPS.map((op) => (
@@ -135,15 +161,16 @@ function LeafEditor({
         <TextField
           size="small"
           placeholder={isListValue ? "comma-separated values" : "value"}
-          value={isListValue ? valueAsArray.join(",") : valueAsString}
-          onChange={(e) =>
-            onChange({
-              ...leaf,
-              value: isListValue
-                ? e.target.value.split(",").map((v) => v.trim()).filter(Boolean)
-                : e.target.value,
-            })
-          }
+          value={isListValue ? (listDraft ?? valueAsArray.join(", ")) : valueAsString}
+          onChange={(e) => {
+            if (!isListValue) {
+              onChange({ ...leaf, value: e.target.value });
+              return;
+            }
+            setListDraft(e.target.value);
+            onChange({ ...leaf, value: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) });
+          }}
+          onBlur={() => setListDraft(null)}
         />
       ) : null}
     </Box>

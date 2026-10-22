@@ -115,22 +115,24 @@ func (r *slaNotificationRuleRepository) Create(ctx context.Context, req domain.U
 	return n, nil
 }
 
+// Update leaves is_active untouched when req.IsActive is nil (COALESCE),
+// rather than defaulting it to true -- otherwise a PATCH that only edits,
+// say, recipients or the threshold (with no isActive field at all) would
+// silently re-enable a rule an admin had disabled. The webapp always sends
+// isActive, but this API is the actual boundary that has to enforce that,
+// not any one caller of it.
 func (r *slaNotificationRuleRepository) Update(ctx context.Context, id string, req domain.UpsertSLANotificationRuleRequest, actorEmail string) (domain.SLANotificationRule, error) {
 	recipientsJSON, err := json.Marshal(req.Recipients)
 	if err != nil {
 		return domain.SLANotificationRule{}, fmt.Errorf("encode sla notification rule recipients: %w", err)
 	}
-	isActive := true
-	if req.IsActive != nil {
-		isActive = *req.IsActive
-	}
 	n, err := scanSLANotificationRule(r.db.QueryRow(ctx, `
 		UPDATE sla_notification_rule SET
 			definition_id = $2::uuid, threshold_percentage = $3, channel = $4, recipients = $5::jsonb,
-			webhook_url = $6, is_active = $7, updated_on = now(), updated_by = $8
+			webhook_url = $6, is_active = COALESCE($7::boolean, is_active), updated_on = now(), updated_by = $8
 		WHERE id = $1::uuid
 		RETURNING id::text, definition_id::text, threshold_percentage, channel, recipients, webhook_url, is_active, created_on, updated_on`,
-		id, req.DefinitionID, req.ThresholdPercentage, req.Channel, recipientsJSON, req.WebhookURL, isActive, actorEmail))
+		id, req.DefinitionID, req.ThresholdPercentage, req.Channel, recipientsJSON, req.WebhookURL, req.IsActive, actorEmail))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.SLANotificationRule{}, &apierror.NotFoundError{Msg: "sla notification rule not found"}
 	}

@@ -97,17 +97,32 @@ export default function CsmSlaNotificationRulesPage(): JSX.Element {
   const create = useCreateSlaNotificationRule();
   const [form, setForm] = useState<UpsertSlaNotificationRuleRequest>(EMPTY);
   const [showForm, setShowForm] = useState(false);
+  // Raw text of the two comma-separated fields, kept separately from
+  // form.recipients.users/groups rather than derived from them on every
+  // render: deriving the displayed text from the parsed array drops a
+  // trailing comma or space the instant it's typed, making it impossible
+  // to type a second email/group by hand. Parsed into the actual request
+  // only on submit.
+  const [usersText, setUsersText] = useState("");
+  const [groupsText, setGroupsText] = useState("");
 
-  const usersText = (form.recipients.users ?? []).join(", ");
-  const groupsText = (form.recipients.groups ?? []).join(", ");
+  const parseCommaList = (s: string): string[] => s.split(",").map((v) => v.trim()).filter(Boolean);
 
   const submit = (): void => {
-    create.mutate(form, {
-      onSuccess: () => {
-        setForm(EMPTY);
-        setShowForm(false);
+    create.mutate(
+      {
+        ...form,
+        recipients: { ...form.recipients, users: parseCommaList(usersText), groups: parseCommaList(groupsText) },
       },
-    });
+      {
+        onSuccess: () => {
+          setForm(EMPTY);
+          setUsersText("");
+          setGroupsText("");
+          setShowForm(false);
+        },
+      },
+    );
   };
 
   return (
@@ -179,22 +194,12 @@ export default function CsmSlaNotificationRulesPage(): JSX.Element {
           <TextField
             label="Named users (comma-separated emails)"
             value={usersText}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                recipients: { ...form.recipients, users: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) },
-              })
-            }
+            onChange={(e) => setUsersText(e.target.value)}
           />
           <TextField
             label="Named groups (comma-separated)"
             value={groupsText}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                recipients: { ...form.recipients, groups: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) },
-              })
-            }
+            onChange={(e) => setGroupsText(e.target.value)}
           />
           {create.isError ? <Alert severity="error">{create.error.message}</Alert> : null}
           <Box sx={{ display: "flex", gap: 1 }}>

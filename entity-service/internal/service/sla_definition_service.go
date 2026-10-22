@@ -103,6 +103,9 @@ func (s *slaDefinitionService) Get(ctx context.Context, id string) (domain.SLADe
 	if id == "" {
 		return domain.SLADefinition{}, &apierror.ValidationError{Msg: "definition id is required"}
 	}
+	if err := validateUUIDs("id", []string{id}); err != nil {
+		return domain.SLADefinition{}, err
+	}
 	return s.repo.Get(ctx, id)
 }
 
@@ -115,6 +118,9 @@ func validateSLADefinitionRequest(req domain.UpsertSLADefinitionRequest) error {
 	}
 	if req.CalendarID == "" {
 		return &apierror.ValidationError{Msg: "calendarId is required"}
+	}
+	if err := validateUUIDs("calendarId", []string{req.CalendarID}); err != nil {
+		return err
 	}
 	switch req.TimezoneSource {
 	case "definition":
@@ -139,7 +145,7 @@ func validateSLADefinitionRequest(req domain.UpsertSLADefinitionRequest) error {
 	if req.DurationSeconds <= 0 {
 		return &apierror.ValidationError{Msg: "durationSeconds must be greater than 0"}
 	}
-	if len(req.StartCondition) == 0 || !json.Valid(req.StartCondition) {
+	if repository.IsJSONNull(req.StartCondition) || !json.Valid(req.StartCondition) {
 		return &apierror.ValidationError{Msg: "startCondition is required and must be well-formed JSON"}
 	}
 	for name, raw := range map[string]json.RawMessage{
@@ -152,10 +158,8 @@ func validateSLADefinitionRequest(req domain.UpsertSLADefinitionRequest) error {
 	if err := validateSLAThresholds(req.ThresholdPercentages); err != nil {
 		return err
 	}
-	for _, id := range req.AlsoCompletesDefinitionIDs {
-		if id == "" {
-			return &apierror.ValidationError{Msg: "alsoCompletesDefinitionIds must not contain an empty id"}
-		}
+	if err := validateUUIDs("alsoCompletesDefinitionIds", req.AlsoCompletesDefinitionIDs); err != nil {
+		return err
 	}
 	return nil
 }
@@ -204,6 +208,9 @@ func (s *slaDefinitionService) Update(ctx context.Context, id string, req domain
 	if id == "" {
 		return domain.SLADefinition{}, &apierror.ValidationError{Msg: "definition id is required"}
 	}
+	if err := validateUUIDs("id", []string{id}); err != nil {
+		return domain.SLADefinition{}, err
+	}
 	if err := validateSLADefinitionRequest(req); err != nil {
 		return domain.SLADefinition{}, err
 	}
@@ -217,6 +224,9 @@ func (s *slaDefinitionService) SetStatus(ctx context.Context, id string, req dom
 	if id == "" {
 		return domain.SLADefinition{}, &apierror.ValidationError{Msg: "definition id is required"}
 	}
+	if err := validateUUIDs("id", []string{id}); err != nil {
+		return domain.SLADefinition{}, err
+	}
 	current, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return domain.SLADefinition{}, err
@@ -225,5 +235,13 @@ func (s *slaDefinitionService) SetStatus(ctx context.Context, id string, req dom
 	if !ok || !legal[req.Status] {
 		return domain.SLADefinition{}, &apierror.ConflictError{Msg: fmt.Sprintf("cannot move an sla definition from %q to %q", current.Status, req.Status)}
 	}
-	return s.repo.SetStatus(ctx, id, req.Status, slaActorEmail(ctx))
+	// current.Status is passed as the expected status so the repository's own
+	// UPDATE is conditioned on it (WHERE status = expected), not just this
+	// read -- otherwise two concurrent requests (e.g. "Retire" and "Publish")
+	// could both read "draft", both pass the check above, and the second
+	// write would win unconditionally: a "retired" definition silently moved
+	// back to "published", breaking "retired is final" (R34's same rule for
+	// an instance). A row that no longer matches is a genuine race, reported
+	// as a conflict rather than silently overwritten.
+	return s.repo.SetStatus(ctx, id, current.Status, req.Status, slaActorEmail(ctx))
 }

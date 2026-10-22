@@ -95,5 +95,8 @@ func (s *slaFieldRegistryService) SetFieldEnabled(ctx context.Context, fieldCata
 	if fieldCatalogEntryID == "" {
 		return domain.SLAFieldCatalogEntry{}, &apierror.ValidationError{Msg: "fieldCatalogEntryId is required"}
 	}
+	if err := validateUUIDs("fieldCatalogEntryId", []string{fieldCatalogEntryID}); err != nil {
+		return domain.SLAFieldCatalogEntry{}, err
+	}
 	return s.repo.SetFieldEnabled(ctx, fieldCatalogEntryID, req.Enabled, slaActorEmail(ctx))
 }

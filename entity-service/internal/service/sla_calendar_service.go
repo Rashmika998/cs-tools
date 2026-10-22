@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"regexp"
+	"time"
 
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/apierror"
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/domain"
@@ -65,6 +66,9 @@ func (s *slaCalendarService) Get(ctx context.Context, id string) (domain.SLACale
 	if id == "" {
 		return domain.SLACalendar{}, &apierror.ValidationError{Msg: "calendar id is required"}
 	}
+	if err := validateUUIDs("id", []string{id}); err != nil {
+		return domain.SLACalendar{}, err
+	}
 	return s.repo.Get(ctx, id)
 }
 
@@ -104,6 +108,9 @@ func (s *slaCalendarService) UpdateWorkingWeek(ctx context.Context, id string, r
 	if id == "" {
 		return domain.SLACalendar{}, &apierror.ValidationError{Msg: "calendar id is required"}
 	}
+	if err := validateUUIDs("id", []string{id}); err != nil {
+		return domain.SLACalendar{}, err
+	}
 	if err := validateWorkingWeek(req.WorkingWeek); err != nil {
 		return domain.SLACalendar{}, err
 	}
@@ -117,10 +124,26 @@ func (s *slaCalendarService) AddHoliday(ctx context.Context, calendarID string, 
 	if calendarID == "" {
 		return domain.SLACalendar{}, &apierror.ValidationError{Msg: "calendar id is required"}
 	}
+	if err := validateUUIDs("calendarId", []string{calendarID}); err != nil {
+		return domain.SLACalendar{}, err
+	}
 	if req.StartDate == "" || req.EndDate == "" {
 		return domain.SLACalendar{}, &apierror.ValidationError{Msg: "startDate and endDate are required"}
 	}
-	if req.EndDate < req.StartDate {
+	// Parsed, not string-compared: a string comparison only orders values
+	// that already share the YYYY-MM-DD layout, so a malformed date (e.g.
+	// "2026-1-5" or "tomorrow") would otherwise pass this check and only
+	// fail later at the repository's own "$2::date" cast -- a 500, not the
+	// 400 a bad request deserves.
+	start, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		return domain.SLACalendar{}, &apierror.ValidationError{Msg: "startDate must be YYYY-MM-DD"}
+	}
+	end, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		return domain.SLACalendar{}, &apierror.ValidationError{Msg: "endDate must be YYYY-MM-DD"}
+	}
+	if end.Before(start) {
 		return domain.SLACalendar{}, &apierror.ValidationError{Msg: "endDate must not be before startDate"}
 	}
 	if req.Name == "" {
@@ -135,6 +158,9 @@ func (s *slaCalendarService) DeleteHoliday(ctx context.Context, calendarID, holi
 	}
 	if calendarID == "" || holidayID == "" {
 		return &apierror.ValidationError{Msg: "calendar id and holiday id are required"}
+	}
+	if err := validateUUIDs("calendarId/holidayId", []string{calendarID, holidayID}); err != nil {
+		return err
 	}
 	return s.repo.DeleteHoliday(ctx, calendarID, holidayID)
 }

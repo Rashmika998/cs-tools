@@ -33,7 +33,11 @@ export default function ThresholdListEditor({ value, onChange, disabled }: Props
 
   const addDraft = (): void => {
     const n = Number(draft);
-    if (!Number.isFinite(n) || n <= 0 || value.includes(n)) return;
+    // Must match entity-service's own bounds exactly (integers, 1-1000):
+    // a fractional or out-of-range value would otherwise pass this check
+    // and only fail on save, as a generic 400 that doesn't say which
+    // threshold caused it.
+    if (!Number.isInteger(n) || n < 1 || n > 1000 || value.includes(n)) return;
     onChange([...value, n]);
     setDraft("");
   };

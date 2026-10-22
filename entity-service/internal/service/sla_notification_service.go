@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/apierror"
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/domain"
@@ -59,7 +60,37 @@ func (s *slaNotificationRuleService) Get(ctx context.Context, id string) (domain
 	if id == "" {
 		return domain.SLANotificationRule{}, &apierror.ValidationError{Msg: "notification rule id is required"}
 	}
+	if err := validateUUIDs("id", []string{id}); err != nil {
+		return domain.SLANotificationRule{}, err
+	}
 	return s.repo.Get(ctx, id)
+}
+
+// validateWebhookURL requires an absolute https URL with a host -- not just
+// a non-empty string. csm-notification-service will later call this URL
+// from inside the network on a threshold-crossing event; a value like
+// "http://169.254.169.254/..." (a cloud metadata endpoint) or "file:///..."
+// would otherwise be stored and dispatched to unchecked. This route is
+// admin-only, so an attacker would need to already be an admin to exploit
+// it -- a hardening gap, not an open one -- but it costs nothing to close.
+// Mirrors apps/csm-portal/backend's own validateSecureURL (a different Go
+// module, so not importable here), minus its "no path" rule: a webhook
+// URL's whole point is a path.
+func validateWebhookURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return &apierror.ValidationError{Msg: "webhookUrl is not a valid URL"}
+	}
+	if parsed.Scheme != "https" {
+		return &apierror.ValidationError{Msg: "webhookUrl must use the https scheme"}
+	}
+	if parsed.Hostname() == "" {
+		return &apierror.ValidationError{Msg: "webhookUrl must include a host"}
+	}
+	if parsed.User != nil {
+		return &apierror.ValidationError{Msg: "webhookUrl must not contain embedded userinfo"}
+	}
+	return nil
 }
 
 func validateSLANotificationRuleRequest(req domain.UpsertSLANotificationRuleRequest) error {
@@ -69,8 +100,16 @@ func validateSLANotificationRuleRequest(req domain.UpsertSLANotificationRuleRequ
 		if req.WebhookURL == nil || *req.WebhookURL == "" {
 			return &apierror.ValidationError{Msg: `webhookUrl is required when channel is "webhook"`}
 		}
+		if err := validateWebhookURL(*req.WebhookURL); err != nil {
+			return err
+		}
 	default:
 		return &apierror.ValidationError{Msg: `channel must be "email" or "webhook"`}
+	}
+	if req.DefinitionID != nil {
+		if err := validateUUIDs("definitionId", []string{*req.DefinitionID}); err != nil {
+			return err
+		}
 	}
 	if req.ThresholdPercentage != nil && *req.ThresholdPercentage <= 0 {
 		return &apierror.ValidationError{Msg: "thresholdPercentage must be greater than 0"}
@@ -97,6 +136,9 @@ func (s *slaNotificationRuleService) Update(ctx context.Context, id string, req 
 	}
 	if id == "" {
 		return domain.SLANotificationRule{}, &apierror.ValidationError{Msg: "notification rule id is required"}
+	}
+	if err := validateUUIDs("id", []string{id}); err != nil {
+		return domain.SLANotificationRule{}, err
 	}
 	if err := validateSLANotificationRuleRequest(req); err != nil {
 		return domain.SLANotificationRule{}, err

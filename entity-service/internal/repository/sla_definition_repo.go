@@ -17,6 +17,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,12 +30,25 @@ import (
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/domain"
 )
 
+// IsJSONNull reports whether raw is empty or the literal JSON `null` --
+// encoding/json hands a json.RawMessage field a real 4-byte "null" for an
+// explicit `"pauseCondition": null` in the request body, not an empty
+// slice, so checking length alone treats that as "set to null" rather than
+// "not set" (R19-R21's "not set never fires"). Both must mean the same
+// "not set" here and in the service's own check on the required start
+// condition (exported so sla_definition_service.go's validation uses the
+// identical rule, not a second copy of it).
+func IsJSONNull(raw json.RawMessage) bool {
+	return len(raw) == 0 || string(bytes.TrimSpace(raw)) == "null"
+}
+
 // rawOrNull binds an optional predicate condition (pause/stop/cancel -- R19-
-// R21, "not set never fires") as SQL NULL when the caller sent none, rather
-// than an empty byte slice, which pgx's jsonb codec does not accept as "no
-// value".
+// R21, "not set never fires") as SQL NULL when the caller sent none or an
+// explicit JSON null, rather than an empty byte slice (which pgx's jsonb
+// codec does not accept as "no value") or the literal 'null'::jsonb (a
+// third, meaningless state next to "not set" and "set").
 func rawOrNull(raw json.RawMessage) any {
-	if len(raw) == 0 {
+	if IsJSONNull(raw) {
 		return nil
 	}
 	return raw
@@ -49,7 +63,7 @@ type SLADefinitionRepository interface {
 	Get(ctx context.Context, id string) (domain.SLADefinition, error)
 	Create(ctx context.Context, req domain.UpsertSLADefinitionRequest, actorEmail string) (domain.SLADefinition, error)
 	Update(ctx context.Context, id string, req domain.UpsertSLADefinitionRequest, actorEmail string) (domain.SLADefinition, error)
-	SetStatus(ctx context.Context, id, status, actorEmail string) (domain.SLADefinition, error)
+	SetStatus(ctx context.Context, id, expectedStatus, newStatus, actorEmail string) (domain.SLADefinition, error)
 }
 
 type slaDefinitionRepository struct{ db *pgxpool.Pool }
@@ -214,19 +228,36 @@ func (r *slaDefinitionRepository) Update(ctx context.Context, id string, req dom
 	return d, nil
 }
 
-func (r *slaDefinitionRepository) SetStatus(ctx context.Context, id, status, actorEmail string) (domain.SLADefinition, error) {
+// SetStatus moves the definition to newStatus only if its stored status is
+// still expectedStatus -- a compare-and-swap, not a blind write. Without
+// this, two concurrent requests (e.g. "Retire" and "Publish") could both
+// read the same current status in the service's own pre-check, both pass
+// it, and the second write would win unconditionally: a definition already
+// retired could be silently moved back to published, breaking "retired is
+// final." A row that exists but no longer matches expectedStatus is a real
+// concurrent change, reported as ConflictError rather than overwritten;
+// a row that doesn't exist at all is still NotFoundError, so the two
+// callers' failure modes stay distinguishable.
+func (r *slaDefinitionRepository) SetStatus(ctx context.Context, id, expectedStatus, newStatus, actorEmail string) (domain.SLADefinition, error) {
 	d, err := scanSLADefinition(r.db.QueryRow(ctx, `
 		UPDATE sla_definition SET status = $2, version = version + 1, updated_on = now(), updated_by = $3
-		WHERE id = $1::uuid
+		WHERE id = $1::uuid AND status = $4
 		RETURNING id::text, name, description, work_item_type::text, status, calendar_id::text,
 		          timezone_source, definition_timezone, account_timezone_fallback, start_mode,
 		          target_label, EXTRACT(EPOCH FROM duration)::bigint, pause_reason,
 		          start_condition, pause_condition, stop_condition, cancel_condition,
 		          threshold_percentages, also_completes_definition_ids::text[],
 		          version, created_on, updated_on, created_by, updated_by`,
-		id, status, actorEmail))
+		id, newStatus, actorEmail, expectedStatus))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.SLADefinition{}, &apierror.NotFoundError{Msg: "sla definition not found"}
+		var exists bool
+		if checkErr := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sla_definition WHERE id = $1::uuid)`, id).Scan(&exists); checkErr != nil {
+			return domain.SLADefinition{}, fmt.Errorf("check sla definition exists: %w", checkErr)
+		}
+		if !exists {
+			return domain.SLADefinition{}, &apierror.NotFoundError{Msg: "sla definition not found"}
+		}
+		return domain.SLADefinition{}, &apierror.ConflictError{Msg: "sla definition status changed concurrently; reload and try again"}
 	}
 	if err != nil {
 		return domain.SLADefinition{}, fmt.Errorf("set sla definition status: %w", err)

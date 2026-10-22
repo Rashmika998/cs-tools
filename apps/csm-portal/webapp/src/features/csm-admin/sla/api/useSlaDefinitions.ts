@@ -37,22 +37,41 @@ export interface SearchSlaDefinitionsParams {
   status?: SlaDefinitionStatus;
 }
 
+const SLA_DEFINITIONS_SEARCH_PAGE_SIZE = 50;
+// A bound on how many pages this ever fetches -- real admin configuration,
+// not user-generated data, so this is just a safety ceiling against an
+// unexpected runaway loop, not a limit anyone should ever actually hit.
+const SLA_DEFINITIONS_SEARCH_MAX_PAGES = 200;
+
 /** POST /sla/definitions/search — every definition, optionally narrowed by
- *  work item type or status. No pagination UI yet: the admin set is small
- *  enough that the first page (the search's own default limit) is enough. */
+ *  work item type or status. entity-service caps a single page at 50, so
+ *  this pages through the full result rather than silently dropping
+ *  anything past the first page (the editor's "also completes" picker and
+ *  the notification rule list both need the complete set, not page one). */
 export function useSlaDefinitions(
   params: SearchSlaDefinitionsParams = {},
 ): UseQueryResult<SearchSlaDefinitionsResponse, Error> {
   const api = useBackendApi();
   return useQuery<SearchSlaDefinitionsResponse, Error>({
     queryKey: [...SLA_DEFINITIONS_KEY, "search", params.workItemType ?? "", params.status ?? ""],
-    queryFn: () =>
-      api.post<{ workItemType?: string; status?: string; pagination: { limit: number; offset: number } },
-        SearchSlaDefinitionsResponse>("/sla/definitions/search", {
-        workItemType: params.workItemType,
-        status: params.status,
-        pagination: { limit: 50, offset: 0 },
-      }),
+    queryFn: async () => {
+      const all: SlaDefinition[] = [];
+      let total = 0;
+      for (let page = 0; page < SLA_DEFINITIONS_SEARCH_MAX_PAGES; page++) {
+        const res = await api.post<
+          { workItemType?: string; status?: string; pagination: { limit: number; offset: number } },
+          SearchSlaDefinitionsResponse
+        >("/sla/definitions/search", {
+          workItemType: params.workItemType,
+          status: params.status,
+          pagination: { limit: SLA_DEFINITIONS_SEARCH_PAGE_SIZE, offset: page * SLA_DEFINITIONS_SEARCH_PAGE_SIZE },
+        });
+        all.push(...res.definitions);
+        total = res.total;
+        if (res.definitions.length < SLA_DEFINITIONS_SEARCH_PAGE_SIZE || all.length >= total) break;
+      }
+      return { definitions: all, total, limit: all.length, offset: 0 };
+    },
     staleTime: 30 * 1000,
   });
 }
