@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 
@@ -142,11 +143,26 @@ func validateWebhookURL(raw string) error {
 	if parsed.User != nil {
 		return &apierror.ValidationError{Msg: "webhookUrl must not contain embedded userinfo"}
 	}
-	if disallowedWebhookHostnames[strings.ToLower(host)] {
+	// Normalized before the literal-hostname lookup: a trailing dot
+	// ("localhost.") is a legal absolute-hostname spelling url.Parse leaves
+	// alone, and "foo.localhost" is a real subdomain many resolvers still
+	// point at loopback -- neither would otherwise match the plain
+	// "localhost" entry.
+	normalizedHost := strings.TrimSuffix(strings.ToLower(host), ".")
+	if disallowedWebhookHostnames[normalizedHost] || strings.HasSuffix(normalizedHost, ".localhost") {
 		return &apierror.ValidationError{Msg: "webhookUrl must not point at this machine"}
 	}
-	if ip := net.ParseIP(host); ip != nil && isDisallowedWebhookIP(ip) {
-		return &apierror.ValidationError{Msg: "webhookUrl must not point at a private, loopback or link-local address"}
+	// netip.ParseAddr, not net.ParseIP: an IPv6 literal with a zone (e.g.
+	// "fe80::1%eth0", written "fe80::1%25eth0" in a URL) makes
+	// parsed.Hostname() return the zoned form, which net.ParseIP flatly
+	// rejects (returns nil) -- silently skipping the IP-range check below
+	// for exactly the address most likely to be link-local. netip handles
+	// the zone, and Unmap() normalizes an IPv4-mapped IPv6 address before
+	// the range checks run.
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if isDisallowedWebhookIP(net.IP(addr.WithZone("").Unmap().AsSlice())) {
+			return &apierror.ValidationError{Msg: "webhookUrl must not point at a private, loopback or link-local address"}
+		}
 	}
 	return nil
 }

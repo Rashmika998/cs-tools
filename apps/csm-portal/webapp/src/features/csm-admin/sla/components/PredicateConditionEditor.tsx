@@ -93,8 +93,18 @@ function LeafEditor({
         size="small"
         value={leaf.field}
         onChange={(e) => {
+          // Changing the field never changes leaf.op, so a value shape the
+          // retained operator needs (an array, for "is any of"/"is none
+          // of") must be preserved here the same way the operator-change
+          // handler already does it -- resetting to a bare "" regardless
+          // of op left a list operator pointing at a string value, shown
+          // as an empty selection but saved as the wrong shape.
           setListDraft(null);
-          onChange({ ...leaf, field: String(e.target.value), value: "" });
+          onChange({
+            ...leaf,
+            field: String(e.target.value),
+            value: OPS_WITH_LIST_VALUE.has(leaf.op) ? [] : "",
+          });
         }}
         sx={{ minWidth: 180 }}
       >
