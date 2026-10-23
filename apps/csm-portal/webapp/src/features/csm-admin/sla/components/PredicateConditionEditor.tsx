@@ -100,11 +100,12 @@ function LeafEditor({
           // of op left a list operator pointing at a string value, shown
           // as an empty selection but saved as the wrong shape.
           setListDraft(null);
-          onChange({
-            ...leaf,
-            field: String(e.target.value),
-            value: OPS_WITH_LIST_VALUE.has(leaf.op) ? [] : "",
-          });
+          const field = String(e.target.value);
+          onChange(
+            !OPS_WITH_VALUE.has(leaf.op)
+              ? { field, op: leaf.op }
+              : { field, op: leaf.op, value: OPS_WITH_LIST_VALUE.has(leaf.op) ? [] : "" },
+          );
         }}
         sx={{ minWidth: 180 }}
       >
