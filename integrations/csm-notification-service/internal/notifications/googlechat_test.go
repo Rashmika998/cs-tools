@@ -313,6 +313,9 @@ func TestSendSeverityChangedAlert_SendsExpectedCard(t *testing.T) {
 	if label != wantLabel {
 		t.Errorf("description label = %q, want %q", label, wantLabel)
 	}
+	if capturedBody.Thread == nil || capturedBody.Thread.ThreadKey != chatThreadKey("CS0001002") {
+		t.Errorf("Thread = %+v, want ThreadKey %q — a severity change must thread the same way case.acknowledged does, including when case.created's own Chat alert was skipped (e.g. a LOW-severity case later escalated), the real bug this closes", capturedBody.Thread, chatThreadKey("CS0001002"))
+	}
 }
 
 func TestSendSeverityChangedAlert_OmitsEmptyWSO2CaseIDAndTeam(t *testing.T) {

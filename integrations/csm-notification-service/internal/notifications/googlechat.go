@@ -663,6 +663,22 @@ func (c *GoogleChatClient) SendSecurityReportAnalysisAcknowledgedAlert(ctx conte
 // subject. Team, transition and product are each omitted when empty. No
 // button: there's no genuine action to take from this card, only navigation,
 // which the link already covers.
+//
+// Sets the same chatThreadKey(caseNumber) every other case.* card uses --
+// this card used to be the one exception, on the assumption it would always
+// follow a case.created card that had already started the thread. That
+// assumption breaks for a case whose severity started LOW/S4 (case.created's
+// own Chat alert is skipped for S4 -- see dispatch.handleCaseCreated) and was
+// later escalated: this card then becomes the case's first real Chat
+// message, but without a thread key of its own nothing it posts is
+// discoverable by key -- a real, reported bug where the later
+// case.acknowledged card (which does set this same key) landed in a brand
+// new thread instead of replying to this one. Setting it here unconditionally
+// also means a severity change on an ordinary, already-posted case now
+// threads under its case.created card too, rather than standing alone --
+// REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD (sendCardToAudience/postCard) still
+// starts a fresh thread under this key when nothing claims it yet, so this
+// card's own appearance is unchanged either way; only what replies to it does.
 func (c *GoogleChatClient) SendSeverityChangedAlert(ctx context.Context, audience, oldSeverityLabel, oldSeverityColor, newSeverityLabel, newSeverityColor, caseNumber, wso2CaseID, productName, title, team, caseLink string) error {
 	if caseNumber == "" {
 		return fmt.Errorf("notifications: caseNumber is required")
@@ -690,6 +706,7 @@ func (c *GoogleChatClient) SendSeverityChangedAlert(ctx context.Context, audienc
 				},
 			},
 		},
+		Thread: &chatThread{ThreadKey: chatThreadKey(caseNumber)},
 	}
 	return c.sendCardToAudience(ctx, audience, caseNumber, "", msg)
 }
