@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -37,6 +38,8 @@ type Config struct {
 	KafkaBroker          string
 	KafkaConnection      string
 	KafkaTopic           string
+	// Port is the health endpoint's port (PORT, default 8080).
+	Port string
 }
 
 var lookbackRe = regexp.MustCompile(`^[0-9]{1,3}[dhm]$`)
@@ -52,6 +55,10 @@ func Load() (Config, error) {
 		KafkaBroker:          os.Getenv("EVENT_BUS_BROKER"),
 		KafkaConnection:      os.Getenv("EVENT_BUS_CONNECTION_STRING"),
 		KafkaTopic:           os.Getenv("EVENT_BUS_TOPIC"),
+	}
+	c.Port = getenv("PORT", "8080")
+	if p, err := strconv.Atoi(c.Port); err != nil || p < 1 || p > 65535 {
+		return Config{}, errors.New("PORT must be a plain port number such as 8080")
 	}
 	interval, err := time.ParseDuration(getenv("MAIL_POLL_INTERVAL", "30s"))
 	if err != nil || interval < time.Second {

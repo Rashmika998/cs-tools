@@ -45,6 +45,13 @@ A new source is another entry in the array.
 A service account with domain-wide delegation for the `gmail.modify` scope, and
 a delegated user that is a member of the group. See `.env.example`.
 
+## Deployment (Choreo)
+
+`.choreo/component.yaml` and `openapi.yaml` follow csm-notification-service: the
+only endpoint is `GET /health` on `PORT` (default 8080), a liveness probe that
+never reports Gmail or event-bus state. Run a **single replica**: two replicas
+polling the same mailbox can both publish a message before either labels it.
+
 ## Commands
 
 ```bash

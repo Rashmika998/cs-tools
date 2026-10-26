@@ -20,10 +20,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-mail-paging-service/internal/config"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-mail-paging-service/internal/eventbus"
@@ -65,7 +69,39 @@ func run() error {
 	prod := eventbus.NewProducer(eventbus.Config{Broker: cfg.KafkaBroker, ConnectionString: cfg.KafkaConnection, Topic: cfg.KafkaTopic})
 	defer prod.Close()
 
-	slog.Info("csm-mail-paging-service started", "rules", len(rs), "interval", cfg.PollInterval.String())
+	// The only HTTP surface is /health, Choreo's liveness probe.
+	ln, err := net.Listen("tcp", ":"+cfg.Port)
+	if err != nil {
+		return err
+	}
+	srv := &http.Server{
+		Handler:           healthMux(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("health server exited", "err", err)
+			stop()
+		}
+	}()
+
+	slog.Info("csm-mail-paging-service started", "rules", len(rs), "interval", cfg.PollInterval.String(), "port", cfg.Port)
 	poller.New(mb, prod, rs, cfg.PollInterval, cfg.Lookback).Run(ctx)
-	return nil
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return srv.Shutdown(shutdownCtx)
+}
+
+// healthMux serves liveness only: a poller has no inbound API, and a Gmail
+// outage must not get a healthy instance restarted.
+func healthMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux
 }
