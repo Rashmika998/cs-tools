@@ -131,8 +131,13 @@ export function isDateTimeField(variable: CatalogItemVariable): boolean {
   return DATE_TIME_FIELD_PATTERNS.some((p) => p.test(q));
 }
 
+// The marker group is `*` (zero-or-more), not `+` (one-or-more): a label
+// with no leading `*`/bullet at all, e.g. a bare "Required: Start Date",
+// must still reach the "Required:" strip below — `+` would require a marker
+// character to be present before even attempting that strip, silently
+// leaving "Required:" on and making the field fail to match "start date".
 function normalizeQuestionText(questionText: string): string {
-  return (questionText ?? "").trim().replace(/^[\s*•]+\s*(?:required\s*:?\s*)?/i, "").trim();
+  return (questionText ?? "").trim().replace(/^[\s*•]*\s*(?:required\s*:?\s*)?/i, "").trim();
 }
 
 export function isStartDateTimeField(variable: CatalogItemVariable): boolean {
@@ -141,6 +146,37 @@ export function isStartDateTimeField(variable: CatalogItemVariable): boolean {
 
 export function isEndDateTimeField(variable: CatalogItemVariable): boolean {
   return /^end\s*(date|time)$/i.test(normalizeQuestionText(variable.questionText ?? ""));
+}
+
+/** "date" or "time" — a Start/End field's own kind, read off its label after
+ *  stripping the "Start "/"End " prefix itself. Used to pair a catalog's
+ *  "Start Date" with its "End Date" and, separately, "Start Time" with
+ *  "End Time", rather than crossing the two or only ever looking at
+ *  whichever Start/End field happens to be first. */
+function dateTimeWindowKind(variable: CatalogItemVariable, prefix: "start" | "end"): string {
+  return normalizeQuestionText(variable.questionText ?? "")
+    .replace(new RegExp(`^${prefix}\\s*`, "i"), "")
+    .toLowerCase();
+}
+
+/** The "End <kind>" field pairing with a given "Start <kind>" field (date
+ *  pairs with date, time with time) among `variables`, or undefined if this
+ *  catalog item has no matching end field. */
+export function matchingEndDateTimeField(
+  variables: CatalogItemVariable[],
+  startField: CatalogItemVariable,
+): CatalogItemVariable | undefined {
+  const kind = dateTimeWindowKind(startField, "start");
+  return variables.find((v) => isEndDateTimeField(v) && dateTimeWindowKind(v, "end") === kind);
+}
+
+/** The "Start <kind>" field pairing with a given "End <kind>" field. */
+export function matchingStartDateTimeField(
+  variables: CatalogItemVariable[],
+  endField: CatalogItemVariable,
+): CatalogItemVariable | undefined {
+  const kind = dateTimeWindowKind(endField, "end");
+  return variables.find((v) => isStartDateTimeField(v) && dateTimeWindowKind(v, "start") === kind);
 }
 
 /**
@@ -182,13 +218,18 @@ export function getDateTimeWindowError(
   variableValues: Record<string, string>,
 ): string | null {
   const userEditable = getUserEditableVariables(variables, contextValues);
-  const startField = userEditable.find(isStartDateTimeField);
-  const endField = userEditable.find(isEndDateTimeField);
-  if (!startField || !endField) return null;
-  const startVal = variableValues[startField.id] ?? "";
-  const endVal = variableValues[endField.id] ?? "";
-  if (startVal && endVal && startVal >= endVal) {
-    return "Start time must be before end time.";
+  // Every Start field is checked against its own matching End field, not
+  // just the first Start/End pair found — a catalog item can carry more
+  // than one pair (e.g. Start Date/End Date alongside Start Time/End Time),
+  // and an invalid second pair must not be hidden behind a valid first one.
+  for (const startField of userEditable.filter(isStartDateTimeField)) {
+    const endField = matchingEndDateTimeField(userEditable, startField);
+    if (!endField) continue;
+    const startVal = variableValues[startField.id] ?? "";
+    const endVal = variableValues[endField.id] ?? "";
+    if (startVal && endVal && startVal >= endVal) {
+      return "Start time must be before end time.";
+    }
   }
   return null;
 }

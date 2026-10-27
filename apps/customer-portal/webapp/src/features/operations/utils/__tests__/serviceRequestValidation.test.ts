@@ -133,5 +133,46 @@ describe("serviceRequestValidation", () => {
         ),
       ).toBeNull();
     });
+
+    it("recognizes a Required: label with no leading bullet/asterisk marker", () => {
+      const unmarkedVariables = [
+        { id: "start", questionText: "Required: Start Date", type: "Date/Time" } as never,
+        { id: "end", questionText: "Required: End Date", type: "Date/Time" } as never,
+      ];
+      expect(
+        getDateTimeWindowError(unmarkedVariables, contextValues, {
+          start: "2026-01-02T10:00",
+          end: "2026-01-01T10:00",
+        }),
+      ).toBe("Start time must be before end time.");
+    });
+
+    it("validates every Start/End pair when a catalog item has more than one", () => {
+      const twoPairs = [
+        { id: "startDate", questionText: "Start Date", type: "Date" } as never,
+        { id: "endDate", questionText: "End Date", type: "Date" } as never,
+        { id: "startTime", questionText: "Start Time", type: "Time" } as never,
+        { id: "endTime", questionText: "End Time", type: "Time" } as never,
+      ];
+      // The Date pair is valid; the Time pair is not — the second pair must
+      // still be caught, and Start Time must pair with End Time, not with
+      // End Date.
+      expect(
+        getDateTimeWindowError(twoPairs, contextValues, {
+          startDate: "2026-01-01T10:00",
+          endDate: "2026-01-02T10:00",
+          startTime: "2026-01-01T15:00",
+          endTime: "2026-01-01T10:00",
+        }),
+      ).toBe("Start time must be before end time.");
+      expect(
+        getDateTimeWindowError(twoPairs, contextValues, {
+          startDate: "2026-01-01T00:00",
+          endDate: "2026-01-02T00:00",
+          startTime: "2026-01-01T09:00",
+          endTime: "2026-01-01T17:00",
+        }),
+      ).toBeNull();
+    });
   });
 });

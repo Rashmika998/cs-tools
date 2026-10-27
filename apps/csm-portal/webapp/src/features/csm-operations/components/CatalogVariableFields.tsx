@@ -37,6 +37,8 @@ import {
   isMultiLineField,
   isStartDateTimeField,
   isVariableRequired,
+  matchingEndDateTimeField,
+  matchingStartDateTimeField,
   usableChoices,
   variableLabel,
 } from "@features/csm-operations/utils/catalogVariables";
@@ -216,8 +218,14 @@ export default function CatalogVariableFields({
             const isEnd = isEndDateTimeField(v);
             let dateTimeError: string | undefined;
             if (isStart || isEnd) {
-              const startField = variables.find(isStartDateTimeField);
-              const endField = variables.find(isEndDateTimeField);
+              // Paired by kind (date with date, time with time) via
+              // matchingEndDateTimeField/matchingStartDateTimeField — a
+              // catalog item with more than one Start/End pair (e.g. Start
+              // Date/End Date alongside Start Time/End Time) must compare
+              // THIS field against its own counterpart, not whichever
+              // Start/End field happens to come first.
+              const startField = isStart ? v : matchingStartDateTimeField(variables, v);
+              const endField = isStart ? matchingEndDateTimeField(variables, v) : v;
               const startVal = startField ? (values[startField.id] ?? "") : "";
               const endVal = endField ? (values[endField.id] ?? "") : "";
               if (startVal && endVal && startVal >= endVal) {

@@ -173,6 +173,13 @@ describe("isStartDateTimeField / isEndDateTimeField", () => {
     expect(isStartDateTimeField(textVariable({ questionText: "Scheduled Date" }))).toBe(false);
     expect(isEndDateTimeField(textVariable({ questionText: "Planned End" }))).toBe(false);
   });
+
+  it("recognizes a Required: label with no leading bullet/asterisk marker", () => {
+    expect(isStartDateTimeField(textVariable({ questionText: "Required: Start Date" }))).toBe(
+      true,
+    );
+    expect(isEndDateTimeField(textVariable({ questionText: "Required: End Date" }))).toBe(true);
+  });
 });
 
 describe("getDateTimeWindowError", () => {
@@ -217,5 +224,40 @@ describe("getDateTimeWindowError", () => {
   it("is a no-op when the catalog item has no Start/End Date pair at all", () => {
     const vars = [textVariable({ id: "v1", questionText: "Subject" })];
     expect(getDateTimeWindowError(vars, { v1: "anything" })).toBeNull();
+  });
+
+  it("validates a second Start/End pair even when the first pair is valid", () => {
+    const vars = [
+      textVariable({ id: "startDate", questionText: "Start Date", order: 1 }),
+      textVariable({ id: "endDate", questionText: "End Date", order: 2 }),
+      textVariable({ id: "startTime", questionText: "Start Time", order: 3 }),
+      textVariable({ id: "endTime", questionText: "End Time", order: 4 }),
+    ];
+    // The Date pair is a valid window; the Time pair is not — neither should
+    // be able to hide the other.
+    const result = getDateTimeWindowError(vars, {
+      startDate: "2026-01-01T10:00",
+      endDate: "2026-01-02T10:00",
+      startTime: "2026-01-01T15:00",
+      endTime: "2026-01-01T10:00",
+    });
+    expect(result).toBe("Start time must be before end time.");
+  });
+
+  it("pairs Start Date with End Date and Start Time with End Time independently, not crossed", () => {
+    const vars = [
+      textVariable({ id: "startDate", questionText: "Start Date", order: 1 }),
+      textVariable({ id: "endDate", questionText: "End Date", order: 2 }),
+      textVariable({ id: "startTime", questionText: "Start Time", order: 3 }),
+      textVariable({ id: "endTime", questionText: "End Time", order: 4 }),
+    ];
+    // Both pairs are individually valid windows.
+    const result = getDateTimeWindowError(vars, {
+      startDate: "2026-01-01T00:00",
+      endDate: "2026-01-02T00:00",
+      startTime: "2026-01-01T09:00",
+      endTime: "2026-01-01T17:00",
+    });
+    expect(result).toBeNull();
   });
 });
