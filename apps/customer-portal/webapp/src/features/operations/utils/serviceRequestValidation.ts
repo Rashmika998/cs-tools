@@ -163,6 +163,37 @@ export function getUserEditableVariables(
 }
 
 /**
+ * Error when a catalog item has both a "Start Date"/"Start Time" field and an
+ * "End Date"/"End Time" field and the current values put the end at or before
+ * the start — an impossible window (e.g. a log-retrieval request) that
+ * shouldn't be submittable. Only fires once both fields have a value; an
+ * empty one is left to {@link getFirstEmptyRequiredField} instead of also
+ * reporting a window error on nothing. Values are the "YYYY-MM-DDTHH:MM"
+ * strings the datetime-local picker stores, which compare correctly with a
+ * plain string `>=` since every field is fixed-width.
+ */
+export function getDateTimeWindowError(
+  variables: CatalogItemVariable[],
+  contextValues: {
+    projectDisplay: string;
+    deploymentDisplay: string;
+    productDisplay: string;
+  },
+  variableValues: Record<string, string>,
+): string | null {
+  const userEditable = getUserEditableVariables(variables, contextValues);
+  const startField = userEditable.find(isStartDateTimeField);
+  const endField = userEditable.find(isEndDateTimeField);
+  if (!startField || !endField) return null;
+  const startVal = variableValues[startField.id] ?? "";
+  const endVal = variableValues[endField.id] ?? "";
+  if (startVal && endVal && startVal >= endVal) {
+    return "Start time must be before end time.";
+  }
+  return null;
+}
+
+/**
  * Returns the first empty required field label, or null if all filled.
  * Attachment variables are optional and are skipped.
  */

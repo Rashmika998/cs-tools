@@ -204,6 +204,31 @@ export function variableLabel(variable: BeCatalogItemVariable): string {
   return (variable.questionText ?? "").replace(/^\s*\*?\s*/, "").trim() || variable.id;
 }
 
+/** Strips the same leading `*`/bullet ServiceNow prefix as {@link variableLabel},
+ *  plus an optional "Required:" prefix some catalog items also carry, so a
+ *  question text like "* Required: Start Date" still matches exactly
+ *  "start date" below. */
+function normalizeDateTimeFieldLabel(questionText: string): string {
+  return (questionText ?? "").trim().replace(/^[\s*•]+\s*(?:required\s*:?\s*)?/i, "").trim();
+}
+
+/** The "Start Date"/"Start Time" field a start/end window comparison checks
+ *  against (not just any field matching the broader `isDateTimeField`
+ *  patterns — only one named exactly this). */
+export function isStartDateTimeField(variable: BeCatalogItemVariable): boolean {
+  return /^start\s*(date|time)$/i.test(
+    normalizeDateTimeFieldLabel(variable.questionText ?? ""),
+  );
+}
+
+/** The "End Date"/"End Time" field a start/end window comparison checks
+ *  against. */
+export function isEndDateTimeField(variable: BeCatalogItemVariable): boolean {
+  return /^end\s*(date|time)$/i.test(
+    normalizeDateTimeFieldLabel(variable.questionText ?? ""),
+  );
+}
+
 /**
  * User-editable variables — excludes context and hidden fields, sorted by the
  * backend's display order. This is the set the form renders and validates.
@@ -307,6 +332,32 @@ export function getFirstFieldFailingValidation(
       continue;
     }
     if (!matches) return { label: variableLabel(v), message: v.validation.message };
+  }
+  return null;
+}
+
+/**
+ * Error when a catalog item has both a "Start Date"/"Start Time" field and an
+ * "End Date"/"End Time" field and the current values put the end at or before
+ * the start — an impossible window (e.g. a log-retrieval request) that
+ * shouldn't be submittable. Only fires once both fields have a value; an
+ * empty one is left to {@link getFirstEmptyRequiredField} instead of also
+ * reporting a window error on nothing. Values are the "YYYY-MM-DDTHH:MM"
+ * strings the datetime-local picker stores (`formatDateTimeLocal`), which
+ * compare correctly with a plain string `>=` since every field is fixed-width.
+ */
+export function getDateTimeWindowError(
+  variables: BeCatalogItemVariable[],
+  values: Record<string, string>,
+): string | null {
+  const editable = getUserEditableVariables(variables);
+  const startField = editable.find(isStartDateTimeField);
+  const endField = editable.find(isEndDateTimeField);
+  if (!startField || !endField) return null;
+  const startVal = values[startField.id] ?? "";
+  const endVal = values[endField.id] ?? "";
+  if (startVal && endVal && startVal >= endVal) {
+    return "Start time must be before end time.";
   }
   return null;
 }

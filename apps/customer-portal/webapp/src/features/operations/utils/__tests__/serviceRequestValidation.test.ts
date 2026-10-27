@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  getDateTimeWindowError,
   getFirstEmptyRequiredField,
   getUserEditableVariables,
   isAttachmentField,
@@ -77,5 +78,60 @@ describe("serviceRequestValidation", () => {
       {},
     );
     expect(label).toBe("Required field");
+  });
+
+  describe("getDateTimeWindowError", () => {
+    const contextValues = {
+      projectDisplay: "Proj",
+      deploymentDisplay: "Dep",
+      productDisplay: "Prod",
+    };
+    const variables = [
+      { id: "start", questionText: "Start Date", type: "Date/Time" } as never,
+      { id: "end", questionText: "End Date", type: "Date/Time" } as never,
+    ];
+
+    it("reports an error when the end time is at or before the start time", () => {
+      expect(
+        getDateTimeWindowError(variables, contextValues, {
+          start: "2026-01-02T10:00",
+          end: "2026-01-01T10:00",
+        }),
+      ).toBe("Start time must be before end time.");
+      expect(
+        getDateTimeWindowError(variables, contextValues, {
+          start: "2026-01-01T10:00",
+          end: "2026-01-01T10:00",
+        }),
+      ).toBe("Start time must be before end time.");
+    });
+
+    it("passes when the end time is after the start time", () => {
+      expect(
+        getDateTimeWindowError(variables, contextValues, {
+          start: "2026-01-01T10:00",
+          end: "2026-01-01T11:00",
+        }),
+      ).toBeNull();
+    });
+
+    it("does not fire while either field is still empty", () => {
+      expect(
+        getDateTimeWindowError(variables, contextValues, {
+          start: "",
+          end: "2026-01-01T11:00",
+        }),
+      ).toBeNull();
+    });
+
+    it("is a no-op when the catalog item has no Start/End Date pair", () => {
+      expect(
+        getDateTimeWindowError(
+          [{ id: "v1", questionText: "Notes", type: "text" } as never],
+          contextValues,
+          { v1: "anything" },
+        ),
+      ).toBeNull();
+    });
   });
 });
