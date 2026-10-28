@@ -229,6 +229,7 @@ starting point.
 | `ENTITY_CLIENT_SECRET` | Yes | none | OAuth2 client secret. Treat as a secret. | `<client-secret>` |
 | `ENTITY_SCOPES` | No | none (no scopes requested) | Comma-separated OAuth2 scopes; blanks are ignored. | `scope-a,scope-b` |
 | `UMT_INTEGRATION_ACTOR_EMAIL` | No at startup; needed for case writes | empty | Email of this service's trusted M2M actor, asserted as the author on `POST /cases/{id}/comments` and `POST /cases/{id}/tags`. Must be in the entity service's trusted-actor allowlist, otherwise those calls return 403. | `integration-bot@example.com` |
+| `MARK_FIX_ISSUED_ACTOR_EMAILS` | No | empty (no attribution) | Maps a third-party consumer's own client id (decoded from the `x-jwt-assertion` header the gateway forwards) to its display email, so a `markFixIssued` `PATCH /cases/{id}` call is attributed to the real caller in entity-service's activity feed instead of this service's own shared client id. Comma-separated `clientId:email` pairs; an unmapped or missing client id just skips attribution (logged at WARN), never blocks the call. | `client-a:team-a@example.com,client-b:team-b@example.com` |
 | `PORT` | No | `8080` | TCP listen port. | `8080` |
 
 Notes:
@@ -236,8 +237,6 @@ Notes:
 - There are no log-level or other tuning variables; logging is structured text to stderr
   at the default `slog` level.
 - Timeouts and the 1 MiB body limit are constants in code, not configuration.
-- `UMT_INTEGRATION_ACTOR_EMAIL` is not yet listed in `.env.example`; add it to your `.env`
-  if you use the case comment or tag endpoints.
 
 ## API endpoints
 
