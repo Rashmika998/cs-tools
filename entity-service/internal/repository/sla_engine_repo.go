@@ -752,7 +752,7 @@ func (r *slaEngineRepo) cancelClockFlat(ctx context.Context, workItemID, target,
 	}
 	query := `
 		UPDATE sla s
-		SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE,
+		SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
 		    has_breached = (` + completedElapsedExpr + ` >= s.duration),
 		    updated_on = NOW(), updated_by = $3
 		FROM sla_policy sp
@@ -834,7 +834,7 @@ func (r *slaEngineRepo) cancelClockBusinessDays(ctx context.Context, workItemID,
 			hasBreached := elapsed >= duration
 
 			if _, err := tx.Exec(ctx, `
-				UPDATE sla SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE,
+				UPDATE sla SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
 				    has_breached = $2,
 				    updated_on = NOW(), updated_by = $3
 				WHERE id = $1::uuid`,
@@ -1587,7 +1587,7 @@ func (r *slaEngineRepo) ReviseClocks(ctx context.Context, workItemID string, pol
 	// completeClockBusinessDays/setPausedBusinessDays already do.
 	const flatCancelQuery = `
 		UPDATE sla s
-		SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE,
+		SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
 		    has_breached = (` + completedElapsedExpr + ` >= s.duration),
 		    updated_on = NOW(), updated_by = $2
 		FROM sla_policy sp
@@ -1696,7 +1696,7 @@ func reviseClocksCancelBusinessDays(ctx context.Context, tx pgx.Tx, workItemID s
 		hasBreached := elapsed >= duration
 
 		if _, err := tx.Exec(ctx, `
-			UPDATE sla SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE,
+			UPDATE sla SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
 			    has_breached = $2,
 			    updated_on = NOW(), updated_by = $3
 			WHERE id = $1::uuid`,
