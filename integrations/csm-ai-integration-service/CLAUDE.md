@@ -10,7 +10,7 @@ component with a Claude client, the Anthropic SDK and the model credentials: the
 | Here | In the CSM portal backend |
 |---|---|
 | The Claude client (gateway base URL, API key, model, timeout, retries) | Authentication and permissions of the end user (`PermWrite` for generation) |
-| The catalogue the model reads (built-in copy; a Choreo file mount overrides it) | The route the webapp calls (`/dashboards/generate`) |
+| The catalogue the model reads (built-in copy; a directory of Choreo file mounts overrides it) | The route the webapp calls (`/dashboards/generate`) |
 | Building the prompt (catalogue + the team list the backend sends + prompt + current draft) | Validating what the model wrote (`dashboard.ParseGenerated`, the per-type rules) |
 | The call, its timeout, and reading the answer (the JSON objects, a decline, a refusal, a truncation) | The team registry and the team key -> id / name swap; saving and sharing |
 | Mapping those outcomes to a stable error vocabulary | The sample generators used when this service is not configured |
@@ -92,18 +92,49 @@ fails before the call (an invalid body, `not_configured`) writes no usage line.
 
 The model is given a catalogue: what a dashboard definition may contain, written for the model
 (`internal/catalogue/catalogue.md`). It is **built into the binary** as the default and can be
-**overridden by a file** that Choreo mounts (Configs & Secrets -> file mount), named by `CATALOGUE_FILE`.
-The file is **read once, when the service starts** (missing or empty fails the start, so a mistyped path
-shows there); requests use that text with no file access, so an edited mount applies on the next start
-(in Choreo, changing a mount restarts the pod anyway). The startup log names its origin (`built-in` or the
-path). Keep the built-in copy current: it is what local runs and tests use, and what a deployment without
-the mount gets.
+**overridden by a directory of parts**, named by `CATALOGUE_DIR`: Choreo limits the size of a mounted file
+(about 20 KB, the limit the backend's `DASHBOARDS_DIR` part files are cut to, per its `loadDir` comment) and
+the catalogue is larger, so it is mounted as one file mount per part (Configs & Secrets -> file mount), all
+under one directory. The parts are generated and committed in **`catalogue-parts/`** (see below). The parts are that directory's `*.md` files, **joined in name order** with one blank line between
+them (`catalogue-01.md`, `catalogue-02.md`, ...; two digits, since names sort as text). Directories, other
+files, and names starting with `.` (Kubernetes' `..data` entries beside mounted files) or `_` are skipped.
+Each part's trailing whitespace is trimmed, so the catalogue split at a blank line before a `## ` heading
+joins back into the same text (`TestTheBuiltInCatalogueSplitAtHeadingsJoinsBackUnchanged`).
+
+**`catalogue-parts/` is generated: never edit it by hand.** `make catalogue-parts` (`cmd/splitcatalogue`)
+cuts the built-in `catalogue.md` with `catalogue.Split` into parts of at most `catalogue.MaxPartBytes`
+(20,000 bytes, under 20 KB however it is counted). It cuts before `## ` sections and packs whole sections
+into as few parts as fit; a section too large for one part is cut before its `### ` subsections, then at
+blank lines (a single paragraph over the limit is an error). It writes `catalogue-01.md`, `catalogue-02.md`,
+... and removes old `catalogue-NN.md` files, so a shorter catalogue leaves no stale part. `Split` refuses a
+text its parts would not join back into (extra blank lines at a cut, no final newline).
+
+**Changing `catalogue.md` is three steps, and the third is not automatic:**
+
+1. Run `make catalogue-parts` in this directory.
+2. Commit `catalogue-parts/` with the `catalogue.md` change. `TestTheCommittedPartsAreUpToDate` fails while
+   the committed parts are not exactly what `Split` makes of `catalogue.md` (or a part is over the limit),
+   so `go test ./...` and CI catch a forgotten step 1.
+3. **Update the Choreo file mounts** in every environment whose component sets `CATALOGUE_DIR`: replace
+   each mounted part's content with the new `catalogue-parts/catalogue-NN.md`, add a mount for a new part,
+   and remove the mount of a part that is gone (the `README.md`'s "Mounting the catalogue in Choreo").
+   Nothing checks this step: a deployment keeps serving the old catalogue from its mounts, and starts
+   normally, until they are updated. Check the startup log's `catalogueParts` after the restart.
+
+The directory is **read once, when the service starts**: a missing directory, one with no `*.md` file, and
+an empty or unreadable part each fail the start, so a mistyped path shows there. Requests use that text
+with no file access, so an edited mount applies on the next start (in Choreo, changing a mount restarts the
+pod anyway). The startup log line `model calls` names the origin (`catalogue`: `built-in` or the directory)
+and the parts in the order they were joined (`catalogueParts`). `CATALOGUE_FILE`, the single file this
+replaced, is a start error when `CATALOGUE_DIR` is unset, so a deployment still setting only it does not
+quietly fall back to the built-in copy; next to `CATALOGUE_DIR` it is ignored, with a warning at start. Keep the built-in copy current: it is what local runs and tests use, and what a
+deployment without the mount gets.
 
 **Editing `catalogue.md` can break a backend test, by design.** The backend's
 `TestParseGenerated_TheCatalogueExampleIsValid` (`apps/csm-portal/backend/internal/dashboard`) reads this
 file and runs its section 10 example through the backend's own check, so the catalogue and the rules
 that judge the model's output cannot drift apart. After editing it, run the backend's
-`go test ./internal/dashboard`. In the local stack, an edit to the built-in catalogue needs this service's
+`go test ./internal/dashboard`, then the three steps above. In the local stack, an edit to the built-in catalogue needs this service's
 image rebuilt (`docker compose up -d --build csm-ai-integration-service`), not the backend's.
 
 The Teams section is not in the file: the backend sends the team list with each request and

@@ -437,11 +437,12 @@ If two readings are plausible and the table does not settle it, pick the one abo
 
 ## 9. Check before you answer
 
-1. Only fields, ops, values and shapes from this file. No literal dates or ids. Emails only in
-   `createdBy in`, and only ones the request gave.
+1. Only fields, ops, values and shapes from this file. No literal dates or ids. Email addresses only in
+   `createdBy in`, and only ones the request gave; "I raised" is `createdBy eq ["__current_user_email__"]`.
 2. Every widget has `id`, `displayName`, `resourceType`, `shape`, `gridWidth` 1-12, `query`.
 3. Widget ids are unique.
-4. Every `pie`/`bar` has exactly one of `slices` / `groupBy`; every `list` has `sortBy` and `listLimit`.
+4. Every `pie`/`bar` has exactly one of `slices` / `groupBy`; every `list` has `listLimit`, and `sortBy`
+   except a `problem`, `account` or `case_feedback` list, which has no `sortBy` (items 10-12).
 5. `line` only on `resourceType: "case"`, `days` 1-90.
 6. `severity` and `issueType` only on `case`; `engagementType` only on `engagement`.
 7. `type` + `isTeamBased`: `cs` with `false`, or `cre` with `true`. `isDefault` is `false`.

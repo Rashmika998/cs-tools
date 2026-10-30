@@ -26,13 +26,15 @@ func env(vars map[string]string) func(string) string {
 	return func(k string) string { return vars[k] }
 }
 
+// TestLoadConfigDefaults checks that with nothing set, model calls are off and
+// the defaults apply, the built-in catalogue (no CATALOGUE_DIR) included.
 func TestLoadConfigDefaults(t *testing.T) {
 	c, err := loadConfig(env(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Enabled() || c.Model != defaultClaudeModel || c.Timeout != defaultClaudeTimeout ||
-		c.BaseURL != "" || c.CatalogueFile != "" {
+		c.BaseURL != "" || c.CatalogueDir != "" {
 		t.Errorf("defaults = %+v", c)
 	}
 	if c.GatewayHost() != "none" {
@@ -40,19 +42,21 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadConfigReadsAndTrimsEveryVariable checks that every variable, the
+// catalogue directory included, is read and trimmed.
 func TestLoadConfigReadsAndTrimsEveryVariable(t *testing.T) {
 	c, err := loadConfig(env(map[string]string{
 		"ANTHROPIC_API_KEY": " key\n",
 		"CLAUDE_MODEL":      " claude-opus-5-5 ",
 		"CLAUDE_TIMEOUT":    "90s",
 		"CLAUDE_BASE_URL":   " https://gateway.example.test/v1/anthropic?x=1 ",
-		"CATALOGUE_FILE":    " /mnt/catalogue.md ",
+		"CATALOGUE_DIR":     " /mnt/catalogue ",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := config{APIKey: "key", Model: "claude-opus-5-5", Timeout: 90 * time.Second,
-		BaseURL: "https://gateway.example.test/v1/anthropic?x=1", CatalogueFile: "/mnt/catalogue.md"}
+		BaseURL: "https://gateway.example.test/v1/anthropic?x=1", CatalogueDir: "/mnt/catalogue"}
 	if c != want {
 		t.Errorf("config = %+v, want %+v", c, want)
 	}
@@ -84,6 +88,9 @@ func TestLoadConfigNeedsTheGatewayWithAKey(t *testing.T) {
 	}
 }
 
+// TestLoadConfigRejectsBadValues checks that a bad timeout or gateway URL, or
+// the old CATALOGUE_FILE without CATALOGUE_DIR, is an error that never
+// mentions the key.
 func TestLoadConfigRejectsBadValues(t *testing.T) {
 	for name, vars := range map[string]map[string]string{
 		"timeout not a duration": {"CLAUDE_TIMEOUT": "soon"},
@@ -92,12 +99,41 @@ func TestLoadConfigRejectsBadValues(t *testing.T) {
 		"base url relative":      {"CLAUDE_BASE_URL": "/v1"},
 		"base url other scheme":  {"CLAUDE_BASE_URL": "ftp://gateway.example.test"},
 		"base url no host":       {"CLAUDE_BASE_URL": "https://"},
+		"old catalogue file":     {"CATALOGUE_FILE": "/mnt/catalogue.md"},
 	} {
 		if _, err := loadConfig(env(vars)); err == nil {
 			t.Errorf("%s: no error", name)
 		} else if strings.Contains(err.Error(), "key") {
 			t.Errorf("%s: error %q mentions the key", name, err)
 		}
+	}
+}
+
+// TestLoadConfigNamesCatalogueDirForTheOldFile checks that a deployment still
+// setting CATALOGUE_FILE is told to use CATALOGUE_DIR instead.
+func TestLoadConfigNamesCatalogueDirForTheOldFile(t *testing.T) {
+	_, err := loadConfig(env(map[string]string{"CATALOGUE_FILE": "/mnt/catalogue.md"}))
+	if err == nil || !strings.Contains(err.Error(), "CATALOGUE_DIR") {
+		t.Errorf("err = %v, want one naming CATALOGUE_DIR", err)
+	}
+}
+
+// TestLoadConfigIgnoresTheOldFileNextToCatalogueDir checks that CATALOGUE_FILE
+// left set next to CATALOGUE_DIR does not fail the start, and is flagged for
+// the startup warning.
+func TestLoadConfigIgnoresTheOldFileNextToCatalogueDir(t *testing.T) {
+	cfg, err := loadConfig(env(map[string]string{
+		"CATALOGUE_FILE": "/mnt/catalogue.md",
+		"CATALOGUE_DIR":  "/mnt/catalogue",
+	}))
+	if err != nil {
+		t.Fatalf("err = %v, want none", err)
+	}
+	if cfg.CatalogueDir != "/mnt/catalogue" || !cfg.OldCatalogueFile {
+		t.Errorf("CatalogueDir = %q, OldCatalogueFile = %v, want /mnt/catalogue and true", cfg.CatalogueDir, cfg.OldCatalogueFile)
+	}
+	if cfg, _ := loadConfig(env(map[string]string{"CATALOGUE_DIR": "/mnt/catalogue"})); cfg.OldCatalogueFile {
+		t.Error("OldCatalogueFile = true without CATALOGUE_FILE")
 	}
 }
 
