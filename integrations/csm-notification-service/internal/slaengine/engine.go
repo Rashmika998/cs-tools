@@ -1107,10 +1107,10 @@ func (e *Engine) Reconcile(ctx context.Context, client entityActiveClocksClient)
 // event processing).
 //
 // Unlike a bare Reconcile call, this wipes this engine's entire Redis-held
-// state first (Store.WipeAll: the wake index, every clock hash, every tier
-// claim) before rebuilding it. Reconcile alone is already safe to re-run at
-// any time -- every write it makes is idempotent (see its own doc comment)
-// -- but it only ever touches clocks entity-service's GetActiveCSMSLAClocks
+// state (Store.WipeAll: the wake index, every clock hash, every tier claim)
+// before rebuilding it. Reconcile alone is already safe to re-run at any
+// time -- every write it makes is idempotent (see its own doc comment) --
+// but it only ever touches clocks entity-service's GetActiveCSMSLAClocks
 // still reports active; it has no way to know about, and so never removes,
 // a clock Redis still holds that is no longer active (e.g. after a bulk
 // resync of entity-service's own data changes which "sla" rows exist at
@@ -1118,11 +1118,21 @@ func (e *Engine) Reconcile(ctx context.Context, client entityActiveClocksClient)
 // processDueMember already drops a due wake entry for an unregistered clock
 // without alerting -- but this action exists specifically to make Redis
 // agree with entity-service again after exactly that kind of external data
-// change, so leaving stale entries behind would defeat the point. Wiping
-// first is safe: reconcileClock computes every tier's due time from
-// entity-service's own StartedOn/duration/pause data, never from whatever
-// Redis previously held, so a clock entity-service still reports active is
-// rebuilt identically whether or not Redis was wiped first.
+// change, so leaving stale entries behind would defeat the point.
+//
+// Fetches the active-clock list BEFORE wiping anything, not after (a
+// CodeRabbit-caught ordering bug in an earlier version wiped first): if
+// GetActiveCSMSLAClocks fails, nothing here is touched at all and the
+// engine keeps whatever Redis state it already had, rather than being left
+// with nothing to rebuild from until a later successful recalculation or a
+// restart's own Reconcile. A WipeAll failure, once the fetch has already
+// succeeded, is logged but not fatal: reconcileClock computes every tier's
+// due time from entity-service's own StartedOn/duration/pause data, never
+// from whatever Redis previously held, so the rebuild below still lands the
+// correct state for every clock entity-service reports regardless of
+// whether the wipe fully completed -- aborting instead would throw away a
+// fetch that already succeeded, over a wipe whose only purpose was cleaning
+// up orphaned entries that are themselves already harmless (see above).
 //
 // Guarded by recalculating (atomic.Bool) so two requests in flight at once
 // -- a double click, or a redelivered Kafka record -- can't race a second
@@ -1139,13 +1149,20 @@ func (e *Engine) RecalculateFromEntity(ctx context.Context) error {
 	}
 	defer e.recalculating.Store(false)
 
+	clocks, err := client.GetActiveCSMSLAClocks(ctx)
+	if err != nil {
+		return fmt.Errorf("slaengine: recalculate: fetch active clocks: %w", err)
+	}
+
 	if err := e.store.WipeAll(ctx); err != nil {
-		return fmt.Errorf("slaengine: recalculate: wipe redis state: %w", err)
+		slog.ErrorContext(ctx, "slaengine: recalculate: wipe redis state failed, rebuilding anyway from the already-fetched list", "err", err)
 	}
-	if err := e.Reconcile(ctx, client); err != nil {
-		return fmt.Errorf("slaengine: recalculate: %w", err)
+
+	now := time.Now()
+	for _, c := range clocks {
+		e.reconcileClock(ctx, c, now)
 	}
-	slog.InfoContext(ctx, "slaengine: recalculation complete")
+	slog.InfoContext(ctx, "slaengine: recalculation complete", "count", len(clocks))
 	return nil
 }
 

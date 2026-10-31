@@ -97,7 +97,9 @@ export default function CsmSlaEnginePage(): JSX.Element {
 
         {recalculate.isSuccess && (
           <Alert severity="success" onClose={() => recalculate.reset()}>
-            Recalculation requested. The clocks below will update over the next few minutes as it completes.
+            Recalculation requested. The notification service rebuilds its SLA tracking in the background over the next
+            few minutes. The list below reflects the platform&apos;s own records and does not change as a result of
+            that rebuild.
           </Alert>
         )}
         {recalculate.isError && (

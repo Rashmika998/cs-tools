@@ -34,6 +34,7 @@ type fakeStore struct {
 	failClaim   bool
 	failAdd     bool
 	failAdvance bool
+	failWipe    bool
 }
 
 func newFakeStore() *fakeStore {
@@ -185,6 +186,9 @@ func (s *fakeStore) ReleaseTier(_ context.Context, caseID, clockType string, tie
 }
 
 func (s *fakeStore) WipeAll(_ context.Context) error {
+	if s.failWipe {
+		return errors.New("redis: wipe failed")
+	}
 	s.wake = map[string]time.Time{}
 	s.clocks = map[string]ClockMeta{}
 	s.claims = map[string]bool{}
@@ -1705,6 +1709,52 @@ func TestEngine_RecalculateFromEntity_NoEntityClientConfigured_ReturnsError(t *t
 	e := newTestEngine(newFakeStore(), &fakeChat{}, &fakePublisher{})
 	if err := e.RecalculateFromEntity(context.Background()); err == nil {
 		t.Fatal("RecalculateFromEntity() error = nil, want an error for a nil entity client")
+	}
+}
+
+// TestEngine_RecalculateFromEntity_FetchFailure_NeverWipesRedis is the
+// regression test for a CodeRabbit-caught ordering bug: an earlier version
+// wiped Redis BEFORE fetching the active-clock list, so a fetch failure
+// left the engine with nothing to rebuild from -- breach alerting for every
+// clock stayed broken until a later successful recalculation or a restart.
+// The fetch must happen first, and a failure there must leave Redis
+// completely untouched.
+func TestEngine_RecalculateFromEntity_FetchFailure_NeverWipesRedis(t *testing.T) {
+	st := newFakeStore()
+	if err := st.SetClock(context.Background(), "case-untouched", ClockResponse, ClockMeta{CaseNumber: "CS0000"}); err != nil {
+		t.Fatalf("SetClock() error = %v", err)
+	}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = &fakeActiveClocksClient{err: errors.New("entity-service unreachable")}
+
+	if err := e.RecalculateFromEntity(context.Background()); err == nil {
+		t.Fatal("RecalculateFromEntity() error = nil, want the fetch failure propagated")
+	}
+	if _, found, _ := st.GetClock(context.Background(), "case-untouched", ClockResponse); !found {
+		t.Error("RecalculateFromEntity wiped Redis despite the active-clock fetch failing")
+	}
+}
+
+// TestEngine_RecalculateFromEntity_WipeFailure_StillRebuildsFromFetchedList
+// confirms a WipeAll failure (once the fetch has already succeeded) does
+// not abort the rebuild -- the fetched list is already in hand, and
+// reconcileClock computes every tier from entity-service's own data
+// regardless of Redis's prior state, so aborting here would throw away a
+// successful fetch for no benefit.
+func TestEngine_RecalculateFromEntity_WipeFailure_StillRebuildsFromFetchedList(t *testing.T) {
+	st := newFakeStore()
+	st.failWipe = true
+	client := &fakeActiveClocksClient{clocks: []activeSLAClock{
+		{CaseID: "case-fresh", ClockType: ClockResponse, Priority: "CATASTROPHIC", StartedOn: timePtr(time.Now()), DurationSeconds: int64((15 * time.Minute).Seconds())},
+	}}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = client
+
+	if err := e.RecalculateFromEntity(context.Background()); err != nil {
+		t.Fatalf("RecalculateFromEntity() error = %v, want nil (a wipe failure is logged, not fatal)", err)
+	}
+	if _, found, _ := st.GetClock(context.Background(), "case-fresh", ClockResponse); !found {
+		t.Error("case-fresh's clock was not rebuilt despite the wipe failure")
 	}
 }
 

@@ -75,14 +75,14 @@ func TestSLAStatusService_SearchActiveSLAStatuses_RequiresInternalCaller(t *test
 
 	t.Run("no verified identity on the request is refused", func(t *testing.T) {
 		_, err := NewSLAStatusService(repo, erroringAccess{err: &apierror.ServiceUnavailableError{Msg: "no verified identity"}}, nil, nil).
-			SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "")
+			SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "", false)
 		if err == nil {
 			t.Fatal("err = nil, want the AccessService error propagated")
 		}
 	})
 
 	t.Run("an authenticated but non-internal caller is refused", func(t *testing.T) {
-		_, err := NewSLAStatusService(repo, restrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "")
+		_, err := NewSLAStatusService(repo, restrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "", false)
 		var fe *apierror.ForbiddenError
 		if !errors.As(err, &fe) {
 			t.Fatalf("err = %v, want *apierror.ForbiddenError", err)
@@ -101,7 +101,7 @@ func TestSLAStatusService_SearchActiveSLAStatuses(t *testing.T) {
 			got = p
 			return nil, 0, nil
 		}}
-		if _, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, ""); err != nil {
+		if _, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "", false); err != nil {
 			t.Fatal(err)
 		}
 		if got.Limit != defaultSLAStatusLimit {
@@ -114,7 +114,7 @@ func TestSLAStatusService_SearchActiveSLAStatuses(t *testing.T) {
 			t.Fatal("repository must not be reached for an invalid limit")
 			return nil, 0, nil
 		}}
-		_, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{Limit: 2001}, "")
+		_, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{Limit: 2001}, "", false)
 		var ve *apierror.ValidationError
 		if !asValidationError(err, &ve) {
 			t.Fatalf("err = %v, want *apierror.ValidationError", err)
@@ -127,7 +127,7 @@ func TestSLAStatusService_SearchActiveSLAStatuses(t *testing.T) {
 			gotSource = source
 			return nil, 0, nil
 		}}
-		if _, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "CSM"); err != nil {
+		if _, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "CSM", false); err != nil {
 			t.Fatal(err)
 		}
 		if gotSource != "CSM" {
@@ -140,7 +140,7 @@ func TestSLAStatusService_SearchActiveSLAStatuses(t *testing.T) {
 			t.Fatal("repository must not be reached for an invalid source")
 			return nil, 0, nil
 		}}
-		_, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "bogus")
+		_, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "bogus", false)
 		var ve *apierror.ValidationError
 		if !asValidationError(err, &ve) {
 			t.Fatalf("err = %v, want *apierror.ValidationError", err)
@@ -152,7 +152,7 @@ func TestSLAStatusService_SearchActiveSLAStatuses(t *testing.T) {
 		repo := stubSLAStatusRepo{search: func(_ context.Context, p domain.Pagination, _ string) ([]domain.SLAStatus, int, error) {
 			return want, 7, nil
 		}}
-		resp, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{Limit: 10, Offset: 20}, "")
+		resp, err := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, nil, nil).SearchActiveSLAStatuses(context.Background(), domain.Pagination{Limit: 10, Offset: 20}, "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,11 +258,10 @@ func TestSLAStatusService_GetClockState(t *testing.T) {
 	})
 }
 
-// TestSLAStatusService_SearchActiveSLAStatusesManage_RequiresAdmin confirms
-// the admin-facing variant refuses a caller with no admin role, even one
-// that would pass the plain internal-caller check SearchActiveSLAStatuses
-// itself uses.
-func TestSLAStatusService_SearchActiveSLAStatusesManage_RequiresAdmin(t *testing.T) {
+// TestSLAStatusService_SearchActiveSLAStatuses_AdminTrueRequiresAdminRole
+// confirms admin=true refuses a caller with no admin role, even one that
+// would pass the plain internal-caller check admin=false uses.
+func TestSLAStatusService_SearchActiveSLAStatuses_AdminTrueRequiresAdminRole(t *testing.T) {
 	repo := stubSLAStatusRepo{search: func(context.Context, domain.Pagination, string) ([]domain.SLAStatus, int, error) {
 		t.Fatal("repository must not be reached for a non-admin caller")
 		return nil, 0, nil
@@ -270,26 +269,49 @@ func TestSLAStatusService_SearchActiveSLAStatusesManage_RequiresAdmin(t *testing
 	svc := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, []string{"cs_admin"}, nil)
 
 	ctx := auth.WithIdentity(context.Background(), auth.Identity{Validated: true, UserEmail: "eng@wso2.com", Roles: []string{"cs_engineer"}})
-	_, err := svc.SearchActiveSLAStatusesManage(ctx, domain.Pagination{}, "")
+	_, err := svc.SearchActiveSLAStatuses(ctx, domain.Pagination{}, "", true)
 	var forbidden *apierror.ForbiddenError
 	if !errors.As(err, &forbidden) {
 		t.Fatalf("err = %v, want *apierror.ForbiddenError", err)
 	}
 }
 
-// TestSLAStatusService_SearchActiveSLAStatusesManage_AdminSucceeds confirms
-// a genuine admin reaches the same repository call SearchActiveSLAStatuses
-// itself makes.
-func TestSLAStatusService_SearchActiveSLAStatusesManage_AdminSucceeds(t *testing.T) {
+// TestSLAStatusService_SearchActiveSLAStatuses_AdminTrueSucceedsForAdmin
+// confirms a genuine admin reaches the same repository call admin=false
+// makes.
+func TestSLAStatusService_SearchActiveSLAStatuses_AdminTrueSucceedsForAdmin(t *testing.T) {
 	want := []domain.SLAStatus{{CaseID: "case-1"}}
 	repo := stubSLAStatusRepo{search: func(context.Context, domain.Pagination, string) ([]domain.SLAStatus, int, error) {
 		return want, 1, nil
 	}}
 	svc := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, []string{"cs_admin"}, nil)
 
-	got, err := svc.SearchActiveSLAStatusesManage(bannerAdminCtx(), domain.Pagination{}, "csm")
+	got, err := svc.SearchActiveSLAStatuses(bannerAdminCtx(), domain.Pagination{}, "csm", true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(got.Statuses) != 1 || got.Statuses[0].CaseID != "case-1" {
+		t.Errorf("got = %+v, want one status for case-1", got)
+	}
+}
+
+// TestSLAStatusService_SearchActiveSLAStatuses_AdminFalseUnaffectedByAdminRoles
+// is the regression guard for the whole reason admin became a query
+// parameter on the existing endpoint rather than a second route: an
+// ordinary internal caller (no admin role at all) making the plain,
+// admin=false request -- exactly what csm-notification-service's own
+// startup reconciliation does -- must see byte-identical behavior to
+// before this parameter existed.
+func TestSLAStatusService_SearchActiveSLAStatuses_AdminFalseUnaffectedByAdminRoles(t *testing.T) {
+	want := []domain.SLAStatus{{CaseID: "case-1"}}
+	repo := stubSLAStatusRepo{search: func(context.Context, domain.Pagination, string) ([]domain.SLAStatus, int, error) {
+		return want, 1, nil
+	}}
+	svc := NewSLAStatusService(repo, alwaysUnrestrictedAccess{}, []string{"cs_admin"}, nil)
+
+	got, err := svc.SearchActiveSLAStatuses(context.Background(), domain.Pagination{}, "", false)
+	if err != nil {
+		t.Fatalf("admin=false caller with no admin role was refused: %v", err)
 	}
 	if len(got.Statuses) != 1 || got.Statuses[0].CaseID != "case-1" {
 		t.Errorf("got = %+v, want one status for case-1", got)

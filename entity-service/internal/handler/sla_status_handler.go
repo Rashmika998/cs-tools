@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/apierror"
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/domain"
@@ -38,39 +39,25 @@ func NewSLAStatusHandler(svc service.SLAStatusService) *SLAStatusHandler {
 }
 
 // SearchActiveSLAStatuses handles GET /sla-status. A plain GET with
-// limit/offset/source query params, not a POST /search: filtering is a
-// single optional value (source), so a request body would carry nothing a
-// query string can't — same reasoning as the deprecated GET /tags form (see
+// limit/offset/source/admin query params, not a POST /search: filtering is a
+// handful of optional values, so a request body would carry nothing a query
+// string can't — same reasoning as the deprecated GET /tags form (see
 // CaseHandler.SearchTagsQuery's own doc comment) minus that one's
 // backward-compatibility concern, since this is a new endpoint. source is
 // optional; see SLAStatusService.SearchActiveSLAStatuses's own doc comment
-// for its accepted values.
+// for its accepted values. admin=true is the CSM portal's own "Recalculate
+// SLA" admin page requesting the CSM-admin-gated view (same query, same
+// response shape, just an extra role check) — any other value, or the
+// param's absence, is the plain internal-caller request every other caller
+// (csm-notification-service's own startup reconciliation included) already
+// makes, completely unaffected by this parameter's existence.
 func (h *SLAStatusHandler) SearchActiveSLAStatuses(w http.ResponseWriter, r *http.Request) {
 	pagination, ok := parseSLAStatusPaginationQuery(w, r)
 	if !ok {
 		return
 	}
-	resp, err := h.svc.SearchActiveSLAStatuses(r.Context(), pagination, r.URL.Query().Get("source"))
-	if err != nil {
-		writeServiceError(w, r, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// SearchActiveSLAStatusesManage handles GET /sla-status/manage — the CSM
-// admin-facing counterpart to GET /sla-status, same query params, same
-// response shape; see SLAStatusService.SearchActiveSLAStatusesManage's own
-// doc comment for the access difference. The CSM portal calls this to show
-// which clocks are currently running, typically right after
-// POST /sla-engine/recalculate.
-func (h *SLAStatusHandler) SearchActiveSLAStatusesManage(w http.ResponseWriter, r *http.Request) {
-	pagination, ok := parseSLAStatusPaginationQuery(w, r)
-	if !ok {
-		return
-	}
-	resp, err := h.svc.SearchActiveSLAStatusesManage(r.Context(), pagination, r.URL.Query().Get("source"))
+	admin := strings.EqualFold(r.URL.Query().Get("admin"), "true")
+	resp, err := h.svc.SearchActiveSLAStatuses(r.Context(), pagination, r.URL.Query().Get("source"), admin)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
@@ -92,9 +79,9 @@ func (h *SLAStatusHandler) RequestRecalculation(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// parseSLAStatusPaginationQuery parses the shared limit/offset query params
-// SearchActiveSLAStatuses/SearchActiveSLAStatusesManage both accept. Writes
-// the error response itself and returns ok=false on a malformed value.
+// parseSLAStatusPaginationQuery parses the limit/offset query params
+// SearchActiveSLAStatuses accepts. Writes the error response itself and
+// returns ok=false on a malformed value.
 func parseSLAStatusPaginationQuery(w http.ResponseWriter, r *http.Request) (domain.Pagination, bool) {
 	pagination := domain.Pagination{}
 	if raw := r.URL.Query().Get("limit"); raw != "" {

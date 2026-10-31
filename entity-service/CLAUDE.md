@@ -2378,24 +2378,39 @@ for recovering `csm-notification-service`'s own Redis-held SLA tracking
 (the 50/75/100% tier wake index that service's own `internal/slaengine`
 keeps, nowhere else — see that repo's own CLAUDE.md, "SLA breach-alerting
 engine") when it no longer agrees with this service's durable record (e.g.
-after a bulk resync of the underlying case/incident data changes which
-`sla` rows exist). Admin-gated the same way `portalBannerService`'s own
-`requireAdmin` is (`RequireInternalCaller` — reached through the portal
-BFF, not a bare end-user token — plus `AUTH_ADMIN_ROLES`), on the same
-`SLAStatusService`: it publishes `events.TypeSLARecalculationRequested`
-(a fixed `"sla-engine"` partition key — there is no single case/incident
-this request is "about") and returns, carrying no instruction of its own
-beyond "rebuild everything" — the actual wipe-and-rebuild logic lives
-entirely on the consuming side, since that is where the Redis state and
-the entity-service client it rebuilds from already live. A nil
-`EventPublisherService` (Event Hub publishing not configured) is a
-`ServiceUnavailableError`, not a silent no-op — unlike every other
-`publishXxx`-style call site in this service, the entire point of this
-action is telling the caller whether the request actually went out.
-`GET /sla-status/manage` is `GET /sla-status`'s admin-gated counterpart
-(same query/response shape, same repository call, `holdsAnyRole` instead
-of `RequireInternalCaller`) — what the portal's admin page polls to show
-which clocks are currently running.
+after a bulk resync of the underlying case data changes which `sla` rows
+exist). Scoped to `GET /sla-status`'s own case-like work item types —
+incidents have no breach-alerting tracking of any kind in
+`csm-notification-service` today (not a gap this action introduces; see
+that repo's own CLAUDE.md), so they're deliberately out of scope here too.
+Admin-gated the same way `portalBannerService`'s own `requireAdmin` is
+(`RequireInternalCaller` — reached through the portal BFF, not a bare
+end-user token — plus `AUTH_ADMIN_ROLES`), on the same `SLAStatusService`:
+it publishes `events.TypeSLARecalculationRequested` (a fixed `"sla-engine"`
+partition key — there is no single case this request is "about") and
+returns, carrying no instruction of its own beyond "rebuild everything" —
+the actual wipe-and-rebuild logic lives entirely on the consuming side,
+since that is where the Redis state and the entity-service client it
+rebuilds from already live. A nil `EventPublisherService` (Event Hub
+publishing not configured) is a `ServiceUnavailableError`, not a silent
+no-op — unlike every other `publishXxx`-style call site in this service,
+the entire point of this action is telling the caller whether the request
+actually went out.
+
+**`GET /sla-status` itself grew an `admin` query param rather than gaining
+a second `/manage` route for this**, since `RequireInternalCaller` already
+let any CSM portal caller through with no role check at all (the portal
+backend's own OAuth2 client id unlocks `Unrestricted` scope for any
+`@wso2.com` caller — see `AccessService.ResolveScope`'s own
+`CSMPortalBackendClientID` branch) — a second route gated identically
+would not have actually restricted anything a query param on the
+original couldn't. `admin=true` additionally requires `holdsAnyRole`
+against `AUTH_ADMIN_ROLES`; omitting it (every pre-existing caller,
+`csm-notification-service`'s own startup reconciliation included) is
+byte-identical to before this parameter existed — it only ever narrows
+who may ask for the admin view, never widens the plain one. The portal's
+admin page sends it to show which clocks are currently running,
+typically right after `POST /sla-engine/recalculate`.
 
 **Why this is a published Kafka event rather than a direct call into
 `csm-notification-service`**: that service deliberately has no inbound

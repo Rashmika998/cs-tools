@@ -22,13 +22,13 @@ import (
 	"net/url"
 )
 
-// SearchActiveSLAStatusesManage calls GET /sla-status/manage on the entity
-// service -- the CSM-admin-facing counterpart to GET /sla-status (internal
-// callers only; not exposed by this backend). limit/offset/source are
-// forwarded as-is; a blank value is omitted so entity-service applies its
-// own default.
+// SearchActiveSLAStatusesManage calls GET /sla-status?admin=true on the
+// entity service -- the CSM-admin-facing request of that endpoint (the
+// plain, admin=false request is internal-callers-only and not exposed by
+// this backend). limit/offset/source are forwarded as-is; a blank value is
+// omitted so entity-service applies its own default.
 func (c *CustomerEntityClient) SearchActiveSLAStatusesManage(ctx context.Context, limit, offset, source string) ([]byte, error) {
-	q := url.Values{}
+	q := url.Values{"admin": {"true"}}
 	if limit != "" {
 		q.Set("limit", limit)
 	}
@@ -38,11 +38,7 @@ func (c *CustomerEntityClient) SearchActiveSLAStatusesManage(ctx context.Context
 	if source != "" {
 		q.Set("source", source)
 	}
-	path := "/sla-status/manage"
-	if encoded := q.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	return c.do(ctx, http.MethodGet, path, nil)
+	return c.do(ctx, http.MethodGet, "/sla-status?"+q.Encode(), nil)
 }
 
 // RequestSLARecalculation calls POST /sla-engine/recalculate on the entity

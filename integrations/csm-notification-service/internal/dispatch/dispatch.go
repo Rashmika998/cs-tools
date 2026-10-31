@@ -1508,11 +1508,15 @@ func (d *Dispatcher) handleSLARecalculationRequested(ctx context.Context, raw js
 		slog.ErrorContext(ctx, "dispatch: decode sla.recalculation_requested payload failed", "err", err)
 		return nil
 	}
+	// p.RequestedByEmail is deliberately never logged -- this service's own
+	// logging convention is ids and sanitised summaries only, never PII
+	// like an email address. It's carried in the event payload itself for
+	// any downstream consumer that genuinely needs it for audit.
 	if d.slaEngine == nil {
-		slog.WarnContext(ctx, "sla recalculation requested but the SLA engine is not configured, ignoring", "requestedBy", p.RequestedByEmail)
+		slog.WarnContext(ctx, "sla recalculation requested but the SLA engine is not configured, ignoring")
 		return nil
 	}
-	slog.InfoContext(ctx, "sla recalculation requested, starting in the background", "requestedBy", p.RequestedByEmail, "requestedAt", p.RequestedAt)
+	slog.InfoContext(ctx, "sla recalculation requested, starting in the background", "requestedAt", p.RequestedAt)
 	go func() { // #nosec G118 -- context.Background() below is intentionally detached from this request-scoped ctx, which is cancelled the moment Handle returns, well before this goroutine's own reconciliation pass can finish
 		recalcCtx, cancel := context.WithTimeout(context.Background(), slaRecalculationTimeout)
 		defer cancel()

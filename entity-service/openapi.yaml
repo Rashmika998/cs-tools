@@ -956,6 +956,22 @@ paths:
           schema:
             type: string
             enum: [csm, servicenow]
+        - name: admin
+          in: query
+          description: >-
+            Optional, default false. true additionally requires the caller
+            to hold a CSM admin role (AUTH_ADMIN_ROLES) on top of the
+            ordinary internal-caller requirement below -- this is what the
+            CSM portal's "Recalculate SLA" admin page sends to show which
+            clocks are currently running, typically right after
+            POST /sla-engine/recalculate. Any other value, or omitting it
+            entirely, is the ordinary internal-caller request every other
+            caller (integrations/csm-notification-service's own startup
+            reconciliation included) already makes, unaffected by this
+            parameter's existence.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Every currently-active SLA clock, paginated.
@@ -965,6 +981,18 @@ paths:
                 $ref: '#/components/schemas/SearchSLAStatusResponse'
         "400":
           description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: No valid token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Not an internal caller, or (admin=true) not a CSM admin.
           content:
             application/json:
               schema:
@@ -1025,63 +1053,6 @@ paths:
                 $ref: '#/components/schemas/SLAClockState'
         "400":
           description: Bad request.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal server error.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /sla-status/manage:
-    get:
-      summary: >-
-        GET /sla-status's CSM-admin counterpart: same query params, same
-        response shape, but reachable by a CSM admin (AUTH_ADMIN_ROLES)
-        through the portal rather than requiring an internal-service
-        credential. Used by the "Recalculate SLA" admin page to show which
-        clocks are currently running, typically right after
-        POST /sla-engine/recalculate.
-      operationId: searchActiveSLAStatusesManage
-      parameters:
-        - name: limit
-          in: query
-          schema:
-            type: integer
-        - name: offset
-          in: query
-          schema:
-            type: integer
-        - name: source
-          in: query
-          description: Optional, same accepted values as GET /sla-status's own "source".
-          schema:
-            type: string
-            enum: [csm, servicenow]
-      responses:
-        "200":
-          description: Every currently-active SLA clock, paginated.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SearchSLAStatusResponse'
-        "400":
-          description: Bad request.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: No valid token.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Not a CSM admin.
           content:
             application/json:
               schema:
