@@ -31,6 +31,7 @@ import (
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/chataudience"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/eventbus"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/events"
+	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/notifications"
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/recipientlinks"
 )
 
@@ -114,9 +115,9 @@ type eventPublisher interface {
 }
 
 // chatSender abstracts notifications.GoogleChatClient's SendSLABreachAlert/
-// HasAudienceSpace for testability. teamLeadName is always sent "" — see
-// Engine.sendBreachAlert's own doc comment for why this engine has no way
-// to resolve it any more.
+// HasAudienceSpace for testability. teamLeadName is resolved live from
+// entity-service's own GetClockState response (clockState.TeamLeadName) —
+// see Engine.sendBreachAlert's own doc comment.
 type chatSender interface {
 	SendSLABreachAlert(ctx context.Context, audience, clockType, tier, caseNumber, wso2CaseID, caseTitle, caseType, productName, team, teamLeadName, severity, state, openedAt, caseLink string) error
 	HasAudienceSpace(audience string) bool
@@ -125,6 +126,14 @@ type chatSender interface {
 // linkResolver abstracts recipientlinks.Resolver's CSMLink for testability.
 type linkResolver interface {
 	CSMLink(caseID string) string
+}
+
+// emailSender abstracts notifications.EmailClient's SendEmail for
+// testability — mirrors dispatch.emailSender's own narrower shape, trimmed
+// to only the one method sendBreachEmails actually calls (no SendEmailFrom/
+// FromAddress: neither breach email has a from-address override).
+type emailSender interface {
+	SendEmail(ctx context.Context, to, cc, bcc, replyTo []string, subject, htmlBody string, attachments []notifications.EmailAttachment) error
 }
 
 // entityClockStatusClient abstracts EntityClient.GetClockState for
@@ -256,12 +265,25 @@ type Engine struct {
 	// (SLA_EMAIL_SENDING_ENABLED, default true; disabled only by the literal
 	// "false", same disable-entirely convention as
 	// EMAIL_SENDING_ENABLED/CALL_SENDING_ENABLED in cmd/server/main.go). The
-	// name is kept for config compatibility, but when false it suppresses
-	// every SLA-triggered outbound message: the Google Chat breach card sent
-	// by sendBreachAlert (the only SLA Chat send in this service) and any SLA
-	// breach email should that reaction be rebuilt. Non-SLA alerts are
-	// unaffected.
+	// name is kept for config compatibility, and now gates every SLA-triggered
+	// outbound message for real: the Google Chat breach card sent by
+	// sendBreachAlert and the two SLA breach emails sent by sendBreachEmails.
+	// Non-SLA alerts are unaffected.
 	slaEmailSendingEnabled bool
+	// email is this engine's own link to the shared email channel —
+	// sendBreachEmails' only caller of SendEmail. nil (the zero value every
+	// existing test's own Engine literal leaves it at) means no email client
+	// is configured, in which case sendBreachEmails is a no-op, same posture
+	// as entity being nil for the Chat-side stale-alert check.
+	email emailSender
+	// emailDebugMode/emailDebugRecipients mirror dispatch.Dispatcher's own
+	// fields of the same purpose (EMAIL_DEBUG_MODE/EMAIL_DEBUG_RECIPIENTS) —
+	// a separate copy, not a shared reference, since this engine and that
+	// dispatcher are constructed independently in cmd/server/main.go but
+	// read from the same two env vars, so a deployment's debug posture is
+	// consistent across both without this engine depending on that package.
+	emailDebugMode       bool
+	emailDebugRecipients []string
 	// now is the clock chataudience.Resolve is given, so a test can pin
 	// the time of day the Americas/weekend audiences depend on. nil means
 	// time.Now; see clock.
@@ -284,9 +306,17 @@ func (e *Engine) clock() time.Time {
 // caller already constructs for Reconcile — see entityClockStatusClient's
 // own doc comment for what it's used for here. slaEmailSendingEnabled gates
 // all SLA-triggered messages (Chat card and email) — see that field's own
-// doc comment.
-func NewEngine(store *Store, pub *eventbus.Producer, chat chatSender, links *recipientlinks.Resolver, entity entityClockStatusClient, slaEmailSendingEnabled bool) *Engine {
-	return &Engine{store: store, pub: pub, chat: chat, links: links, entity: entity, slaEmailSendingEnabled: slaEmailSendingEnabled}
+// doc comment. email/emailDebugMode/emailDebugRecipients back
+// sendBreachEmails — see each field's own doc comment; email may be nil
+// (no SLA breach email reaction configured).
+func NewEngine(store *Store, pub *eventbus.Producer, chat chatSender, links *recipientlinks.Resolver, entity entityClockStatusClient, slaEmailSendingEnabled bool, email emailSender, emailDebugMode bool, emailDebugRecipients []string) *Engine {
+	return &Engine{
+		store: store, pub: pub, chat: chat, links: links, entity: entity,
+		slaEmailSendingEnabled: slaEmailSendingEnabled,
+		email:                  email,
+		emailDebugMode:         emailDebugMode,
+		emailDebugRecipients:   emailDebugRecipients,
+	}
 }
 
 // avoidWeekend rolls due forward to the next Monday, same time-of-day, if
@@ -952,9 +982,10 @@ func (e *Engine) alertTier(ctx context.Context, meta ClockMeta, caseID, clockTyp
 // briefly needed them and entity-service stopped populating them), so this
 // alert routes on team alone, falling back to the fixed "Incident Monitor"
 // audience — a known, accepted reduction from the removed poll design's
-// own live entity-service lookup, not a bug. teamLeadName is always sent
-// "" for the same reason: no event this engine consumes carries it, and
-// there is no live entity-service lookup left to resolve it from. Resolve's
+// own live entity-service lookup, not a bug. teamLeadName, by contrast, IS
+// resolved — from state.TeamLeadName below, the same GetClockState call
+// made for the stale-alert check, which entity-service now also resolves
+// this field on (see that call's own doc comment). Resolve's
 // own "Incident Monitor" fallback is retargeted to chataudience.SLADefault
 // right before sending (see that constant's own doc comment) — a different
 // webhook into the same Chat space, not a different space.
@@ -1026,8 +1057,17 @@ func (e *Engine) sendBreachAlert(ctx context.Context, meta ClockMeta, caseID, cl
 		return
 	}
 
+	// state is kept (not just checked) beyond this block -- sendBreachEmails
+	// below reads its AssigneeName/AssigneeEmail/TeamEmail/TeamLeadName,
+	// resolved by this exact same entity-service call, rather than a second
+	// round trip. Its zero value (e.entity == nil, or a lookup error/not
+	// found) simply means those four fields are empty, which
+	// sendBreachEmails already treats as "not resolvable, skip" -- the same
+	// posture it has for a genuinely unassigned case or team.
+	var state clockState
 	if e.entity != nil {
-		state, err := e.entity.GetClockState(ctx, caseID, clockType)
+		var err error
+		state, err = e.entity.GetClockState(ctx, caseID, clockType)
 		switch {
 		case err != nil:
 			slog.WarnContext(ctx, "slaengine: failed to verify clock state before sending breach alert, sending anyway", "caseId", caseID, "clockType", clockType, "tier", tier, "err", err)
@@ -1062,10 +1102,120 @@ func (e *Engine) sendBreachAlert(ctx context.Context, meta ClockMeta, caseID, cl
 		if sendAudience == chataudience.IncidentMonitor {
 			sendAudience = chataudience.SLADefault
 		}
-		if err := e.chat.SendSLABreachAlert(ctx, sendAudience, clockType, tierLabel(tier), caseNumber, meta.WSO2CaseID, meta.CaseTitle, meta.CaseType, meta.Product, meta.Team, "", meta.Priority, meta.State, openedAt, caseLink); err != nil {
+		if err := e.chat.SendSLABreachAlert(ctx, sendAudience, clockType, tierLabel(tier), caseNumber, meta.WSO2CaseID, meta.CaseTitle, meta.CaseType, meta.Product, meta.Team, state.TeamLeadName, meta.Priority, meta.State, openedAt, caseLink); err != nil {
 			slog.ErrorContext(ctx, "slaengine: failed to send sla breach alert to chat space, not retrying", "caseId", caseID, "clockType", clockType, "tier", tier, "chatSpace", sendAudience, "err", err)
 		}
 	}
+
+	e.sendBreachEmails(ctx, meta, caseID, clockType, tier, caseNumber, openedAt, caseLink, state)
+}
+
+// sendBreachEmails sends the same tier crossing sendBreachAlert just posted
+// to Chat as two separate emails — one to the case's assigned engineer, one
+// to the case's team email group — on top of (not instead of) the Chat
+// alert. A no-op when e.email is nil (no SLA breach email reaction
+// configured for this deployment). Either recipient is skipped silently
+// (logged at INFO, not WARN/ERROR) when entity-service couldn't resolve it
+// (state.AssigneeEmail/TeamEmail empty) — a case with no assignee, or a
+// team with no configured group_email, is a normal state, not a
+// misconfiguration this engine can fix; production has no real address to
+// send to in that case regardless.
+//
+// Unlike sendBreachAlert's own per-audience Chat sends, there is no
+// separate Redis claim guarding this against a duplicate send: the one
+// thing that could cause sendBreachAlert to run twice for the same tier
+// crossing is a retried Tick, and that only happens when e.pub.Publish
+// failed earlier in processDueMember's own call chain -- strictly BEFORE
+// sendBreachAlert is ever reached (see that method's own call site) -- so a
+// retry that reaches here at all is, by construction, the first and only
+// attempt for this tier's own incarnation. A send failure here is logged
+// and not retried, the same explicit "don't retry a Chat/email failure"
+// decision and reasoning sendBreachAlert's own doc comment gives for Chat:
+// retrying would need re-claiming the tier, and a single persistently
+// broken mailbox must not turn into an unbounded resend loop on every
+// later tick.
+//
+// recipientRole ("assignee"/"team") is logged on every outcome so a skip or
+// failure is attributable to one recipient or the other, not just this
+// case/clockType/tier.
+func (e *Engine) sendBreachEmails(ctx context.Context, meta ClockMeta, caseID, clockType string, tier int, caseNumber, openedAt, caseLink string, state clockState) {
+	if e.email == nil {
+		return
+	}
+
+	data := notifications.SLABreachEmailData{
+		ClockType:    clockType,
+		Tier:         tierLabel(tier),
+		Severity:     meta.Priority,
+		CaseNumber:   caseNumber,
+		WSO2CaseID:   meta.WSO2CaseID,
+		CaseTitle:    meta.CaseTitle,
+		CaseType:     meta.CaseType,
+		Product:      meta.Product,
+		Team:         meta.Team,
+		TeamLeadName: state.TeamLeadName,
+		State:        meta.State,
+		OpenedAt:     openedAt,
+		CaseLink:     caseLink,
+	}
+	subject := notifications.SLABreachEmailSubject(clockType, data.Tier, meta.Priority, caseNumber, meta.WSO2CaseID)
+
+	// unresolvedLabel, when non-empty, names who this recipient WOULD have
+	// been (e.g. the team name) even though real is empty -- production has
+	// nowhere to send regardless, but a debug deployment can still show it:
+	// sent to the configured debug recipients, with the body's "Sent to"
+	// line naming unresolvedLabel directly, so testing whether team routing
+	// itself resolved correctly doesn't depend on this environment also
+	// having that team's group_email configured. Assignee passes "" here --
+	// an unassigned case has no name worth surfacing this way.
+	send := func(recipientRole, real, unresolvedLabel string, render func(intendedFor string) string) {
+		if real == "" {
+			if !e.emailDebugMode || unresolvedLabel == "" {
+				slog.InfoContext(ctx, "slaengine: sla breach email recipient not resolved, skipping", "caseId", caseID, "clockType", clockType, "tier", tier, "recipient", recipientRole)
+				return
+			}
+			if len(e.emailDebugRecipients) == 0 {
+				slog.WarnContext(ctx, "slaengine: EMAIL_DEBUG_MODE=true but EMAIL_DEBUG_RECIPIENTS is empty; not sending breach email",
+					"caseId", caseID, "clockType", clockType, "tier", tier, "recipient", recipientRole)
+				return
+			}
+			body := render(unresolvedLabel + " (no email on file)")
+			if err := e.email.SendEmail(ctx, e.emailDebugRecipients, nil, nil, nil, subject, body, nil); err != nil {
+				slog.ErrorContext(ctx, "slaengine: failed to send sla breach email", "caseId", caseID, "clockType", clockType, "tier", tier, "recipient", recipientRole, "err", err)
+				return
+			}
+			slog.InfoContext(ctx, "slaengine: sla breach email sent", "caseId", caseID, "clockType", clockType, "tier", tier, "recipient", recipientRole, "unresolvedLabel", unresolvedLabel)
+			return
+		}
+		to := []string{real}
+		var intendedFor string
+		if e.emailDebugMode {
+			if len(e.emailDebugRecipients) == 0 {
+				slog.WarnContext(ctx, "slaengine: EMAIL_DEBUG_MODE=true but EMAIL_DEBUG_RECIPIENTS is empty; not sending breach email",
+					"caseId", caseID, "clockType", clockType, "tier", tier, "recipient", recipientRole)
+				return
+			}
+			intendedFor = real
+			to = e.emailDebugRecipients
+		}
+		body := render(intendedFor)
+		if err := e.email.SendEmail(ctx, to, nil, nil, nil, subject, body, nil); err != nil {
+			slog.ErrorContext(ctx, "slaengine: failed to send sla breach email", "caseId", caseID, "clockType", clockType, "tier", tier, "recipient", recipientRole, "err", err)
+			return
+		}
+		slog.InfoContext(ctx, "slaengine: sla breach email sent", "caseId", caseID, "clockType", clockType, "tier", tier, "recipient", recipientRole)
+	}
+
+	send("assignee", state.AssigneeEmail, "", func(intendedFor string) string {
+		d := data
+		d.IntendedFor = intendedFor
+		return notifications.RenderSLABreachAssigneeEmail(state.AssigneeName, d)
+	})
+	send("team", state.TeamEmail, meta.Team, func(intendedFor string) string {
+		d := data
+		d.IntendedFor = intendedFor
+		return notifications.RenderSLABreachTeamEmail(state.TeamLeadName, d)
+	})
 }
 
 // entityActiveClocksClient abstracts EntityClient.GetActiveCSMSLAClocks for

@@ -19,10 +19,12 @@ package slaengine
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/businessdays"
+	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/notifications"
 )
 
 // fakeStore is an in-memory implementation of the store interface —
@@ -234,6 +236,22 @@ func (f *fakeChat) HasAudienceSpace(audience string) bool {
 		return audience == "Incident Monitor"
 	}
 	return f.spaces[audience]
+}
+
+// fakeEmail is an emailSender test double.
+type fakeEmail struct {
+	calls   []fakeEmailCall
+	failErr error
+}
+
+type fakeEmailCall struct {
+	to                []string
+	subject, htmlBody string
+}
+
+func (f *fakeEmail) SendEmail(_ context.Context, to, _, _, _ []string, subject, htmlBody string, _ []notifications.EmailAttachment) error {
+	f.calls = append(f.calls, fakeEmailCall{to: to, subject: subject, htmlBody: htmlBody})
+	return f.failErr
 }
 
 // fakePublisher is an eventPublisher test double.
@@ -1163,6 +1181,199 @@ func TestTick_EntityServiceConfirmsClockStillActive_StillSendsTheAlert(t *testin
 	}
 	if len(chat.calls) == 0 {
 		t.Error("chat calls = none, want at least one -- entity-service confirms this clock is still active")
+	}
+}
+
+// TestTick_BreachEmail_SendsToAssigneeAndTeam is the regression test for the
+// restored SLA breach email reaction: once GetClockState resolves an
+// assignee and a team email for this clock (the same call sendBreachAlert
+// already makes for its own stale-alert check), sendBreachEmails sends one
+// email to each, on top of the Chat card.
+func TestTick_BreachEmail_SendsToAssigneeAndTeam(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{}
+	pub := &fakePublisher{}
+	email := &fakeEmail{}
+	e := newTestEngine(st, chat, pub)
+	e.email = email
+	past := time.Now().Add(-time.Minute)
+	e.entity = &fakeEntityClockStatus{states: map[string]clockState{
+		"case-1|response": {
+			Found: true, IsActive: true, Stage: "IN_PROGRESS", StartedOn: &past,
+			AssigneeName: "Jane Doe", AssigneeEmail: "jane@example.com",
+			TeamEmail: "team-nova@example.com", TeamLeadName: "Lead Person",
+		},
+	}}
+
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", Team: "Team Nova", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(email.calls) != 2 {
+		t.Fatalf("email calls = %+v, want exactly 2 (assignee + team)", email.calls)
+	}
+	if got := email.calls[0].to; len(got) != 1 || got[0] != "jane@example.com" {
+		t.Errorf("first email to = %v, want [jane@example.com]", got)
+	}
+	if got := email.calls[1].to; len(got) != 1 || got[0] != "team-nova@example.com" {
+		t.Errorf("second email to = %v, want [team-nova@example.com]", got)
+	}
+}
+
+// TestTick_BreachEmail_UnresolvedRecipientsAreSkipped confirms a case with
+// no assignee and a team with no configured group_email sends no email at
+// all -- a normal state, not an error.
+func TestTick_BreachEmail_UnresolvedRecipientsAreSkipped(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{}
+	pub := &fakePublisher{}
+	email := &fakeEmail{}
+	e := newTestEngine(st, chat, pub)
+	e.email = email
+	past := time.Now().Add(-time.Minute)
+	e.entity = &fakeEntityClockStatus{states: map[string]clockState{
+		"case-1|response": {Found: true, IsActive: true, Stage: "IN_PROGRESS", StartedOn: &past},
+	}}
+
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(email.calls) != 0 {
+		t.Errorf("email calls = %+v, want none -- neither recipient resolved", email.calls)
+	}
+}
+
+// TestTick_BreachEmail_NoEmailClientConfigured_IsANoOp confirms a
+// deployment that never wired an email client into the engine (e.email ==
+// nil, the zero value every other existing test's own Engine literal
+// already leaves it at) sends no email and does not panic, even when
+// entity-service resolves a real assignee/team.
+func TestTick_BreachEmail_NoEmailClientConfigured_IsANoOp(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{}
+	pub := &fakePublisher{}
+	e := newTestEngine(st, chat, pub)
+	past := time.Now().Add(-time.Minute)
+	e.entity = &fakeEntityClockStatus{states: map[string]clockState{
+		"case-1|response": {Found: true, IsActive: true, Stage: "IN_PROGRESS", StartedOn: &past, AssigneeEmail: "jane@example.com"},
+	}}
+
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(chat.calls) == 0 {
+		t.Error("chat calls = none, want at least one -- the Chat side must be unaffected by no email client being configured")
+	}
+}
+
+// TestTick_BreachEmail_DebugModeRedirectsToDebugRecipients confirms
+// EMAIL_DEBUG_MODE redirects both the assignee and the team email to
+// e.emailDebugRecipients instead of the real resolved addresses, with the
+// body naming the real intended recipient -- same posture as
+// dispatch.Dispatcher's own EMAIL_DEBUG_MODE handling for case.* emails.
+func TestTick_BreachEmail_DebugModeRedirectsToDebugRecipients(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{}
+	pub := &fakePublisher{}
+	email := &fakeEmail{}
+	e := newTestEngine(st, chat, pub)
+	e.email = email
+	e.emailDebugMode = true
+	e.emailDebugRecipients = []string{"debug@example.com"}
+	past := time.Now().Add(-time.Minute)
+	e.entity = &fakeEntityClockStatus{states: map[string]clockState{
+		"case-1|response": {
+			Found: true, IsActive: true, Stage: "IN_PROGRESS", StartedOn: &past,
+			AssigneeEmail: "jane@example.com", TeamEmail: "team-nova@example.com",
+		},
+	}}
+
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(email.calls) != 2 {
+		t.Fatalf("email calls = %+v, want exactly 2", email.calls)
+	}
+	for i, c := range email.calls {
+		if len(c.to) != 1 || c.to[0] != "debug@example.com" {
+			t.Errorf("email.calls[%d].to = %v, want [debug@example.com]", i, c.to)
+		}
+	}
+	if !strings.Contains(email.calls[0].htmlBody, "jane@example.com") {
+		t.Error("debug-redirected assignee email body does not name the real intended recipient")
+	}
+}
+
+// TestTick_BreachEmail_TeamResolvedButNoGroupEmail_DebugModeShowsTeamName
+// confirms the one exception to "unresolved recipient is skipped": in debug
+// mode, a team that resolved (meta.Team non-empty) but has no group_email
+// configured still sends to the debug recipients, naming the team rather
+// than being silently skipped -- so team routing itself can be verified in
+// a test environment with incomplete team data.
+func TestTick_BreachEmail_TeamResolvedButNoGroupEmail_DebugModeShowsTeamName(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{}
+	pub := &fakePublisher{}
+	email := &fakeEmail{}
+	e := newTestEngine(st, chat, pub)
+	e.email = email
+	e.emailDebugMode = true
+	e.emailDebugRecipients = []string{"debug@example.com"}
+	past := time.Now().Add(-time.Minute)
+	e.entity = &fakeEntityClockStatus{states: map[string]clockState{
+		"case-1|response": {Found: true, IsActive: true, Stage: "IN_PROGRESS", StartedOn: &past},
+	}}
+
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", Team: "Team Nova", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(email.calls) != 1 {
+		t.Fatalf("email calls = %+v, want exactly 1 (team only -- no assignee resolved at all)", email.calls)
+	}
+	if !strings.Contains(email.calls[0].htmlBody, "Team Nova") {
+		t.Error("debug-mode team email body does not name the unresolved team")
+	}
+}
+
+// TestTick_BreachEmail_SLAEmailSendingDisabled_SendsNoEmailEither confirms
+// SLA_EMAIL_SENDING_ENABLED=false (slaEmailSendingEnabled) suppresses the
+// breach email exactly as it already suppresses the Chat card -- the same
+// single killswitch covers both, per that field's own doc comment.
+func TestTick_BreachEmail_SLAEmailSendingDisabled_SendsNoEmailEither(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{}
+	pub := &fakePublisher{}
+	email := &fakeEmail{}
+	e := newTestEngine(st, chat, pub)
+	e.email = email
+	e.slaEmailSendingEnabled = false
+	past := time.Now().Add(-time.Minute)
+	e.entity = &fakeEntityClockStatus{states: map[string]clockState{
+		"case-1|response": {Found: true, IsActive: true, Stage: "IN_PROGRESS", StartedOn: &past, AssigneeEmail: "jane@example.com"},
+	}}
+
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(chat.calls) != 0 || len(email.calls) != 0 {
+		t.Errorf("chat calls = %d, email calls = %d, want 0/0 -- SLA_EMAIL_SENDING_ENABLED=false suppresses both", len(chat.calls), len(email.calls))
 	}
 }
 

@@ -882,7 +882,15 @@ func (r *slaEngineRepo) cancelClockFlat(ctx context.Context, workItemID, target,
 	query := `
 		UPDATE sla s
 		SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
+		    business_elapsed_percentage = GREATEST(0,
+		        EXTRACT(EPOCH FROM ` + completedElapsedExpr + `) / NULLIF(EXTRACT(EPOCH FROM s.duration), 0) * 100
+		    ),
+		    business_duration = ` + completedElapsedExpr + `,
+		    remaining_business_duration = GREATEST(s.duration - ` + completedElapsedExpr + `, INTERVAL '0'),
 		    has_breached = (` + completedElapsedExpr + ` >= s.duration),
+		    pause_duration = COALESCE(s.pause_duration, INTERVAL '0') +
+		        CASE WHEN s.paused_on IS NOT NULL THEN NOW() - s.paused_on ELSE INTERVAL '0' END,
+		    paused_on = NULL,
 		    updated_on = NOW(), updated_by = $3
 		FROM sla_policy sp
 		WHERE s.sla_policy_id = sp.id
@@ -901,11 +909,19 @@ func (r *slaEngineRepo) cancelClockFlat(ctx context.Context, workItemID, target,
 
 // cancelClockBusinessDays is cancelClock's 'WSO2 Business days' branch --
 // same pause-aware elapsed-vs-duration computation as
-// completeClockBusinessDays, just writing CANCELLED instead of ACHIEVED and
-// leaving the clock's displayed elapsed/remaining/percentage columns alone
-// (a cancelled clock, unlike a completed one, was never actually satisfied,
-// so there's no "real outcome" figure to freeze the way completion does --
-// only has_breached, a simple past/future-tense fact, needs recording here).
+// completeClockBusinessDays, just writing CANCELLED instead of ACHIEVED.
+// Also freezes business_elapsed_percentage/business_duration/
+// remaining_business_duration at the real elapsed figure as of cancellation
+// -- a real, reported gap: an earlier version of this method left those
+// columns alone on the reasoning that "a cancelled clock was never actually
+// satisfied, so there's no real outcome to freeze", but sla_live's own
+// fallback for any non-IN_PROGRESS/BREACHED stage (including CANCELLED) IS
+// these very columns -- leaving them untouched meant a clock cancelled by a
+// severity change (the overwhelmingly common real case: the previous
+// severity's clock is cancelled and a fresh one registered for the new
+// severity) displayed 0% elapsed regardless of how much real time had
+// actually passed before the cancellation, which reads as if the clock had
+// just started rather than showing how far it had genuinely gotten.
 func (r *slaEngineRepo) cancelClockBusinessDays(ctx context.Context, workItemID, target, policyID string) (bool, error) {
 	var found bool
 	err := r.db.InTx(ctx, func(tx pgx.Tx) error {
@@ -917,6 +933,7 @@ func (r *slaEngineRepo) cancelClockBusinessDays(ctx context.Context, workItemID,
 		}
 		rows, err := tx.Query(ctx, `
 			SELECT s.id, s.start_on, s.paused_on,
+			       COALESCE(EXTRACT(EPOCH FROM s.pause_duration), 0),
 			       COALESCE(EXTRACT(EPOCH FROM s.business_pause_duration), 0),
 			       EXTRACT(EPOCH FROM s.duration)
 			FROM sla s
@@ -931,15 +948,15 @@ func (r *slaEngineRepo) cancelClockBusinessDays(ctx context.Context, workItemID,
 			return fmt.Errorf("cancel business-day sla clock: select: %w", err)
 		}
 		type openRow struct {
-			id                                    string
-			startOn                               time.Time
-			pausedOn                              *time.Time
-			businessPauseSeconds, durationSeconds float64
+			id                                                  string
+			startOn                                             time.Time
+			pausedOn                                            *time.Time
+			pauseSeconds, businessPauseSeconds, durationSeconds float64
 		}
 		var open []openRow
 		for rows.Next() {
 			var o openRow
-			if err := rows.Scan(&o.id, &o.startOn, &o.pausedOn, &o.businessPauseSeconds, &o.durationSeconds); err != nil {
+			if err := rows.Scan(&o.id, &o.startOn, &o.pausedOn, &o.pauseSeconds, &o.businessPauseSeconds, &o.durationSeconds); err != nil {
 				rows.Close()
 				return fmt.Errorf("cancel business-day sla clock: scan: %w", err)
 			}
@@ -951,23 +968,43 @@ func (r *slaEngineRepo) cancelClockBusinessDays(ctx context.Context, workItemID,
 
 		now := time.Now().UTC()
 		for _, o := range open {
+			flatPause := time.Duration(o.pauseSeconds * float64(time.Second))
 			businessPause := time.Duration(o.businessPauseSeconds * float64(time.Second))
 			if o.pausedOn != nil {
+				// An open pause segment at cancellation time -- finalize it
+				// into both totals, same as completeClockBusinessDays does.
+				flatPause += now.Sub(*o.pausedOn)
 				businessPause += businessdays.Elapsed(*o.pausedOn, now)
 			}
+
 			elapsed := businessdays.Elapsed(o.startOn, now) - businessPause
 			if elapsed < 0 {
 				elapsed = 0
 			}
 			duration := time.Duration(o.durationSeconds * float64(time.Second))
+			remaining := duration - elapsed
+			if remaining < 0 {
+				remaining = 0
+			}
+			pct := 0.0
+			if o.durationSeconds > 0 {
+				pct = elapsed.Seconds() / o.durationSeconds * 100
+			}
 			hasBreached := elapsed >= duration
 
 			if _, err := tx.Exec(ctx, `
 				UPDATE sla SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
-				    has_breached = $2,
-				    updated_on = NOW(), updated_by = $3
+				    business_elapsed_percentage = $2,
+				    business_duration = $3::interval,
+				    remaining_business_duration = $4::interval,
+				    has_breached = $8,
+				    pause_duration = $5::interval,
+				    business_pause_duration = $6::interval,
+				    paused_on = NULL,
+				    updated_on = NOW(), updated_by = $7
 				WHERE id = $1::uuid`,
-				o.id, hasBreached, sqlActorLiteral,
+				o.id, pct, formatIntervalLiteral(elapsed), formatIntervalLiteral(remaining),
+				formatIntervalLiteral(flatPause), formatIntervalLiteral(businessPause), sqlActorLiteral, hasBreached,
 			); err != nil {
 				return fmt.Errorf("cancel business-day sla clock: update: %w", err)
 			}
@@ -1729,7 +1766,15 @@ func (r *slaEngineRepo) ReviseClocks(ctx context.Context, workItemID string, pol
 	const flatCancelQuery = `
 		UPDATE sla s
 		SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
+		    business_elapsed_percentage = GREATEST(0,
+		        EXTRACT(EPOCH FROM ` + completedElapsedExpr + `) / NULLIF(EXTRACT(EPOCH FROM s.duration), 0) * 100
+		    ),
+		    business_duration = ` + completedElapsedExpr + `,
+		    remaining_business_duration = GREATEST(s.duration - ` + completedElapsedExpr + `, INTERVAL '0'),
 		    has_breached = (` + completedElapsedExpr + ` >= s.duration),
+		    pause_duration = COALESCE(s.pause_duration, INTERVAL '0') +
+		        CASE WHEN s.paused_on IS NOT NULL THEN NOW() - s.paused_on ELSE INTERVAL '0' END,
+		    paused_on = NULL,
 		    updated_on = NOW(), updated_by = $2
 		FROM sla_policy sp
 		WHERE s.sla_policy_id = sp.id
@@ -1785,6 +1830,14 @@ func (r *slaEngineRepo) ReviseClocks(ctx context.Context, workItemID string, pol
 // pure wall-clock arithmetic SQL can do directly; a business-day calendar
 // can't be). Returns the number of rows cancelled, added into ReviseClocks'
 // own cancelled count.
+//
+// Also freezes business_elapsed_percentage/business_duration/
+// remaining_business_duration at the real elapsed figure as of cancellation
+// -- a real, reported gap (see cancelClockBusinessDays' own doc comment for
+// the full reasoning, confirmed against a real case: a severity change's
+// own clock cancellation, the overwhelmingly common real trigger for this
+// path, left a clock that had genuinely run for several minutes displaying
+// 0% elapsed).
 func reviseClocksCancelBusinessDays(ctx context.Context, tx pgx.Tx, workItemID string) (int, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT s.id, s.start_on, s.paused_on,
@@ -1825,23 +1878,43 @@ func reviseClocksCancelBusinessDays(ctx context.Context, tx pgx.Tx, workItemID s
 
 	now := time.Now().UTC()
 	for _, o := range open {
+		flatPause := time.Duration(o.pauseSeconds * float64(time.Second))
 		businessPause := time.Duration(o.businessPauseSeconds * float64(time.Second))
 		if o.pausedOn != nil {
+			// An open pause segment at cancellation time -- finalize it
+			// into both totals, same as completeClockBusinessDays does.
+			flatPause += now.Sub(*o.pausedOn)
 			businessPause += businessdays.Elapsed(*o.pausedOn, now)
 		}
+
 		elapsed := businessdays.Elapsed(o.startOn, now) - businessPause
 		if elapsed < 0 {
 			elapsed = 0
 		}
 		duration := time.Duration(o.durationSeconds * float64(time.Second))
+		remaining := duration - elapsed
+		if remaining < 0 {
+			remaining = 0
+		}
+		pct := 0.0
+		if o.durationSeconds > 0 {
+			pct = elapsed.Seconds() / o.durationSeconds * 100
+		}
 		hasBreached := elapsed >= duration
 
 		if _, err := tx.Exec(ctx, `
 			UPDATE sla SET stage = 'CANCELLED'::sla_stage_enum, is_active = FALSE, end_on = NOW(),
-			    has_breached = $2,
-			    updated_on = NOW(), updated_by = $3
+			    business_elapsed_percentage = $2,
+			    business_duration = $3::interval,
+			    remaining_business_duration = $4::interval,
+			    has_breached = $8,
+			    pause_duration = $5::interval,
+			    business_pause_duration = $6::interval,
+			    paused_on = NULL,
+			    updated_on = NOW(), updated_by = $7
 			WHERE id = $1::uuid`,
-			o.id, hasBreached, sqlActorLiteral,
+			o.id, pct, formatIntervalLiteral(elapsed), formatIntervalLiteral(remaining),
+			formatIntervalLiteral(flatPause), formatIntervalLiteral(businessPause), sqlActorLiteral, hasBreached,
 		); err != nil {
 			return 0, fmt.Errorf("update: %w", err)
 		}

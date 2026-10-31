@@ -344,12 +344,16 @@ func (r *slaStatusRepo) SearchActiveSLAStatuses(ctx context.Context, pagination 
 // sla_live (not the raw "sla" table), matching SearchActiveSLAStatuses's
 // own convention, so a still-live clock's stage/has_breached reflect the
 // current, recomputed-at-read-time truth rather than whatever
-// RecomputeActive's last periodic pass happened to write. Reads directly
-// against "sla"/"sla_policy" with no work_item/case/announcement join at
-// all -- unlike SearchActiveSLAStatuses, this never needs to resolve any
-// case-like display data, so there's nothing here that depends on
-// row-level security (confirmed: the "sla" table itself carries none).
+// RecomputeActive's last periodic pass happened to write. Joins
+// work_item/account/"group"/"user" only for the four display-only
+// AssigneeName/AssigneeEmail/TeamEmail/TeamLeadName fields -- the same
+// joins SearchActiveSLAStatuses's own activeSLAStatusFromJoins already
+// makes for the identical fields -- added once csm-notification-service's
+// SLA breach email reaction needed them from the exact same call it
+// already makes before sending a breach alert, rather than resolve any
+// other case-like display data this method still has no need for.
 //
+
 // BusinessElapsedPercent is NOT simply read off sla_live's own
 // live_elapsed_percentage for every row: that view has no business-day
 // calendar of its own (it only knows the flat wall-clock formula --
@@ -392,9 +396,16 @@ func (r *slaStatusRepo) GetClockState(ctx context.Context, workItemID, target, s
 		       COALESCE(EXTRACT(EPOCH FROM s.business_pause_duration), 0),
 		       COALESCE(EXTRACT(EPOCH FROM s.duration), 0),
 		       COALESCE(s.live_elapsed_percentage, 0),
-		       COALESCE(sp.schedule, '')
+		       COALESCE(sp.schedule, ''),
+		       cre.group_email, COALESCE(teamlead.name, NULLIF(TRIM(CONCAT_WS(' ', teamlead.first_name, teamlead.last_name)), '')),
+		       COALESCE(ae.name, NULLIF(TRIM(CONCAT_WS(' ', ae.first_name, ae.last_name)), '')), ae.email
 		FROM sla_live s
 		JOIN sla_policy sp ON sp.id = s.sla_policy_id
+		JOIN work_item wi ON wi.id = s.work_item_id
+		LEFT JOIN account a ON a.id = wi.account_id
+		LEFT JOIN "group" cre ON cre.id = a.cre_team_id
+		LEFT JOIN "user" teamlead ON teamlead.id = cre.manager_id
+		LEFT JOIN "user" ae ON ae.id = wi.assigned_to_id
 		WHERE s.work_item_id = $1::uuid AND sp.target::TEXT = $2` + sourceFilterSQL + `
 		ORDER BY s.start_on DESC NULLS LAST, s.updated_on DESC
 		LIMIT 1`
@@ -411,10 +422,12 @@ func (r *slaStatusRepo) GetClockState(ctx context.Context, workItemID, target, s
 	var pauseDurationSeconds *int64
 	var businessPauseSeconds, durationSeconds, viewPercent float64
 	var schedule string
+	var teamEmail, teamLeadName, assigneeName, assigneeEmail *string
 	err := r.db.QueryRow(ctx, query, args...).Scan(
 		&state.IsActive, &state.Stage, &state.HasBreached, &state.StartedOn,
 		&state.PausedOn, &pauseDurationSeconds,
 		&businessPauseSeconds, &durationSeconds, &viewPercent, &schedule,
+		&teamEmail, &teamLeadName, &assigneeName, &assigneeEmail,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.SLAClockState{}, nil
@@ -431,6 +444,10 @@ func (r *slaStatusRepo) GetClockState(ctx context.Context, workItemID, target, s
 	state.BusinessElapsedPercent = viewPercent
 	state.Schedule = schedule
 	state.BusinessPauseDurationSeconds = int64(businessPauseSeconds)
+	state.TeamEmail = stringOrEmpty(teamEmail)
+	state.TeamLeadName = stringOrEmpty(teamLeadName)
+	state.AssigneeName = stringOrEmpty(assigneeName)
+	state.AssigneeEmail = stringOrEmpty(assigneeEmail)
 
 	if correctedStage, breached, pct, ok := businessDayCorrectedLiveState(schedule, state.Stage, state.StartedOn, businessPauseSeconds, durationSeconds); ok {
 		// Stage AND HasBreached are now corrected together with the
