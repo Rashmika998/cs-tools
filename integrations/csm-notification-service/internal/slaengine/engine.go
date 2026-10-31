@@ -1210,19 +1210,159 @@ func (e *Engine) RecalculateFromEntity(ctx context.Context) error {
 		repairCtx, cancel := context.WithTimeout(context.Background(), slaRecalculationRepairTimeout)
 		defer cancel()
 		repairNow := time.Now()
-		var stillFailed int
+		var stillFailed []activeSLAClock
 		for _, c := range failed {
-			if !e.reconcileClock(repairCtx, c, repairNow) {
-				stillFailed++
+			// refreshAndReconcileClock, not a bare reconcileClock(repairCtx, c,
+			// repairNow) -- a second CodeRabbit-caught gap in the repair pass
+			// specifically: c is the snapshot fetched once, back at the start
+			// of the main pass, which by repair time can be stale by up to
+			// slaRecalculationTimeout -- long enough for a live case update to
+			// have already paused or resumed this exact clock for real reasons
+			// unrelated to this recalculation. Reapplying c's own stale
+			// IsPaused/PausedOn as-is would silently clobber that genuine,
+			// newer state. Re-fetching this one clock's CURRENT state right
+			// before writing narrows that window to the repair pass's own
+			// single round trip -- it does not fully close it (a live write
+			// landing in between the re-fetch and this write is still
+			// possible; closing that needs real coordination between this
+			// path and ApplyStateEffects, out of scope here), but it's a real
+			// reduction from "stale by up to ten minutes" to "stale by at
+			// most one round trip."
+			if _, ok := e.refreshAndReconcileClock(repairCtx, c, repairNow); !ok {
+				stillFailed = append(stillFailed, c)
 			}
 		}
-		if stillFailed > 0 {
-			slog.ErrorContext(ctx, "slaengine: recalculate: some clocks could not be rebuilt even after a repair pass -- breach alerting for them stays broken until the next recalculation or a restart", "count", stillFailed)
+		if len(stillFailed) > 0 {
+			slog.ErrorContext(ctx, "slaengine: recalculate: some clocks could not be rebuilt even after a repair pass -- breach alerting for them stays broken until the next recalculation or a restart", "count", len(stillFailed))
+			return fmt.Errorf("slaengine: recalculate: %d clock(s) could not be rebuilt even after a repair pass", len(stillFailed))
 		}
 	}
 
 	slog.InfoContext(ctx, "slaengine: recalculation complete", "count", len(clocks), "failedFirstAttempt", len(failed))
 	return nil
+}
+
+// refreshAndReconcileClock re-fetches one (caseID, clockType) clock's
+// CURRENT state directly from entity-service and rebuilds it from that
+// fresh read, rather than from display's own (possibly stale) IsPaused/
+// StartedOn/pause fields -- display still supplies every field
+// GetClockState doesn't carry (CaseNumber/CaseTitle/Product/Team/Priority/
+// CaseType/State), just not the condition-sensitive ones. Used by
+// RecalculateFromEntity's own repair pass (see its own doc comment on the
+// staleness this narrows) and by ReviseClocks (a severity change always
+// needs this clock's real, current per-policy state, which only
+// entity-service has -- there is no "reuse the old snapshot" option at
+// all here, unlike the repair pass). e.entity nil, a lookup failure, or
+// entity-service reporting no open clock at all for this (work item,
+// target) are all treated as "nothing to rebuild" rather than an error --
+// a genuinely-gone clock means Redis should hold nothing for it either,
+// which it already does after a wipe (RecalculateFromEntity) or never did
+// in the first place for a clock type this severity's policy doesn't
+// apply to (ReviseClocks).
+// found reports whether entity-service currently has an open clock at all
+// for this (work item, target); ok reports whether the rebuild (when found)
+// succeeded. A caller that needs to know the difference between "genuinely
+// nothing to rebuild" and "rebuilt successfully" uses found; one that
+// doesn't (RecalculateFromEntity's own repair pass, where a wipe already
+// cleared everything either way) can ignore it.
+func (e *Engine) refreshAndReconcileClock(ctx context.Context, display activeSLAClock, now time.Time) (found, ok bool) {
+	if e.entity == nil {
+		return false, true
+	}
+	state, err := e.entity.GetClockState(ctx, display.CaseID, display.ClockType)
+	if err != nil {
+		slog.ErrorContext(ctx, "slaengine: failed to refresh clock state before rebuilding", "caseId", display.CaseID, "clockType", display.ClockType, "err", err)
+		return false, false
+	}
+	if !state.Found {
+		return false, true
+	}
+	c := display
+	c.IsPaused = state.IsPaused
+	c.StartedOn = state.StartedOn
+	c.PausedOn = state.PausedOn
+	c.PauseDurationSeconds = state.PauseDurationSeconds
+	c.DurationSeconds = state.DurationSeconds
+	c.Schedule = state.Schedule
+	return true, e.reconcileClock(ctx, c, now)
+}
+
+// ReviseClocks re-syncs one case's own three clocks with entity-service's
+// real, current per-policy state after its priority genuinely changes --
+// called from dispatch.handleSeverityChanged. A priority change on
+// entity-service's own side cancels whichever clock(s) the case's PREVIOUS
+// severity resolved a policy for and registers fresh ones for its new
+// severity (a different policy, a different duration, possibly a different
+// set of clock types entirely) -- but nothing about that write alone told
+// this engine's own Redis-held tracking anything: unlike RegisterClocks
+// (case.created) and ApplyStateEffects (case.status_changed), nothing here
+// reacted to a severity change at all before this method existed, so
+// Redis kept ticking down the OLD severity's clock, under its OLD
+// duration, indefinitely -- confirmed, not hypothetical: a stale wake
+// entry from before the change can even still fire a breach alert, since
+// sendBreachAlert's own incarnation check (isSameClockIncarnation) can't
+// tell "genuinely resolved" apart from "entity-service is now tracking a
+// completely different clock" and fails open toward sending rather than
+// risk losing a real alert.
+//
+// For a clock type the new severity's policy set still covers,
+// refreshAndReconcileClock rebuilds it from entity-service's current state
+// -- the same incarnation-aware SetClock Lua script that already protects
+// against ApplyStateEffects' own stale-replay risk (see setClockScript's
+// own doc comment in redis.go) is what makes writing the NEW clock's own
+// StartedOn here safely supersede the OLD incarnation, with no separate
+// "delete the old one first" step needed. For a clock type the new
+// severity has NO policy for at all, refreshAndReconcileClock's usual
+// "not found -- nothing to rebuild" posture is wrong here (unlike its
+// other caller, there is no preceding wipe that already cleared the old
+// entries): this actively removes that clock's own wake entries instead,
+// so the old severity's tier reminders don't go on ticking for a clock
+// that no longer exists under any policy at all.
+//
+// priority/caseNumber/wso2CaseID/caseTitle/product/team are exactly what
+// events.SeverityChangedPayload carries (priority = NewSeverity) -- plain
+// strings, not the unexported activeSLAClock type itself, since
+// dispatch.slaEngineService (a different package) is this method's one real
+// caller. CaseType/State (which that payload doesn't carry, and
+// GetClockState doesn't either -- they're purely display fields, not
+// condition-sensitive) are instead read back per clock type from whatever
+// Redis already holds from before the revision, so a rebuilt clock's Chat
+// card still shows them correctly.
+func (e *Engine) ReviseClocks(ctx context.Context, caseID, priority, caseNumber, wso2CaseID, caseTitle, product, team string) {
+	if e.entity == nil {
+		return
+	}
+	display := activeSLAClock{
+		CaseID:     caseID,
+		CaseNumber: caseNumber,
+		WSO2CaseID: wso2CaseID,
+		CaseTitle:  caseTitle,
+		Product:    product,
+		Team:       team,
+		Priority:   priority,
+	}
+	now := time.Now()
+	for _, clockType := range clockTypesInOrder {
+		c := display
+		c.ClockType = clockType
+		if oldMeta, found, err := e.store.GetClock(ctx, caseID, clockType); err == nil && found {
+			c.CaseType = oldMeta.CaseType
+			c.State = oldMeta.State
+		}
+
+		found, ok := e.refreshAndReconcileClock(ctx, c, now)
+		if found {
+			continue
+		}
+		if !ok {
+			continue
+		}
+		for _, tier := range tierSequence {
+			if err := e.store.RemoveWake(ctx, wakeMember(caseID, clockType, tier)); err != nil {
+				slog.ErrorContext(ctx, "slaengine: revise clocks: failed to remove stale wake entry for a clock type the new severity no longer covers", "caseId", caseID, "clockType", clockType, "tier", tier, "err", err)
+			}
+		}
+	}
 }
 
 // reconcileClock rebuilds one (caseID, clockType) clock's Redis state from

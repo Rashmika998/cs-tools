@@ -118,6 +118,9 @@ type slaEngineService interface {
 	// RecalculateFromEntity is called from handleSLARecalculationRequested,
 	// in its own detached goroutine — see that handler's own doc comment.
 	RecalculateFromEntity(ctx context.Context) error
+	// ReviseClocks is called from handleSeverityChanged — see that method's
+	// own doc comment.
+	ReviseClocks(ctx context.Context, caseID, priority, caseNumber, wso2CaseID, caseTitle, product, team string)
 }
 
 // callSender abstracts notifications.TwilioClient's MakeCall for testability.
@@ -1541,6 +1544,18 @@ func (d *Dispatcher) handleSeverityChanged(ctx context.Context, record eventbus.
 	var p events.SeverityChangedPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("dispatch: decode case.severity_changed payload: %w", err)
+	}
+
+	// Independent of, and does not block, every reaction below -- see
+	// slaEngineService's own doc comment. A severity change on
+	// entity-service's own side cancels this case's old-severity clock(s)
+	// and registers fresh ones for the new severity, but nothing before
+	// this call ever told this engine's own Redis-held tracking: it kept
+	// ticking down the old severity's clock, under its old duration,
+	// indefinitely. ReviseClocks re-syncs all three clock types with
+	// entity-service's current, post-revision state.
+	if d.slaEngine != nil {
+		d.slaEngine.ReviseClocks(ctx, p.CaseID, p.NewSeverity, p.CaseNumber, p.WSO2CaseID, p.CaseTitle, p.Product, p.Team)
 	}
 
 	// Registered before anything is claimed (see handleCaseCreated).
