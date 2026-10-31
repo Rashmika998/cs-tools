@@ -36065,6 +36065,18 @@ components:
             distinct from pauseDurationSeconds' own flat wall-clock total —
             needed to correct a business-day-scheduled clock's own wake-up
             schedule after a resume. Always 0 for a 24x7-scheduled clock.
+        assigneeName:
+          type: string
+          description: Mirrors SLAStatus.assigneeName. Empty when not resolvable.
+        assigneeEmail:
+          type: string
+          description: Mirrors SLAStatus.assigneeEmail. Empty when not resolvable.
+        teamEmail:
+          type: string
+          description: Mirrors SLAStatus.teamEmail. Empty when not resolvable.
+        teamLeadName:
+          type: string
+          description: Mirrors SLAStatus.teamLeadName. Empty when not resolvable.
 
     SLADurationPolicyItem:
       type: object

@@ -8909,6 +8909,20 @@ type SLAClockState struct {
 	// weekends/holidays the pause spanned. Always 0 for a 24x7-scheduled
 	// clock (nothing ever writes this column for one).
 	BusinessPauseDurationSeconds int64 `json:"businessPauseDurationSeconds"`
+	// AssigneeName/AssigneeEmail/TeamEmail/TeamLeadName mirror SLAStatus's
+	// own fields of the same name -- same resolution (AssigneeName/
+	// AssigneeEmail from work_item.assigned_to_id, TeamEmail/TeamLeadName
+	// from the account's own CRE "group" row), added so
+	// csm-notification-service's SLA breach email reaction can read them
+	// from the exact same read it already makes right before sending a
+	// breach alert (GetClockState, for its own stale-alert suppression
+	// check) rather than needing a second round trip to GET /sla-status.
+	// "" when not resolvable (no assignee, no team, or the team has no
+	// group_email/manager_id set) -- same as SLAStatus's own posture.
+	AssigneeName  string `json:"assigneeName,omitempty"`
+	AssigneeEmail string `json:"assigneeEmail,omitempty"`
+	TeamEmail     string `json:"teamEmail,omitempty"`
+	TeamLeadName  string `json:"teamLeadName,omitempty"`
 }
 
 // SLADurationPolicyItem is one (severity, clockType) duration row, computed

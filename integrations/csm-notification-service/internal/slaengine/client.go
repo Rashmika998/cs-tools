@@ -338,6 +338,18 @@ type clockState struct {
 	// produced wake times off by however much of the pause fell on a
 	// weekend.
 	BusinessPauseDurationSeconds int64 `json:"businessPauseDurationSeconds"`
+	// AssigneeName/AssigneeEmail/TeamEmail/TeamLeadName mirror entity-service's
+	// own domain.SLAClockState fields of the same name — resolved there from
+	// work_item.assigned_to_id and the case's account's own CRE "group" row,
+	// "" when not resolvable (no assignee, no team, or the team has no
+	// group_email/manager_id set). Engine.sendBreachEmails reads these from
+	// the exact same GetClockState call sendBreachAlert already makes for its
+	// own stale-alert suppression check, rather than a second round trip to
+	// GET /sla-status.
+	AssigneeName  string `json:"assigneeName,omitempty"`
+	AssigneeEmail string `json:"assigneeEmail,omitempty"`
+	TeamEmail     string `json:"teamEmail,omitempty"`
+	TeamLeadName  string `json:"teamLeadName,omitempty"`
 }
 
 // GetClockState calls GET /sla-status/clock-state?workItemId=<caseID>&target=<clockType>&source=csm

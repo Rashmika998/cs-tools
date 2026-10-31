@@ -2227,6 +2227,21 @@ most recently-started row for `(workItemID, target[, source])`,
 when no row exists at all. `StartedOn` is what lets the caller compare
 clock *incarnations*, not just clock types, after a severity revision.
 
+**`GetClockState` also resolves `AssigneeName`/`AssigneeEmail`/`TeamEmail`/
+`TeamLeadName`** (`work_item`/`account`/`"group"`/`"user"` joins, the exact
+same joins/column expressions `SearchActiveSLAStatuses`'s own
+`activeSLAStatusFromJoins`/`scanSLAStatus` already use for the identical
+fields on `GET /sla-status`) — added once `csm-notification-service`'s SLA
+breach email reaction needed them, specifically from this call rather than
+a second round trip: that service already calls `GetClockState` once per
+tier crossing, right before sending its Chat card, for the stale-alert
+suppression check above. Resolving the email fields here too means that
+one existing call now serves both purposes, with no second query against
+`GET /sla-status`. This is the one deliberate widening of this method's
+otherwise narrow scope (see its own doc comment on why it has no
+work_item/case/announcement join otherwise) — purely for these four
+display-only fields, nothing else case-like is added.
+
 **`GET /sla-status` is internal-caller-only** (`slaStatusService.
 requireInternalCaller`, mirroring `onboarding_step_service.go`'s own helper
 of the same name/reasoning) — `AccessService.ResolveScope`'s scope must be
@@ -2974,6 +2989,38 @@ regardless of severity.
   of at read time. Resuming leaves these three columns alone — once the
   clock goes back to `IN_PROGRESS`, `sla_live` resumes computing them live
   on every read regardless of whatever stale snapshot is still stored.
+- **Cancellation now freezes the same three columns `CompleteClock`/
+  `SetPaused` already freeze at their own transitions — a real, reported
+  gap, confirmed against a live case.** `cancelClockFlat`/
+  `cancelClockBusinessDays` (`CancelClock`/`CancelClockByPolicy`) and
+  `ReviseClocks`' own `flatCancelQuery`/`reviseClocksCancelBusinessDays`
+  (the severity-change cancellation path — by far the most common real
+  trigger for a CANCELLED row) used to set only `has_breached` on
+  cancellation, leaving `business_elapsed_percentage`/`business_duration`/
+  `remaining_business_duration` at whatever they were before — effectively
+  0 for a clock that had never paused, since nothing else writes these
+  columns during `IN_PROGRESS` (`sla_live` computes them live for that
+  stage; the stored columns are reached only by a PAUSED/terminal row's
+  fallback — see that view's own doc comment). A clock cancelled by a
+  severity change therefore displayed 0% elapsed and 0 business duration no
+  matter how much real time had passed — confirmed live: three clocks that
+  had genuinely run for over two minutes each, cancelled by a severity
+  change, all read `business_elapsed_percentage = 0`. All four cancellation
+  code paths now freeze the real elapsed figure at the moment of
+  cancellation, reusing `completedElapsedExpr` on the flat side exactly the
+  way `CompleteClock` does, and the same `businessdays.Elapsed`-based
+  per-row computation `completeClockBusinessDays` already does on the
+  business-day side. Unlike completion, a cancelled clock's `has_breached`
+  can still be true (the two are independent facts: did it run past its
+  duration, and was it later cancelled rather than satisfied) — this
+  doesn't change that, only how much of the clock's own elapsed time is
+  shown. Fixed intentionally, not accidentally: an earlier version of
+  `cancelClockBusinessDays`'s own doc comment argued a cancelled clock "was
+  never actually satisfied, so there's no real outcome to freeze" — true of
+  the ACHIEVED/CANCELLED distinction itself, but `sla_live`'s own fallback
+  for ANY non-live stage is these columns regardless of which terminal
+  stage it is, so leaving them at 0 was never actually "no outcome", it was
+  a wrong one.
 - **A case closing now finalizes all three clock types, not just
   resolution.** `ApplyCaseStateEffects`'s `CaseStateClosed` branch used to
   only resume+complete `resolution` and merely pause `workaround` forever
