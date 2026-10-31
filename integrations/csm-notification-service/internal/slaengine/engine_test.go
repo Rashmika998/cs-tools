@@ -41,6 +41,13 @@ type fakeStore struct {
 	// fails" (retries exhausted).
 	failWipeAttempts int
 	wipeCalls        int
+	// failAddAttempts, when > 0, fails exactly that many AddWake calls
+	// (counted across the whole fakeStore, in call order) before letting
+	// one through -- mirrors failWipeAttempts, for simulating a clock that
+	// fails RecalculateFromEntity's first pass and succeeds on its repair
+	// pass retry.
+	failAddAttempts int
+	addWakeCalls    int
 }
 
 func newFakeStore() *fakeStore {
@@ -52,7 +59,8 @@ func newFakeStore() *fakeStore {
 }
 
 func (s *fakeStore) AddWake(_ context.Context, member string, at time.Time) error {
-	if s.failAdd {
+	s.addWakeCalls++
+	if s.failAdd || s.addWakeCalls <= s.failAddAttempts {
 		return errors.New("add wake failed")
 	}
 	s.wake[member] = at
@@ -1793,6 +1801,36 @@ func TestEngine_RecalculateFromEntity_WipeTransientFailure_RetrySucceeds(t *test
 	}
 	if _, found, _ := st.GetClock(context.Background(), "case-fresh", ClockResponse); !found {
 		t.Error("case-fresh's clock was not rebuilt")
+	}
+}
+
+// TestEngine_RecalculateFromEntity_FailedClockRepairsOnFreshContext is the
+// regression test for a CodeRabbit-caught gap: a clock that fails to
+// rebuild on the main pass (for any reason, context exhaustion included --
+// see RecalculateFromEntity's own doc comment) must get a real second
+// chance on a FRESH context, not be left half-rebuilt (a clock hash with no
+// wake entry, in this case) until the next recalculation or a restart.
+func TestEngine_RecalculateFromEntity_FailedClockRepairsOnFreshContext(t *testing.T) {
+	st := newFakeStore()
+	st.failAddAttempts = 1 // the only AddWake call in the main pass fails; the repair pass's own succeeds
+	client := &fakeActiveClocksClient{clocks: []activeSLAClock{
+		{CaseID: "case-1", ClockType: ClockResponse, Priority: "CATASTROPHIC", StartedOn: timePtr(time.Now()), DurationSeconds: int64((15 * time.Minute).Seconds())},
+	}}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = client
+
+	if err := e.RecalculateFromEntity(context.Background()); err != nil {
+		t.Fatalf("RecalculateFromEntity() error = %v", err)
+	}
+	meta, found, err := st.GetClock(context.Background(), "case-1", ClockResponse)
+	if err != nil {
+		t.Fatalf("GetClock() error = %v", err)
+	}
+	if !found {
+		t.Fatal("case-1's clock hash was not written at all")
+	}
+	if _, wakeFound := st.wake[wakeMember("case-1", ClockResponse, 50)]; !wakeFound {
+		t.Errorf("case-1's wake entry is still missing after the repair pass; clock = %+v", meta)
 	}
 }
 
