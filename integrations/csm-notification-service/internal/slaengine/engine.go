@@ -954,7 +954,10 @@ func (e *Engine) alertTier(ctx context.Context, meta ClockMeta, caseID, clockTyp
 // audience — a known, accepted reduction from the removed poll design's
 // own live entity-service lookup, not a bug. teamLeadName is always sent
 // "" for the same reason: no event this engine consumes carries it, and
-// there is no live entity-service lookup left to resolve it from.
+// there is no live entity-service lookup left to resolve it from. Resolve's
+// own "Incident Monitor" fallback is retargeted to chataudience.SLADefault
+// right before sending (see that constant's own doc comment) — a different
+// webhook into the same Chat space, not a different space.
 //
 // A failed send to one audience is logged (naming that Chat space) and NOT
 // retried — same explicit product decision, and same reasoning, as the
@@ -1050,8 +1053,17 @@ func (e *Engine) sendBreachAlert(ctx context.Context, meta ClockMeta, caseID, cl
 	audiences := chataudience.Resolve(meta.Team, false, "", e.clock(), e.chat.HasAudienceSpace)
 	caseLink := e.links.CSMLink(caseID)
 	for _, audience := range audiences {
-		if err := e.chat.SendSLABreachAlert(ctx, audience, clockType, tierLabel(tier), caseNumber, meta.WSO2CaseID, meta.CaseTitle, meta.CaseType, meta.Product, meta.Team, "", meta.Priority, meta.State, openedAt, caseLink); err != nil {
-			slog.ErrorContext(ctx, "slaengine: failed to send sla breach alert to chat space, not retrying", "caseId", caseID, "clockType", clockType, "tier", tier, "chatSpace", audience, "err", err)
+		// The Incident Monitor fallback posts through its own dedicated
+		// webhook (chataudience.SLADefault), not the shared space's
+		// Incident Monitor webhook -- see that constant's own doc comment.
+		// Every other audience (a real team's own space, Evaluation,
+		// Onboarding, Americas) is sent exactly as Resolve returned it.
+		sendAudience := audience
+		if sendAudience == chataudience.IncidentMonitor {
+			sendAudience = chataudience.SLADefault
+		}
+		if err := e.chat.SendSLABreachAlert(ctx, sendAudience, clockType, tierLabel(tier), caseNumber, meta.WSO2CaseID, meta.CaseTitle, meta.CaseType, meta.Product, meta.Team, "", meta.Priority, meta.State, openedAt, caseLink); err != nil {
+			slog.ErrorContext(ctx, "slaengine: failed to send sla breach alert to chat space, not retrying", "caseId", caseID, "clockType", clockType, "tier", tier, "chatSpace", sendAudience, "err", err)
 		}
 	}
 }

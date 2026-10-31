@@ -886,6 +886,59 @@ func TestTick_AlertsADueTierAndRemovesTheWakeEntry(t *testing.T) {
 	}
 }
 
+// TestTick_BreachAlert_IncidentMonitorFallbackRetargetsToSLADefault is the
+// regression test for the SLA-breach-alert-specific webhook split: a case
+// with no team-specific Chat space resolves to chataudience.IncidentMonitor
+// (fakeChat's default HasAudienceSpace), but sendBreachAlert must post it
+// under chataudience.SLADefault instead -- a separate incoming webhook into
+// the same Google Chat space, not a different space -- so the shared
+// Incident Monitor webhook no longer carries SLA breach traffic at all.
+func TestTick_BreachAlert_IncidentMonitorFallbackRetargetsToSLADefault(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{}
+	pub := &fakePublisher{}
+	e := newTestEngine(st, chat, pub)
+
+	past := time.Now().Add(-time.Minute)
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(chat.calls) != 1 {
+		t.Fatalf("chat calls = %+v, want exactly one", chat.calls)
+	}
+	if got := chat.calls[0].audience; got != "SLA Default" {
+		t.Errorf("audience = %q, want %q (the Incident Monitor fallback must retarget to the SLA webhook)", got, "SLA Default")
+	}
+}
+
+// TestTick_BreachAlert_RealTeamAudienceIsNotRetargeted confirms the
+// retargeting above is scoped to the literal IncidentMonitor fallback only
+// -- a case whose team has its own configured Chat space must still post
+// there under the team's own name, unaffected by the SLADefault split.
+func TestTick_BreachAlert_RealTeamAudienceIsNotRetargeted(t *testing.T) {
+	st := newFakeStore()
+	chat := &fakeChat{spaces: map[string]bool{"Team Nova": true}}
+	pub := &fakePublisher{}
+	e := newTestEngine(st, chat, pub)
+
+	past := time.Now().Add(-time.Minute)
+	st.clocks["case-1|response"] = ClockMeta{CaseNumber: "CS0001", Team: "Team Nova", StartedAt: past}
+	st.wake[wakeMember("case-1", "response", 50)] = past
+
+	if err := e.Tick(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick() error = %v, want nil", err)
+	}
+	if len(chat.calls) != 1 {
+		t.Fatalf("chat calls = %+v, want exactly one", chat.calls)
+	}
+	if got := chat.calls[0].audience; got != "Team Nova" {
+		t.Errorf("audience = %q, want %q (a real team's own space must not be retargeted)", got, "Team Nova")
+	}
+}
+
 // TestTick_SLANotificationsDisabled_SkipsChatButKeepsPublishAndCursor guards
 // SLA_EMAIL_SENDING_ENABLED=false: no Chat card (and no entity-service
 // lookup), but the event is still published and the tier is still marked
@@ -1315,7 +1368,7 @@ func TestTick_PublishFailure_LeavesWakeEntryForRetry(t *testing.T) {
 // — see Engine.sendBreachAlert's own doc comment.
 func TestTick_ChatFailure_StillRemovesWakeEntryAndAdvancesCursor(t *testing.T) {
 	st := newFakeStore()
-	chat := &fakeChat{failFor: map[string]bool{"Incident Monitor": true}}
+	chat := &fakeChat{failFor: map[string]bool{"SLA Default": true}}
 	pub := &fakePublisher{}
 	e := newTestEngine(st, chat, pub)
 
