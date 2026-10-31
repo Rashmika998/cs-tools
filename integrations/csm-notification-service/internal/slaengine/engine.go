@@ -1252,13 +1252,19 @@ func (e *Engine) RecalculateFromEntity(ctx context.Context) error {
 // staleness this narrows) and by ReviseClocks (a severity change always
 // needs this clock's real, current per-policy state, which only
 // entity-service has -- there is no "reuse the old snapshot" option at
-// all here, unlike the repair pass). e.entity nil, a lookup failure, or
-// entity-service reporting no open clock at all for this (work item,
-// target) are all treated as "nothing to rebuild" rather than an error --
-// a genuinely-gone clock means Redis should hold nothing for it either,
-// which it already does after a wipe (RecalculateFromEntity) or never did
-// in the first place for a clock type this severity's policy doesn't
-// apply to (ReviseClocks).
+// all here, unlike the repair pass). e.entity nil, entity-service
+// reporting no open clock at all for this (work item, target), or one
+// already in a terminal stage (ACHIEVED/CANCELLED/COMPLETED -- GetClockState
+// returns a row "regardless of whether it's currently active", so Found
+// alone does not mean "still live" the way it does for
+// GetActiveCSMSLAClocks) are all treated as "nothing to rebuild", not an
+// error: a genuinely-gone or already-finished clock means Redis should
+// hold nothing live for it either, which it already does after a wipe
+// (RecalculateFromEntity), never did in the first place for a clock type
+// this severity's policy doesn't apply to (ReviseClocks), or must not be
+// resurrected into looking live again (either caller, for a clock that
+// finished on its own in the meantime). Only a genuine lookup failure is
+// reported as an error.
 // found reports whether entity-service currently has an open clock at all
 // for this (work item, target); ok reports whether the rebuild (when found)
 // succeeded. A caller that needs to know the difference between "genuinely
@@ -1274,7 +1280,16 @@ func (e *Engine) refreshAndReconcileClock(ctx context.Context, display activeSLA
 		slog.ErrorContext(ctx, "slaengine: failed to refresh clock state before rebuilding", "caseId", display.CaseID, "clockType", display.ClockType, "err", err)
 		return false, false
 	}
-	if !state.Found {
+	// GetClockState returns a row "regardless of whether it's currently
+	// active" (see its own doc comment) -- unlike GetActiveCSMSLAClocks,
+	// Found alone does not mean "still live". Treated the same as !Found
+	// (nothing to rebuild): ReviseClocks' own stale-wake-removal path for
+	// that case is exactly right here too -- a clock that already reached
+	// ACHIEVED/CANCELLED/COMPLETED must never be written back into Redis as
+	// a live one with fresh future wake entries, whether the display
+	// snapshot it's being asked to rebuild from thinks it's still paused or
+	// not.
+	if !state.Found || isTerminalSLAStage(state.Stage) {
 		return false, true
 	}
 	c := display
