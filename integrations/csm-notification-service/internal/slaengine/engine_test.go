@@ -35,6 +35,12 @@ type fakeStore struct {
 	failAdd     bool
 	failAdvance bool
 	failWipe    bool
+	// failWipeAttempts, when > 0, fails exactly that many WipeAll calls
+	// before letting one through -- simulates a transient Redis blip that
+	// withRedisRetry's own retry clears, distinct from failWipe's "always
+	// fails" (retries exhausted).
+	failWipeAttempts int
+	wipeCalls        int
 }
 
 func newFakeStore() *fakeStore {
@@ -186,7 +192,8 @@ func (s *fakeStore) ReleaseTier(_ context.Context, caseID, clockType string, tie
 }
 
 func (s *fakeStore) WipeAll(_ context.Context) error {
-	if s.failWipe {
+	s.wipeCalls++
+	if s.failWipe || s.wipeCalls <= s.failWipeAttempts {
 		return errors.New("redis: wipe failed")
 	}
 	s.wake = map[string]time.Time{}
@@ -1743,7 +1750,7 @@ func TestEngine_RecalculateFromEntity_FetchFailure_NeverWipesRedis(t *testing.T)
 // successful fetch for no benefit.
 func TestEngine_RecalculateFromEntity_WipeFailure_StillRebuildsFromFetchedList(t *testing.T) {
 	st := newFakeStore()
-	st.failWipe = true
+	st.failWipe = true // every attempt fails -- withRedisRetry's own retries are exhausted too
 	client := &fakeActiveClocksClient{clocks: []activeSLAClock{
 		{CaseID: "case-fresh", ClockType: ClockResponse, Priority: "CATASTROPHIC", StartedOn: timePtr(time.Now()), DurationSeconds: int64((15 * time.Minute).Seconds())},
 	}}
@@ -1755,6 +1762,37 @@ func TestEngine_RecalculateFromEntity_WipeFailure_StillRebuildsFromFetchedList(t
 	}
 	if _, found, _ := st.GetClock(context.Background(), "case-fresh", ClockResponse); !found {
 		t.Error("case-fresh's clock was not rebuilt despite the wipe failure")
+	}
+	if st.wipeCalls != redisRetryAttempts {
+		t.Errorf("WipeAll was called %d times, want %d (withRedisRetry's own attempt count)", st.wipeCalls, redisRetryAttempts)
+	}
+}
+
+// TestEngine_RecalculateFromEntity_WipeTransientFailure_RetrySucceeds
+// confirms a transient WipeAll failure (fewer than redisRetryAttempts in a
+// row) is cleared by withRedisRetry before falling through to the
+// log-and-continue path -- a stale clock from before the recalculation must
+// not survive when a retry would have cleaned it up.
+func TestEngine_RecalculateFromEntity_WipeTransientFailure_RetrySucceeds(t *testing.T) {
+	st := newFakeStore()
+	if err := st.SetClock(context.Background(), "case-stale", ClockResponse, ClockMeta{CaseNumber: "CS0000"}); err != nil {
+		t.Fatalf("SetClock() error = %v", err)
+	}
+	st.failWipeAttempts = redisRetryAttempts - 1 // fails every attempt but the last
+	client := &fakeActiveClocksClient{clocks: []activeSLAClock{
+		{CaseID: "case-fresh", ClockType: ClockResponse, Priority: "CATASTROPHIC", StartedOn: timePtr(time.Now()), DurationSeconds: int64((15 * time.Minute).Seconds())},
+	}}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = client
+
+	if err := e.RecalculateFromEntity(context.Background()); err != nil {
+		t.Fatalf("RecalculateFromEntity() error = %v", err)
+	}
+	if _, found, _ := st.GetClock(context.Background(), "case-stale", ClockResponse); found {
+		t.Error("case-stale's clock survived a wipe that should have succeeded on retry")
+	}
+	if _, found, _ := st.GetClock(context.Background(), "case-fresh", ClockResponse); !found {
+		t.Error("case-fresh's clock was not rebuilt")
 	}
 }
 

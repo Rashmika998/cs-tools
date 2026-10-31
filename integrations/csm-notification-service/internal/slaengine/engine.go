@@ -1133,6 +1133,12 @@ func (e *Engine) Reconcile(ctx context.Context, client entityActiveClocksClient)
 // whether the wipe fully completed -- aborting instead would throw away a
 // fetch that already succeeded, over a wipe whose only purpose was cleaning
 // up orphaned entries that are themselves already harmless (see above).
+// WipeAll itself is tried through withRedisRetry first (the same bounded
+// retry Tick/processDueMember already apply to their own Redis calls) --
+// WipeAll deletes wakeKey before its later SCAN-based deletes can fail, so
+// a bare, un-retried failure could leave stale wake members or clock
+// hashes behind over a merely transient blip that a second attempt would
+// have cleared.
 //
 // Guarded by recalculating (atomic.Bool) so two requests in flight at once
 // -- a double click, or a redelivered Kafka record -- can't race a second
@@ -1154,8 +1160,14 @@ func (e *Engine) RecalculateFromEntity(ctx context.Context) error {
 		return fmt.Errorf("slaengine: recalculate: fetch active clocks: %w", err)
 	}
 
-	if err := e.store.WipeAll(ctx); err != nil {
-		slog.ErrorContext(ctx, "slaengine: recalculate: wipe redis state failed, rebuilding anyway from the already-fetched list", "err", err)
+	// withRedisRetry (the same bounded retry Tick/processDueMember already
+	// lean on for their own Redis calls) gives a transient blip a real
+	// chance to clear before this falls through to the "rebuild anyway"
+	// path below -- WipeAll deletes wakeKey before its later SCAN-based
+	// deletes can fail, so a failure here can leave stale wake members or
+	// clock hashes behind, not just an empty-handed retry.
+	if err := withRedisRetry(ctx, func() error { return e.store.WipeAll(ctx) }); err != nil {
+		slog.ErrorContext(ctx, "slaengine: recalculate: wipe redis state failed after retries, rebuilding anyway from the already-fetched list", "err", err)
 	}
 
 	now := time.Now()
