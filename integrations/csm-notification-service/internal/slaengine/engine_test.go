@@ -1406,6 +1406,11 @@ type fakeActiveClocksClient struct {
 	clocks        []activeSLAClock
 	err           error
 	clockStateErr error
+	// clockStateStage, when set, is reported as every matched clock's own
+	// Stage in GetClockState -- lets a test simulate a clock that reached a
+	// terminal stage (ACHIEVED/CANCELLED/COMPLETED) sometime after it was
+	// still returned by GetActiveCSMSLAClocks/listed in f.clocks.
+	clockStateStage string
 }
 
 func (f *fakeActiveClocksClient) GetActiveCSMSLAClocks(context.Context) ([]activeSLAClock, error) {
@@ -1430,6 +1435,7 @@ func (f *fakeActiveClocksClient) GetClockState(_ context.Context, caseID, clockT
 		if c.CaseID == caseID && c.ClockType == clockType {
 			return clockState{
 				Found:                true,
+				Stage:                f.clockStateStage,
 				StartedOn:            c.StartedOn,
 				PausedOn:             c.PausedOn,
 				PauseDurationSeconds: c.PauseDurationSeconds,
@@ -1912,6 +1918,61 @@ func TestRefreshAndReconcileClock_UsesFreshStateNotTheGivenDisplaySnapshot(t *te
 	}
 	if meta.Paused {
 		t.Error("refreshAndReconcileClock wrote Paused=true, want the fresh (resumed) value -- it trusted the stale display snapshot instead of re-fetching")
+	}
+}
+
+// TestRefreshAndReconcileClock_DoesNotRebuildATerminalClock is the
+// regression test for a CodeRabbit-caught gap: GetClockState returns a row
+// "regardless of whether it's currently active" (unlike
+// GetActiveCSMSLAClocks), so Found alone does not mean "still live". A
+// clock already ACHIEVED/CANCELLED/COMPLETED must not be written back into
+// Redis as a live one with fresh future wake entries.
+func TestRefreshAndReconcileClock_DoesNotRebuildATerminalClock(t *testing.T) {
+	st := newFakeStore()
+	client := &fakeActiveClocksClient{
+		clocks: []activeSLAClock{
+			{CaseID: "case-1", ClockType: ClockResponse, StartedOn: timePtr(time.Now()), DurationSeconds: int64((15 * time.Minute).Seconds())},
+		},
+		clockStateStage: "COMPLETED",
+	}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = client
+
+	found, ok := e.refreshAndReconcileClock(context.Background(), activeSLAClock{CaseID: "case-1", ClockType: ClockResponse}, time.Now())
+	if found || !ok {
+		t.Fatalf("refreshAndReconcileClock() = (%v, %v), want (false, true) -- a terminal clock is \"nothing to rebuild\", not an error", found, ok)
+	}
+	if _, clockFound, _ := st.GetClock(context.Background(), "case-1", ClockResponse); clockFound {
+		t.Error("a COMPLETED clock was written back into Redis as if it were still live")
+	}
+}
+
+// TestEngine_ReviseClocks_RemovesStaleWakeEntriesForATerminalClock confirms
+// ReviseClocks' own stale-cleanup path (normally for a clock type the new
+// severity has no policy for at all) also fires for a clock that reached a
+// terminal stage on its own -- the same CodeRabbit-caught gap as the test
+// above, exercised through ReviseClocks specifically.
+func TestEngine_ReviseClocks_RemovesStaleWakeEntriesForATerminalClock(t *testing.T) {
+	st := newFakeStore()
+	if err := st.SetClock(context.Background(), "case-1", ClockResponse, ClockMeta{CaseNumber: "CS0001", StartedAt: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatalf("SetClock() error = %v", err)
+	}
+	if err := st.AddWake(context.Background(), wakeMember("case-1", ClockResponse, 50), time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("AddWake() error = %v", err)
+	}
+	client := &fakeActiveClocksClient{
+		clocks: []activeSLAClock{
+			{CaseID: "case-1", ClockType: ClockResponse, StartedOn: timePtr(time.Now()), DurationSeconds: int64((15 * time.Minute).Seconds())},
+		},
+		clockStateStage: "ACHIEVED",
+	}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = client
+
+	e.ReviseClocks(context.Background(), "case-1", "HIGH", "CS0001", "WSO2-1", "Something broke", "api-manager", "Phoenix")
+
+	if _, stillThere := st.wake[wakeMember("case-1", ClockResponse, 50)]; stillThere {
+		t.Error("stale wake entry survived ReviseClocks for a clock that had already reached a terminal stage")
 	}
 }
 
