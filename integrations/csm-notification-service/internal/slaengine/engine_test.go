@@ -184,6 +184,13 @@ func (s *fakeStore) ReleaseTier(_ context.Context, caseID, clockType string, tie
 	return nil
 }
 
+func (s *fakeStore) WipeAll(_ context.Context) error {
+	s.wake = map[string]time.Time{}
+	s.clocks = map[string]ClockMeta{}
+	s.claims = map[string]bool{}
+	return nil
+}
+
 // fakeChat is a chatSender test double.
 type fakeChat struct {
 	calls   []fakeChatCall
@@ -1385,6 +1392,14 @@ func (f *fakeActiveClocksClient) GetActiveCSMSLAClocks(context.Context) ([]activ
 	return f.clocks, f.err
 }
 
+// GetClockState is a bare stub so fakeActiveClocksClient can also serve as
+// Engine.entity (declared as entityClockStatusClient) in
+// RecalculateFromEntity's own tests, which need a value satisfying both
+// interfaces the way the real *entity.CustomerEntityClient does.
+func (f *fakeActiveClocksClient) GetClockState(context.Context, string, string) (clockState, error) {
+	return clockState{}, nil
+}
+
 func timePtr(t time.Time) *time.Time { return &t }
 
 // TestReconcileClock_PastTiersAreClaimedNotAlerted is the core regression
@@ -1647,6 +1662,69 @@ func TestEngine_Reconcile_ClientErrorPropagates(t *testing.T) {
 
 	if err := e.Reconcile(context.Background(), client); err == nil {
 		t.Fatal("Reconcile() error = nil, want the client's error propagated")
+	}
+}
+
+// TestEngine_RecalculateFromEntity_WipesThenRebuilds confirms the admin
+// recalculation action both clears whatever Redis had and rebuilds it fresh
+// from the client's own current list -- a clock Redis held for a case the
+// client no longer reports (case-stale here) must not survive, while every
+// clock the client still reports must come back.
+func TestEngine_RecalculateFromEntity_WipesThenRebuilds(t *testing.T) {
+	st := newFakeStore()
+	// Pre-existing Redis state for a clock the client will NOT report as
+	// active any more -- simulates the exact scenario this action exists
+	// for (entity-service's own data changed out from under Redis).
+	if err := st.SetClock(context.Background(), "case-stale", ClockResponse, ClockMeta{CaseNumber: "CS0000"}); err != nil {
+		t.Fatalf("SetClock() error = %v", err)
+	}
+
+	client := &fakeActiveClocksClient{clocks: []activeSLAClock{
+		{CaseID: "case-fresh", ClockType: ClockResponse, Priority: "CATASTROPHIC", StartedOn: timePtr(time.Now()), DurationSeconds: int64((15 * time.Minute).Seconds())},
+	}}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = client
+
+	if err := e.RecalculateFromEntity(context.Background()); err != nil {
+		t.Fatalf("RecalculateFromEntity() error = %v", err)
+	}
+
+	if _, found, _ := st.GetClock(context.Background(), "case-stale", ClockResponse); found {
+		t.Error("case-stale's clock hash survived RecalculateFromEntity, want it wiped")
+	}
+	if _, found, _ := st.GetClock(context.Background(), "case-fresh", ClockResponse); !found {
+		t.Error("case-fresh's clock was not rebuilt by RecalculateFromEntity")
+	}
+}
+
+// TestEngine_RecalculateFromEntity_NoEntityClientConfigured_ReturnsError
+// confirms a misconfigured Engine (entity unset, or set to something that
+// doesn't also satisfy entityActiveClocksClient) fails loudly rather than
+// silently doing nothing.
+func TestEngine_RecalculateFromEntity_NoEntityClientConfigured_ReturnsError(t *testing.T) {
+	e := newTestEngine(newFakeStore(), &fakeChat{}, &fakePublisher{})
+	if err := e.RecalculateFromEntity(context.Background()); err == nil {
+		t.Fatal("RecalculateFromEntity() error = nil, want an error for a nil entity client")
+	}
+}
+
+// TestEngine_RecalculateFromEntity_SkipsWhenAlreadyRunning confirms the
+// recalculating guard rejects a second call while one is already marked
+// in-flight, rather than racing a second wipe against it.
+func TestEngine_RecalculateFromEntity_SkipsWhenAlreadyRunning(t *testing.T) {
+	st := newFakeStore()
+	if err := st.SetClock(context.Background(), "case-untouched", ClockResponse, ClockMeta{CaseNumber: "CS0000"}); err != nil {
+		t.Fatalf("SetClock() error = %v", err)
+	}
+	e := newTestEngine(st, &fakeChat{}, &fakePublisher{})
+	e.entity = &fakeActiveClocksClient{}
+	e.recalculating.Store(true)
+
+	if err := e.RecalculateFromEntity(context.Background()); err != nil {
+		t.Fatalf("RecalculateFromEntity() error = %v, want nil (skip, not fail)", err)
+	}
+	if _, found, _ := st.GetClock(context.Background(), "case-untouched", ClockResponse); !found {
+		t.Error("RecalculateFromEntity wiped Redis despite recalculating already being true")
 	}
 }
 

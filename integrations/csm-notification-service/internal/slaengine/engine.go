@@ -24,6 +24,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/wso2-open-operations/cs-tools/integrations/csm-notification-service/internal/businessdays"
@@ -104,6 +105,7 @@ type store interface {
 	AdvanceAlertedTier(ctx context.Context, caseID, clockType string, tier int, incarnation time.Time) (applied bool, err error)
 	ClaimTier(ctx context.Context, caseID, clockType string, tier int, startedAt time.Time) (claimed bool, err error)
 	ReleaseTier(ctx context.Context, caseID, clockType string, tier int, startedAt time.Time) error
+	WipeAll(ctx context.Context) error
 }
 
 // eventPublisher abstracts eventbus.Producer for testability.
@@ -264,6 +266,10 @@ type Engine struct {
 	// the time of day the Americas/weekend audiences depend on. nil means
 	// time.Now; see clock.
 	now func() time.Time
+	// recalculating guards RecalculateFromEntity against a second request
+	// arriving while one is still running -- see that method's own doc
+	// comment.
+	recalculating atomic.Bool
 }
 
 // clock returns e.now(), or time.Now() when no clock is set.
@@ -1090,6 +1096,56 @@ func (e *Engine) Reconcile(ctx context.Context, client entityActiveClocksClient)
 		e.reconcileClock(ctx, c, now)
 	}
 	slog.InfoContext(ctx, "slaengine: reconciled sla clocks from entity-service", "count", len(clocks))
+	return nil
+}
+
+// RecalculateFromEntity is the CSM portal's "Recalculate SLA" admin action
+// (TypeSLARecalculationRequested) -- called from
+// Dispatcher.handleSLARecalculationRequested, in its own detached goroutine,
+// never on that handler's own consumer goroutine (a full reconciliation
+// pages through every currently-active clock and must not hold up ordinary
+// event processing).
+//
+// Unlike a bare Reconcile call, this wipes this engine's entire Redis-held
+// state first (Store.WipeAll: the wake index, every clock hash, every tier
+// claim) before rebuilding it. Reconcile alone is already safe to re-run at
+// any time -- every write it makes is idempotent (see its own doc comment)
+// -- but it only ever touches clocks entity-service's GetActiveCSMSLAClocks
+// still reports active; it has no way to know about, and so never removes,
+// a clock Redis still holds that is no longer active (e.g. after a bulk
+// resync of entity-service's own data changes which "sla" rows exist at
+// all). Those orphaned entries are mostly harmless on their own --
+// processDueMember already drops a due wake entry for an unregistered clock
+// without alerting -- but this action exists specifically to make Redis
+// agree with entity-service again after exactly that kind of external data
+// change, so leaving stale entries behind would defeat the point. Wiping
+// first is safe: reconcileClock computes every tier's due time from
+// entity-service's own StartedOn/duration/pause data, never from whatever
+// Redis previously held, so a clock entity-service still reports active is
+// rebuilt identically whether or not Redis was wiped first.
+//
+// Guarded by recalculating (atomic.Bool) so two requests in flight at once
+// -- a double click, or a redelivered Kafka record -- can't race a second
+// wipe against the first pass's own in-flight rebuild: the second is
+// logged and skipped, not queued or merged.
+func (e *Engine) RecalculateFromEntity(ctx context.Context) error {
+	client, ok := e.entity.(entityActiveClocksClient)
+	if !ok || client == nil {
+		return fmt.Errorf("slaengine: recalculate: no entity-service client configured")
+	}
+	if !e.recalculating.CompareAndSwap(false, true) {
+		slog.WarnContext(ctx, "slaengine: recalculation already in progress, skipping this request")
+		return nil
+	}
+	defer e.recalculating.Store(false)
+
+	if err := e.store.WipeAll(ctx); err != nil {
+		return fmt.Errorf("slaengine: recalculate: wipe redis state: %w", err)
+	}
+	if err := e.Reconcile(ctx, client); err != nil {
+		return fmt.Errorf("slaengine: recalculate: %w", err)
+	}
+	slog.InfoContext(ctx, "slaengine: recalculation complete")
 	return nil
 }
 

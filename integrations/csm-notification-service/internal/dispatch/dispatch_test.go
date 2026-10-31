@@ -896,6 +896,8 @@ type mockSLAEngine struct {
 	// after still recording the call — simulates a Redis outage so a test
 	// can confirm the error actually propagates out of Handle.
 	completeWorkaroundErr error
+	recalculateCalls      int
+	recalculateErr        error
 }
 
 func (m *mockSLAEngine) RegisterClocks(_ context.Context, caseID, priority string, _ time.Time, caseNumber, _, _, _, _, _ string) {
@@ -921,6 +923,13 @@ func (m *mockSLAEngine) CompleteWorkaroundClock(_ context.Context, caseID string
 	defer m.mu.Unlock()
 	m.completeWorkaroundCalls = append(m.completeWorkaroundCalls, caseID)
 	return m.completeWorkaroundErr
+}
+
+func (m *mockSLAEngine) RecalculateFromEntity(_ context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recalculateCalls++
+	return m.recalculateErr
 }
 
 // TestDispatcher_Handle_CaseCreated_RegistersSLAClocksWhenConfigured verifies
@@ -1065,6 +1074,46 @@ func TestDispatcher_Handle_WorkaroundProvided_StoreFailure_ReturnsErrorForRetry(
 	}
 	if len(sla.completeWorkaroundCalls) != 1 || sla.completeWorkaroundCalls[0] != "CASE-1" {
 		t.Errorf("unexpected CompleteWorkaroundClock calls: %v", sla.completeWorkaroundCalls)
+	}
+}
+
+// TestDispatcher_Handle_SLARecalculationRequested_RunsInBackground verifies
+// handleSLARecalculationRequested returns immediately (never blocking this
+// consumer's own Handle call on the recalculation itself) and still calls
+// slaEngine.RecalculateFromEntity exactly once, from its own goroutine.
+func TestDispatcher_Handle_SLARecalculationRequested_RunsInBackground(t *testing.T) {
+	sla := &mockSLAEngine{}
+	d := newTestDispatcher(&mockEmailSender{}, &mockGoogleChatSender{}, &mockCallSender{}).WithSLAEngine(sla)
+
+	record := eventbus.Record{Value: []byte(`{"type":"sla.recalculation_requested","entityId":"sla-engine","payload":{"requestedByEmail":"admin@example.com","requestedAt":"2026-01-05T10:00:00Z"}}`)}
+
+	if err := d.Handle(context.Background(), record); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		sla.mu.Lock()
+		calls := sla.recalculateCalls
+		sla.mu.Unlock()
+		if calls == 1 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("RecalculateFromEntity was not called within the timeout")
+}
+
+// TestDispatcher_Handle_SLARecalculationRequested_NoEngineConfigured_NoError
+// verifies an unconfigured slaEngine is a silent no-op, same posture as
+// every other slaEngine call site in this file.
+func TestDispatcher_Handle_SLARecalculationRequested_NoEngineConfigured_NoError(t *testing.T) {
+	d := newTestDispatcher(&mockEmailSender{}, &mockGoogleChatSender{}, &mockCallSender{})
+
+	record := eventbus.Record{Value: []byte(`{"type":"sla.recalculation_requested","entityId":"sla-engine","payload":{"requestedByEmail":"admin@example.com","requestedAt":"2026-01-05T10:00:00Z"}}`)}
+
+	if err := d.Handle(context.Background(), record); err != nil {
+		t.Fatalf("Handle() error = %v", err)
 	}
 }
 

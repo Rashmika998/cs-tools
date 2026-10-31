@@ -46,24 +46,10 @@ func NewSLAStatusHandler(svc service.SLAStatusService) *SLAStatusHandler {
 // optional; see SLAStatusService.SearchActiveSLAStatuses's own doc comment
 // for its accepted values.
 func (h *SLAStatusHandler) SearchActiveSLAStatuses(w http.ResponseWriter, r *http.Request) {
-	pagination := domain.Pagination{}
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			writeServiceError(w, r, &apierror.ValidationError{Msg: "limit must be a non-negative integer"})
-			return
-		}
-		pagination.Limit = parsed
+	pagination, ok := parseSLAStatusPaginationQuery(w, r)
+	if !ok {
+		return
 	}
-	if raw := r.URL.Query().Get("offset"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			writeServiceError(w, r, &apierror.ValidationError{Msg: "offset must be a non-negative integer"})
-			return
-		}
-		pagination.Offset = parsed
-	}
-
 	resp, err := h.svc.SearchActiveSLAStatuses(r.Context(), pagination, r.URL.Query().Get("source"))
 	if err != nil {
 		writeServiceError(w, r, err)
@@ -71,6 +57,63 @@ func (h *SLAStatusHandler) SearchActiveSLAStatuses(w http.ResponseWriter, r *htt
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// SearchActiveSLAStatusesManage handles GET /sla-status/manage — the CSM
+// admin-facing counterpart to GET /sla-status, same query params, same
+// response shape; see SLAStatusService.SearchActiveSLAStatusesManage's own
+// doc comment for the access difference. The CSM portal calls this to show
+// which clocks are currently running, typically right after
+// POST /sla-engine/recalculate.
+func (h *SLAStatusHandler) SearchActiveSLAStatusesManage(w http.ResponseWriter, r *http.Request) {
+	pagination, ok := parseSLAStatusPaginationQuery(w, r)
+	if !ok {
+		return
+	}
+	resp, err := h.svc.SearchActiveSLAStatusesManage(r.Context(), pagination, r.URL.Query().Get("source"))
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// RequestRecalculation handles POST /sla-engine/recalculate — no request
+// body. Returns 204 once the request has been published; the actual Redis
+// rebuild happens asynchronously in csm-notification-service, so a 204 here
+// means "requested", not "done" — see
+// SLAStatusService.RequestRecalculation's own doc comment.
+func (h *SLAStatusHandler) RequestRecalculation(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.RequestRecalculation(r.Context()); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// parseSLAStatusPaginationQuery parses the shared limit/offset query params
+// SearchActiveSLAStatuses/SearchActiveSLAStatusesManage both accept. Writes
+// the error response itself and returns ok=false on a malformed value.
+func parseSLAStatusPaginationQuery(w http.ResponseWriter, r *http.Request) (domain.Pagination, bool) {
+	pagination := domain.Pagination{}
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeServiceError(w, r, &apierror.ValidationError{Msg: "limit must be a non-negative integer"})
+			return domain.Pagination{}, false
+		}
+		pagination.Limit = parsed
+	}
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeServiceError(w, r, &apierror.ValidationError{Msg: "offset must be a non-negative integer"})
+			return domain.Pagination{}, false
+		}
+		pagination.Offset = parsed
+	}
+	return pagination, true
 }
 
 // GetClockState handles GET /sla-status/clock-state. A plain GET with

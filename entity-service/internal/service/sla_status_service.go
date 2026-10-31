@@ -18,11 +18,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/apierror"
+	"github.com/wso2-open-operations/cs-tools/entity-service/internal/auth"
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/domain"
+	"github.com/wso2-open-operations/cs-tools/entity-service/internal/events"
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/repository"
 	"github.com/wso2-open-operations/cs-tools/entity-service/internal/validate"
 )
@@ -61,26 +66,48 @@ func normalizeSLAStatusPagination(p *domain.Pagination) error {
 }
 
 type slaStatusService struct {
-	repo   repository.SLAStatusRepository
-	access AccessService
+	repo       repository.SLAStatusRepository
+	access     AccessService
+	adminRoles []string
+	publisher  EventPublisherService
 }
 
 // NewSLAStatusService constructs an SLAStatusService backed by the given
-// repository. access gates every call to internal callers
-// (an Unrestricted AccessScope) -- see requireInternalCaller's own doc comment
-// for why: unlike every other Postgres-backed read, this endpoint has no
-// per-project/per-case filtering of its own to scope by (it returns every
-// currently-active clock across every case in one bulk list), so there is
-// no scope short of "internal service" that would be safe to hand this out
-// under.
-func NewSLAStatusService(repo repository.SLAStatusRepository, access AccessService) SLAStatusService {
-	return &slaStatusService{repo: repo, access: access}
+// repository. access gates SearchActiveSLAStatuses/GetClockState to internal
+// callers (an Unrestricted AccessScope) -- see requireInternalCaller's own
+// doc comment for why: unlike every other Postgres-backed read, this
+// endpoint has no per-project/per-case filtering of its own to scope by (it
+// returns every currently-active clock across every case in one bulk list),
+// so there is no scope short of "internal service" that would be safe to
+// hand this out under. adminRoles is AUTH_ADMIN_ROLES, gating
+// SearchActiveSLAStatusesManage/RequestRecalculation instead -- those two
+// are the CSM portal's own "Recalculate SLA" admin action, a different
+// caller than the internal-only pair above, so they're gated separately.
+// publisher may be nil (Event Hub not configured for this deployment);
+// RequestRecalculation reports that as a ServiceUnavailableError rather
+// than silently doing nothing.
+func NewSLAStatusService(repo repository.SLAStatusRepository, access AccessService, adminRoles []string, publisher EventPublisherService) SLAStatusService {
+	return &slaStatusService{repo: repo, access: access, adminRoles: adminRoles, publisher: publisher}
 }
 
 // requireInternalCaller rejects anyone whose AccessScope is not Unrestricted
 // -- delegates to the shared RequireInternalCaller (require_internal.go).
 func (s *slaStatusService) requireInternalCaller(ctx context.Context) error {
 	return RequireInternalCaller(ctx, s.access, "sla status is only available to internal services")
+}
+
+// requireAdmin rejects anyone who isn't both an internal caller (reached
+// through the portal BFF, not a bare end-user token) and a holder of one of
+// adminRoles -- same two-part gate as portalBannerService.requireAdmin.
+func (s *slaStatusService) requireAdmin(ctx context.Context) error {
+	if err := RequireInternalCaller(ctx, s.access, "the SLA engine admin actions are only available through the CSM portal"); err != nil {
+		return err
+	}
+	id := auth.IdentityFromContext(ctx)
+	if id.UserEmail == "" || !holdsAnyRole(id.Roles, s.adminRoles) {
+		return &apierror.ForbiddenError{Msg: "only a CSM admin can manage the SLA engine"}
+	}
+	return nil
 }
 
 // slaStatusSourceFilters maps the lowercase, caller-facing sourceFilter
@@ -112,6 +139,20 @@ func (s *slaStatusService) SearchActiveSLAStatuses(ctx context.Context, req doma
 	if err := s.requireInternalCaller(ctx); err != nil {
 		return domain.SearchSLAStatusResponse{}, err
 	}
+	return s.searchActiveSLAStatuses(ctx, req, sourceFilter)
+}
+
+// SearchActiveSLAStatusesManage implements SLAStatusService.
+func (s *slaStatusService) SearchActiveSLAStatusesManage(ctx context.Context, req domain.Pagination, sourceFilter string) (domain.SearchSLAStatusResponse, error) {
+	if err := s.requireAdmin(ctx); err != nil {
+		return domain.SearchSLAStatusResponse{}, err
+	}
+	return s.searchActiveSLAStatuses(ctx, req, sourceFilter)
+}
+
+// searchActiveSLAStatuses is SearchActiveSLAStatuses/SearchActiveSLAStatusesManage's
+// shared body, once each has done its own access check.
+func (s *slaStatusService) searchActiveSLAStatuses(ctx context.Context, req domain.Pagination, sourceFilter string) (domain.SearchSLAStatusResponse, error) {
 	if err := normalizeSLAStatusPagination(&req); err != nil {
 		return domain.SearchSLAStatusResponse{}, err
 	}
@@ -129,6 +170,35 @@ func (s *slaStatusService) SearchActiveSLAStatuses(ctx context.Context, req doma
 		Limit:    req.Limit,
 		Offset:   req.Offset,
 	}, nil
+}
+
+// slaRecalculationEntityID is the fixed Event Hub partition key
+// TypeSLARecalculationRequested publishes under -- there is no single
+// case/incident this request is "about", unlike every other event this
+// service publishes.
+const slaRecalculationEntityID = "sla-engine"
+
+// RequestRecalculation implements SLAStatusService.
+func (s *slaStatusService) RequestRecalculation(ctx context.Context) error {
+	if err := s.requireAdmin(ctx); err != nil {
+		return err
+	}
+	if s.publisher == nil {
+		return &apierror.ServiceUnavailableError{Msg: "SLA recalculation is not available in this deployment"}
+	}
+	requestedBy := auth.IdentityFromContext(ctx).UserEmail
+	payload, err := json.Marshal(events.SLARecalculationRequestedPayload{
+		RequestedByEmail: requestedBy,
+		RequestedAt:      time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return fmt.Errorf("encode sla.recalculation_requested payload: %w", err)
+	}
+	if err := s.publisher.Publish(ctx, events.TypeSLARecalculationRequested, slaRecalculationEntityID, payload); err != nil {
+		return fmt.Errorf("publish sla.recalculation_requested: %w", err)
+	}
+	slog.InfoContext(ctx, "sla engine: recalculation requested", "requestedBy", requestedBy)
+	return nil
 }
 
 // GetClockState implements SLAStatusService.
