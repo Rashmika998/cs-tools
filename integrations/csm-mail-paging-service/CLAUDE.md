@@ -19,4 +19,4 @@ the event is published and nothing pages anyone. Do not add a second call ladder
 - **`eventbus` and `poller.Envelope` mirror csm-notification-service** (separate
   Go modules, kept in sync by hand).
 - Run `gosec -fmt=text ./...` and `govulncheck ./...` before a PR.
-- **Choreo:** `.choreo/component.yaml` + `openapi.yaml` expose only `GET /health` (liveness, like csm-notification-service). Keep it single-replica.
+- **Choreo:** `project.toml` pins `GOOGLE_BUILDABLE=./cmd/server`: `cmd/gmail-auth` is a second `main` package, and without the pin the buildpack fails with "no Go files". `.choreo/component.yaml` + `openapi.yaml` expose only `GET /health` (liveness, like csm-notification-service). Keep it single-replica.
